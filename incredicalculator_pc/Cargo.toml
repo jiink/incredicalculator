@@ -1,0 +1,9 @@
+[package]
+name = "incredicalculator_pc"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bitwise_expr = { path = "../crates/bitwise_expr" }
+incredicalculator_core = { path = "../crates/incredicalculator_core" }
+raylib = "5.5.1"
