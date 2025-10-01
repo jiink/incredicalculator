@@ -1,3 +1,7 @@
+#![no_std]
+
+use core::cmp;
+
 // IC stands for Incredicalculator
 
 const LIFT: u8 = 0xFF;
@@ -233,7 +237,7 @@ fn draw_text(platform: &mut impl IcPlatform, text: &str, x: f32, y: f32, scale: 
                 last_sx = sx;
                 last_sy = sy;
                 last_point_valid = true;
-                max_x = std::cmp::max(fx, max_x);
+                max_x = cmp::max(fx, max_x);
             }
             pt_idx += 1;
         }
