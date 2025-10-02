@@ -3,7 +3,7 @@
 extern crate alloc;
 
 use alloc::string::String;
-use nom::{branch::alt, bytes::complete::tag, character::complete::digit1, combinator::map_res, multi::many0, sequence::{delimited, preceded}, IResult};
+use nom::{branch::alt, bytes::complete::tag, character::complete::digit1, combinator::map_res, multi::many0, sequence::{delimited, pair, preceded}, IResult};
 use core::fmt;
 use core::fmt::Write;
 
@@ -77,24 +77,101 @@ fn parse_number(input: &str) -> IResult<&str, i64> {
 fn parse_factor(input: &str) -> IResult<&str, i64> {
     alt((
         parse_number,
-        delimited(tag("("), parse_expr, tag(")"))
+        delimited(tag("("), parse_equation, tag(")"))
     ))(input)
 }
 
-fn parse_term(input: &str) -> IResult<&str, i64> {
+fn parse_multiplicative(input: &str) -> IResult<&str, i64> {
     let (input, mut result) = parse_factor(input)?;
-    let (input, multiplications) = many0(preceded(tag("*"), parse_factor))(input)?;
-    for num in multiplications {
-        result *= num;
+    let (input, ops_and_vals) = many0(
+        pair(
+            alt((
+                tag("*"),
+                tag("/")
+            )),
+            parse_factor
+        )
+    )(input)?;
+    for (op, val) in ops_and_vals {
+        if op == "*" {
+            result *= val;
+        } else {
+            result /= val;
+        }
     }
     Ok((input, result))
 }
 
-fn parse_expr(input: &str) -> IResult<&str, i64> {
-    let (input, mut result) = parse_term(input)?;
-    let (input, additions) = many0(preceded(tag("+"), parse_term))(input)?;
-    for num in additions {
-        result += num;
+// alias for the current top level parse
+fn parse_equation(input: &str) -> IResult<&str, i64> {
+    parse_bitwise_or(input)
+}
+
+fn parse_bitwise_or(input: &str) -> IResult<&str, i64> {
+    let (input, mut result) = parse_bitwise_xor(input)?;
+    let (input, ops) = many0(
+        preceded(tag("|"), parse_bitwise_xor)
+    )(input)?;
+    for val in ops {
+        result |= val;
+    }
+    Ok((input, result))
+}
+
+fn parse_bitwise_xor(input: &str) -> IResult<&str, i64> {
+    let (input, mut result) = parse_bitwise_and(input)?;
+    let (input, ops) = many0(
+        preceded(tag("^"), parse_bitwise_and)
+    )(input)?;
+    for val in ops {
+        result ^= val;
+    }
+    Ok((input, result))
+}
+
+fn parse_bitwise_and(input: &str) -> IResult<&str, i64> {
+    let (input, mut result) = parse_shift(input)?;
+    let (input, ops) = many0(
+        preceded(tag("&"), parse_shift)
+    )(input)?;
+    for val in ops {
+        result &= val;
+    }
+    Ok((input, result))
+}
+
+fn parse_shift(input: &str) -> IResult<&str, i64> {
+    let (input, mut result) = parse_additive(input)?;
+    let (input, ops_and_vals) = many0(
+        pair(alt((tag("<<"), tag(">>"))), parse_additive)
+    )(input)?;
+    for (op, val) in ops_and_vals {
+        if op == "<<" {
+            result <<= val;
+        } else {
+            result >>= val;
+        }
+    }
+    Ok((input, result))
+}
+
+fn parse_additive(input: &str) -> IResult<&str, i64> {
+    let (input, mut result) = parse_multiplicative(input)?;
+    let (input, ops_and_vals) = many0(
+        pair(
+            alt((
+                tag("+"),
+                tag("-")
+            )),
+            parse_multiplicative
+        )
+    )(input)?;
+    for (op, val) in ops_and_vals {
+        if op == "+" {
+            result += val;
+        } else {
+            result -= val;
+        }
     }
     Ok((input, result))
 }
@@ -103,7 +180,7 @@ pub fn evaluate(input: &str) -> Result<i64, &'static str> {
     let mut buffer = [0u8; 256];
     let new_input = preprocess(input, &mut buffer)?;
     use nom::Finish;
-    match parse_expr(new_input).finish() {
+    match parse_equation(new_input).finish() {
         Ok((_remaining, value)) => Ok(value),
         Err(_) => Err("Failed to evaluate expression"),
     }
@@ -131,21 +208,21 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_term() {
-        assert_eq!(parse_term("1*2"), Ok(("", 2)));
-        assert_eq!(parse_term("3*4*5"), Ok(("", 60)));
-        assert_eq!(parse_term("10"), Ok(("", 10)));
-        assert_eq!(parse_term("7*2+3"), Ok(("+3", 14)));
+    fn test_parse_multiplicative() {
+        assert_eq!(parse_multiplicative("1*2"), Ok(("", 2)));
+        assert_eq!(parse_multiplicative("3*4*5"), Ok(("", 60)));
+        assert_eq!(parse_multiplicative("10"), Ok(("", 10)));
+        assert_eq!(parse_multiplicative("7*2+3"), Ok(("+3", 14)));
     }
 
     #[test]
-    fn test_parse_expr() {
-        assert_eq!(parse_expr("1+2"), Ok(("", 3)));
-        assert_eq!(parse_expr("3+4+5"), Ok(("", 12)));
-        assert_eq!(parse_expr("10"), Ok(("", 10)));
-        assert_eq!(parse_expr("2*3+4"), Ok(("", 10)));
-        assert_eq!(parse_expr("2+3*4"), Ok(("", 14)));
-        assert_eq!(parse_expr("1+2*3+4"), Ok(("", 11)));
+    fn test_parse_additive() {
+        assert_eq!(parse_additive("1+2"), Ok(("", 3)));
+        assert_eq!(parse_additive("3+4+5"), Ok(("", 12)));
+        assert_eq!(parse_additive("10"), Ok(("", 10)));
+        assert_eq!(parse_additive("2*3+4"), Ok(("", 10)));
+        assert_eq!(parse_additive("2+3*4"), Ok(("", 14)));
+        assert_eq!(parse_additive("1+2*3+4"), Ok(("", 11)));
     }
 
     #[test]
@@ -157,5 +234,24 @@ mod tests {
         assert_eq!(evaluate("5 * (2 + 3)"), Ok(25));
         assert_eq!(evaluate("(2 + 3) * 5"), Ok(25));
         assert_eq!(evaluate("((0x0002 + 3) * 4) + 5"), Ok(25));
+        assert_eq!(evaluate("10 - 5"), Ok(5));
+        assert_eq!(evaluate("20 / 4"), Ok(5));
+        assert_eq!(evaluate("10 - 2 * 3"), Ok(4));
+        assert_eq!(evaluate("20 / 2 - 3"), Ok(7));
+        assert_eq!(evaluate("10 - 3 - 2"), Ok(5));
+        assert_eq!(evaluate("100 / 10 / 2"), Ok(5));
+        assert_eq!(evaluate("100 / (10 / 2)"), Ok(20));
+        assert_eq!(evaluate("(10 - 2) * 3"), Ok(24));
+        assert_eq!(evaluate("10 << 2"), Ok(40));
+        assert_eq!(evaluate("10 >> 1"), Ok(5));
+        assert_eq!(evaluate("0b1100 & 0b1010"), Ok(0b1000));
+        assert_eq!(evaluate("0b1100 | 0b1010"), Ok(0b1110));
+        assert_eq!(evaluate("0b1100 ^ 0b1010"), Ok(0b0110));
+        assert_eq!(evaluate("2 * 5 << 1"), Ok(20));
+        assert_eq!(evaluate("1 << 2 * 5"), Ok(1024));
+        assert_eq!(evaluate("1 + 2 << 3"), Ok(24));
+        assert_eq!(evaluate("0b1111 & 0b0101 << 1"), Ok(0b1111 & 0b0101 << 1));
+        assert_eq!(evaluate("0b10 | 0b01 & 0b11"), Ok(0b11));
+        assert_eq!(evaluate("(1 << 12) & 0x0A + 100 * 2"), Ok((1 << 12) & 0x0A + 100 * 2));
     }
 }
