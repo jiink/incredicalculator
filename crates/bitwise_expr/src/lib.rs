@@ -3,7 +3,7 @@
 extern crate alloc;
 
 use alloc::string::String;
-use nom::{bytes::complete::tag, character::complete::{digit1}, combinator::map_res, multi::many0, sequence::{delimited, preceded}, IResult};
+use nom::{branch::alt, bytes::complete::tag, character::complete::digit1, combinator::map_res, multi::many0, sequence::{delimited, preceded}, IResult};
 use core::fmt;
 use core::fmt::Write;
 
@@ -70,8 +70,15 @@ pub fn preprocess<'a>(input: &str, output_buff: &'a mut [u8]) -> Result<&'a str,
     core::str::from_utf8(&writer.buffer[..writer.offset]).map_err(|_| "Invalid UTF-8 in output")
 }
 
-fn parse_factor(input: &str) -> IResult<&str, i64> {
+fn parse_number(input: &str) -> IResult<&str, i64> {
     map_res(digit1, |s: &str| s.parse::<i64>())(input)
+}
+
+fn parse_factor(input: &str) -> IResult<&str, i64> {
+    alt((
+        parse_number,
+        delimited(tag("("), parse_expr, tag(")"))
+    ))(input)
 }
 
 fn parse_term(input: &str) -> IResult<&str, i64> {
@@ -120,26 +127,25 @@ mod tests {
     #[test]
     fn test_parse_factor() {
         assert_eq!(parse_factor("123"), Ok(("", 123)));
-        assert_eq!(parse_factor(" 777 "), Ok(("", 777)));
-        assert_eq!(parse_factor(" 777 blah blah "), Ok(("blah blah ", 777)));
+        assert_eq!(parse_factor("777blahblah"), Ok(("blahblah", 777)));
     }
 
     #[test]
     fn test_parse_term() {
-        assert_eq!(parse_term("1 * 2"), Ok(("", 2)));
-        assert_eq!(parse_term("3 * 4 * 5"), Ok(("", 60)));
-        assert_eq!(parse_term(" 10 "), Ok(("", 10)));
-        assert_eq!(parse_term("7 * 2 + 3"), Ok(("+ 3", 14)));
+        assert_eq!(parse_term("1*2"), Ok(("", 2)));
+        assert_eq!(parse_term("3*4*5"), Ok(("", 60)));
+        assert_eq!(parse_term("10"), Ok(("", 10)));
+        assert_eq!(parse_term("7*2+3"), Ok(("+3", 14)));
     }
 
     #[test]
     fn test_parse_expr() {
-        assert_eq!(parse_expr("1 + 2"), Ok(("", 3)));
-        assert_eq!(parse_expr("3 + 4 + 5"), Ok(("", 12)));
+        assert_eq!(parse_expr("1+2"), Ok(("", 3)));
+        assert_eq!(parse_expr("3+4+5"), Ok(("", 12)));
         assert_eq!(parse_expr("10"), Ok(("", 10)));
-        assert_eq!(parse_expr("2 * 3 + 4"), Ok(("", 10)));
-        assert_eq!(parse_expr("2 + 3 * 4"), Ok(("", 14)));
-        assert_eq!(parse_expr(" 1 + 2 * 3 + 4 "), Ok(("", 11)));
+        assert_eq!(parse_expr("2*3+4"), Ok(("", 10)));
+        assert_eq!(parse_expr("2+3*4"), Ok(("", 14)));
+        assert_eq!(parse_expr("1+2*3+4"), Ok(("", 11)));
     }
 
     #[test]
@@ -147,5 +153,9 @@ mod tests {
         assert_eq!(evaluate(" 2 * 3 + 4 "), Ok(10));
         assert_eq!(evaluate(" 2 + 3 * 4 "), Ok(14));
         assert_eq!(evaluate(" 1 + 0x10 * 0b10 "), Ok(33));
+        assert_eq!(evaluate("(99)"), Ok(99));
+        assert_eq!(evaluate("5 * (2 + 3)"), Ok(25));
+        assert_eq!(evaluate("(2 + 3) * 5"), Ok(25));
+        assert_eq!(evaluate("((0x0002 + 3) * 4) + 5"), Ok(25));
     }
 }
