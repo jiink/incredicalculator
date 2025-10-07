@@ -287,8 +287,11 @@ pub trait IcPlatform {
 }
 
 pub struct IcState {
+    
     pub pos_x: f32,
-    pub key_states: [KeyState; IcKey::COUNT]
+    pub key_states: [KeyState; IcKey::COUNT],
+    pub equation_input: [u8; Self::EQUATION_MAX_SIZE],
+    pub equation_cur: usize,
 }
 
 #[derive(Clone, Copy)]
@@ -306,44 +309,57 @@ impl Default for KeyState {
 }
 
 impl IcState {
+    pub const EQUATION_MAX_SIZE: usize = 160;
     pub fn new() -> IcState {
         IcState {
             pos_x: 0.0,
-            key_states: [KeyState::default(); IcKey::COUNT]
+            key_states: [KeyState::default(); IcKey::COUNT],
+            equation_input: [0; Self::EQUATION_MAX_SIZE],
+            equation_cur: 0
         }
     }
 
     pub fn update(&mut self, platform: &mut impl IcPlatform) {
         platform.clear_lines();
         for s in self.key_states.iter_mut() {
-            if s.just_pressed == true {
-                s.just_pressed = false;
-            }
-            if s.just_released == true {
-                s.just_released = false;
-            }
-            if s.is_down && !s.was_down {
-                s.just_pressed = true;
-            }
-            if !s.is_down && s.was_down {
-                s.just_released = true;
-            }
+            s.just_pressed = s.is_down && !s.was_down;
+            s.just_released = !s.is_down && s.was_down;
             s.was_down = s.is_down;
         }
         if self.key_states[IcKey::Num0 as usize].just_pressed {
-            self.pos_x = 0.0;
+            self.equation_input[self.equation_cur] = b'0';
+            if self.equation_cur < Self::EQUATION_MAX_SIZE {
+                self.equation_cur += 1;
+            }
         }
         if self.key_states[IcKey::Num1 as usize].just_pressed {
-            self.pos_x = 100.0;
+            self.equation_input[self.equation_cur] = b'1';
+            if self.equation_cur < Self::EQUATION_MAX_SIZE {
+                self.equation_cur += 1;
+            }
         }
         if self.key_states[IcKey::Num2 as usize].just_pressed {
-            self.pos_x = 200.0;
+            self.equation_input[self.equation_cur] = b'2';
+            if self.equation_cur < Self::EQUATION_MAX_SIZE {
+                self.equation_cur += 1;
+            }
         }
         if self.key_states[IcKey::Num3 as usize].just_pressed {
-            self.pos_x = 300.0;
+            self.equation_input[self.equation_cur] = b'3';
+            if self.equation_cur < Self::EQUATION_MAX_SIZE {
+                self.equation_cur += 1;
+            }
         }
-        platform.draw_line(self.pos_x, 50.0, 300.0, 200.0);
-        draw_text(platform, "hello", 100.0, 100.0, 20.0);
+        if self.key_states[IcKey::Func1 as usize].just_pressed {
+            self.equation_input[self.equation_cur] = 0x00;
+            if self.equation_cur > 0 {
+                self.equation_cur -= 1;
+            }
+        }
+        //platform.draw_line(self.pos_x, 50.0, 300.0, 200.0);
+        draw_text(platform, "hello", 100.0, 100.0, 5.0);
+        let equation_disp = core::str::from_utf8(&self.equation_input[..self.equation_cur]).unwrap_or("Invalid UTF-8");
+        draw_text(platform, &equation_disp, 100.0, 200.0, 10.0);
     }
 
     pub fn key_down(&mut self, key: IcKey) {
