@@ -3,7 +3,7 @@
 extern crate alloc;
 
 use alloc::string::String;
-use nom::{branch::alt, bytes::complete::tag, character::complete::digit1, combinator::map_res, multi::many0, sequence::{delimited, pair, preceded}, IResult};
+use nom::{branch::alt, bytes::complete::tag, character::complete::digit1, combinator::{map, map_res}, multi::many0, sequence::{delimited, pair, preceded}, IResult};
 use core::fmt;
 use core::fmt::Write;
 
@@ -77,7 +77,11 @@ fn parse_number(input: &str) -> IResult<&str, i64> {
 fn parse_factor(input: &str) -> IResult<&str, i64> {
     alt((
         parse_number,
-        delimited(tag("("), parse_equation, tag(")"))
+        delimited(tag("("), parse_equation, tag(")")),
+        map(
+            preceded(tag("~"), parse_factor),
+            |val| !val
+        ),
     ))(input)
 }
 
@@ -253,5 +257,11 @@ mod tests {
         assert_eq!(evaluate("0b1111 & 0b0101 << 1"), Ok(0b1111 & 0b0101 << 1));
         assert_eq!(evaluate("0b10 | 0b01 & 0b11"), Ok(0b11));
         assert_eq!(evaluate("(1 << 12) & 0x0A + 100 * 2"), Ok((1 << 12) & 0x0A + 100 * 2));
+        assert_eq!(evaluate("~0"), Ok(!0));
+        assert_eq!(evaluate("~1"), Ok(!1));
+        assert_eq!(evaluate("~~1"), Ok(!!1));
+        assert_eq!(evaluate("~1 * 5"), Ok(!1 * 5));
+        assert_eq!(evaluate("~10 + 5"), Ok(!10 + 5));
+        assert_eq!(evaluate("~(10 + 5)"), Ok(!(10 + 5)));
     }
 }
