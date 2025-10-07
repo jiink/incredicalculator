@@ -252,8 +252,8 @@ fn draw_text(platform: &mut impl IcPlatform, text: &str, x: f32, y: f32, scale: 
 
 
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
+#[repr(usize)]
 pub enum IcKey {
-    None,
     Num0,
     Num1,
     Num2,
@@ -273,7 +273,12 @@ pub enum IcKey {
     Func1,
     Func2,
     Func3,
-    Func4
+    Func4,
+    _Max
+}
+
+impl IcKey {
+    pub const COUNT: usize = IcKey::_Max as usize;
 }
 
 pub trait IcPlatform {
@@ -283,32 +288,76 @@ pub trait IcPlatform {
 
 pub struct IcState {
     pub pos_x: f32,
-    pub pressed_key: IcKey
+    pub key_states: [KeyState; IcKey::COUNT]
+}
+
+#[derive(Clone, Copy)]
+pub struct KeyState {
+    pub is_down: bool,
+    pub was_down: bool,
+    pub just_pressed: bool,
+    pub just_released: bool
+}
+
+impl Default for KeyState {
+    fn default() -> Self {
+        KeyState { is_down: false, was_down: false, just_pressed: false, just_released: false }
+    }
 }
 
 impl IcState {
     pub fn new() -> IcState {
         IcState {
             pos_x: 0.0,
-            pressed_key: IcKey::None
+            key_states: [KeyState::default(); IcKey::COUNT]
         }
     }
 
     pub fn update(&mut self, platform: &mut impl IcPlatform) {
         platform.clear_lines();
-        let x2: f32 = match self.pressed_key {
-            IcKey::NumE => 100.0,
-            _ => 400.0
-        };
-        platform.draw_line(self.pos_x, 50.0, x2, 200.0);
+        for s in self.key_states.iter_mut() {
+            if s.just_pressed == true {
+                s.just_pressed = false;
+            }
+            if s.just_released == true {
+                s.just_released = false;
+            }
+            if s.is_down && !s.was_down {
+                s.just_pressed = true;
+            }
+            if !s.is_down && s.was_down {
+                s.just_released = true;
+            }
+            s.was_down = s.is_down;
+        }
+        if self.key_states[IcKey::Num0 as usize].just_pressed {
+            self.pos_x = 0.0;
+        }
+        if self.key_states[IcKey::Num1 as usize].just_pressed {
+            self.pos_x = 100.0;
+        }
+        if self.key_states[IcKey::Num2 as usize].just_pressed {
+            self.pos_x = 200.0;
+        }
+        if self.key_states[IcKey::Num3 as usize].just_pressed {
+            self.pos_x = 300.0;
+        }
+        platform.draw_line(self.pos_x, 50.0, 300.0, 200.0);
         draw_text(platform, "hello", 100.0, 100.0, 20.0);
-        self.pos_x += 1.0;
-        self.pressed_key = IcKey::None;
     }
 
-    pub fn key_press(&mut self, key: IcKey) {
-        self.pressed_key = key;
+    pub fn key_down(&mut self, key: IcKey) {
+        if key == IcKey::_Max {
+            ()
+        }
+        self.key_states[key as usize].is_down = true;
     }
 
+    pub fn key_up(&mut self, key: IcKey) {
+        if key == IcKey::_Max {
+            ()
+        }
+        self.key_states[key as usize].is_down = false;
+    }
     
 }

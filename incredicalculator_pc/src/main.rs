@@ -67,7 +67,14 @@ fn main() {
     while !rl_handle.window_should_close() {
         while let Some(rl_key) = rl_handle.get_key_pressed() {
             if let Some(ic_key) = key_map.get(&rl_key) {
-                icalc.key_press(*ic_key);
+                icalc.key_down(*ic_key);
+            }
+        }
+        for rl_key in key_map.keys() {
+            if rl_handle.is_key_released(*rl_key) {
+                if let Some(ic_key) = key_map.get(&rl_key) {
+                    icalc.key_up(*ic_key);
+                }
             }
         }
         icalc.update(&mut ic_rl_platform);
