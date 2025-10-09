@@ -281,6 +281,28 @@ impl IcKey {
     pub const COUNT: usize = IcKey::_Max as usize;
 }
 
+fn key_to_char(key: IcKey) -> Option<(u8, u8)> {
+    match key {
+        IcKey::Num0 => Some((b'0', b')')),
+        IcKey::Num1 => Some((b'1', b'!')),
+        IcKey::Num2 => Some((b'2', b'@')),
+        IcKey::Num3 => Some((b'3', b'#')),
+        IcKey::Num4 => Some((b'4', b'$')),
+        IcKey::Num5 => Some((b'5', b'%')),
+        IcKey::Num6 => Some((b'6', b'^')),
+        IcKey::Num7 => Some((b'7', b'&')),
+        IcKey::Num8 => Some((b'8', b'*')),
+        IcKey::Num9 => Some((b'9', b'(')),
+        IcKey::NumA => Some((b'A', b'A')),
+        IcKey::NumB => Some((b'B', b'B')),
+        IcKey::NumC => Some((b'C', b'C')),
+        IcKey::NumD => Some((b'D', b'D')),
+        IcKey::NumE => Some((b'E', b'E')),
+        IcKey::NumF => Some((b'F', b'F')),
+        IcKey::Shift | IcKey::Super | IcKey::Func1 | IcKey::Func2 | IcKey::_Max => None,
+    }
+}
+
 pub trait IcPlatform {
     fn draw_line(&mut self, x1: f32, y1: f32, x2: f32, y2:f32);
     fn clear_lines(&mut self);
@@ -326,35 +348,18 @@ impl IcState {
             s.just_released = !s.is_down && s.was_down;
             s.was_down = s.is_down;
         }
-        if self.key_states[IcKey::Num0 as usize].just_pressed {
-            self.equation_input[self.equation_cur] = b'0';
-            if self.equation_cur < Self::EQUATION_MAX_SIZE {
-                self.equation_cur += 1;
-            }
-        }
-        if self.key_states[IcKey::Num1 as usize].just_pressed {
-            self.equation_input[self.equation_cur] = b'1';
-            if self.equation_cur < Self::EQUATION_MAX_SIZE {
-                self.equation_cur += 1;
-            }
-        }
-        if self.key_states[IcKey::Num2 as usize].just_pressed {
-            self.equation_input[self.equation_cur] = b'2';
-            if self.equation_cur < Self::EQUATION_MAX_SIZE {
-                self.equation_cur += 1;
-            }
-        }
-        if self.key_states[IcKey::Num3 as usize].just_pressed {
-            self.equation_input[self.equation_cur] = b'3';
-            if self.equation_cur < Self::EQUATION_MAX_SIZE {
-                self.equation_cur += 1;
+        let is_shifted = self.key_states[IcKey::Shift as usize].is_down;
+        for i in 0..(IcKey::COUNT) {
+            let key = unsafe { core::mem::transmute::<usize, IcKey>(i) };
+            if self.key_states[i].just_pressed {
+                if let Some((chr, shift_chr)) = key_to_char(key) {
+                    let to_add = if is_shifted { shift_chr } else { chr };
+                    self.add_char_to_equation(to_add);
+                }
             }
         }
         if self.key_states[IcKey::Func1 as usize].just_pressed {
-            self.equation_input[self.equation_cur] = 0x00;
-            if self.equation_cur > 0 {
-                self.equation_cur -= 1;
-            }
+            self.backspace();
         }
         draw_text(platform, "hello", 0.5, 0.5, 0.01);
         let equation_disp = core::str::from_utf8(&self.equation_input[..self.equation_cur]).unwrap_or("Invalid UTF-8");
@@ -373,6 +378,20 @@ impl IcState {
             ()
         }
         self.key_states[key as usize].is_down = false;
+    }
+
+    fn add_char_to_equation(&mut self, char_code: u8) {
+        if self.equation_cur < Self::EQUATION_MAX_SIZE {
+            self.equation_input[self.equation_cur] = char_code;
+            self.equation_cur += 1;
+        }
+    }
+
+    fn backspace(&mut self) {
+        if self.equation_cur > 0 {
+            self.equation_cur -= 1;
+            self.equation_input[self.equation_cur] = 0x00;
+        }
     }
     
 }
