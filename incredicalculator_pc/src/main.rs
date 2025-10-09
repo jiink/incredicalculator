@@ -19,6 +19,15 @@ struct Line {
     y2: f32
 }
 
+// const RENDER_W: u32 = 320;
+// const RENDER_H: u32 = 240;
+const RENDER_W: u32 = 160;
+const RENDER_H: u32 = 120;
+
+fn world_to_px(x: f32, y: f32) -> (f32, f32) {
+    (x * RENDER_W as f32, y * RENDER_W as f32)
+}
+
 pub struct IcRaylibPlatform {
     line_list: Vec<Line>
 }
@@ -93,9 +102,7 @@ fn main() {
     let (mut rl_handle, rl_thread) = raylib::init()
         .size(300, 500).title("Incredicalculator PC").vsync().build();
     rl_handle.set_target_fps(30);
-    let render_w = 320;
-    let render_h = 240;
-    let mut target_tex = match rl_handle.load_render_texture(&rl_thread, render_w, render_h) {
+    let mut target_tex = match rl_handle.load_render_texture(&rl_thread, RENDER_W, RENDER_H) {
         Ok(tex) => tex,
         Err(e) => {
             eprintln!("Render texture fail: {}", e);
@@ -141,13 +148,15 @@ fn main() {
             let mut d_tex = rl_handle.begin_texture_mode(&rl_thread, &mut target_tex);
             d_tex.clear_background(Color::GREEN);
             d_tex.clear_background(Color::GREEN);
-            d_tex.draw_text(format!("What! {fps} FPS").as_str(),
-                12, 12, 24, Color::WHITE);
+            //d_tex.draw_text(format!("What! {fps} FPS").as_str(),
+                //12, 12, 24, Color::WHITE);
             for l in ic_rl_platform.line_list.iter() {
+                let (x1, y1) = world_to_px(l.x1, l.y1);
+                let (x2, y2) = world_to_px(l.x2, l.y2);
                 d_tex.draw_line_ex(
-                    Vector2::new(l.x1, l.y1), 
-                    Vector2::new(l.x2, l.y2),
-                    3.0, Color::WHITE);
+                    Vector2::new(x1, y1), 
+                    Vector2::new(x2, y2),
+                    1.0, Color::WHITE);
             }
         }
 

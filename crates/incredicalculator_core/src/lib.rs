@@ -227,7 +227,7 @@ fn draw_text(platform: &mut impl IcPlatform, text: &str, x: f32, y: f32, scale: 
                     // Check if it's a standalone point (i.e., the next item is LIFT or end of data)
                     if pt_idx + 1 >= fontchar.len() || fontchar[pt_idx + 1] == LIFT {
                         // DOT!
-                        platform.draw_line(sx - 2.0, sy - 2.0, sx + 2.0, sy + 2.0);
+                        platform.draw_line(sx - (scale * 0.5), sy - (scale * 0.5), sx + (scale * 0.5), sy + (scale * 0.5));
                     }
                     // If it's the start of a line segment (next point is not LIFT/end),
                     // we don't draw the point explicitly here. The olivec_line call
@@ -246,7 +246,7 @@ fn draw_text(platform: &mut impl IcPlatform, text: &str, x: f32, y: f32, scale: 
             b' ' => { 9 }
             _ => { max_x + 1 }
         };
-        current_x += char_width as f32 * scale + 1.0;
+        current_x += (char_width as f32 + 1.0) * scale;
     }
 }
 
@@ -356,10 +356,9 @@ impl IcState {
                 self.equation_cur -= 1;
             }
         }
-        //platform.draw_line(self.pos_x, 50.0, 300.0, 200.0);
-        draw_text(platform, "hello", 100.0, 100.0, 5.0);
+        draw_text(platform, "hello", 0.5, 0.5, 0.01);
         let equation_disp = core::str::from_utf8(&self.equation_input[..self.equation_cur]).unwrap_or("Invalid UTF-8");
-        draw_text(platform, &equation_disp, 100.0, 200.0, 10.0);
+        draw_text(platform, &equation_disp, 0.0, 0.0, 0.01);
     }
 
     pub fn key_down(&mut self, key: IcKey) {
