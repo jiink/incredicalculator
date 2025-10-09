@@ -1,8 +1,15 @@
 use std::{collections::HashMap};
 
-use raylib::prelude::*;
+use raylib::{ffi::{SetTextureFilter, RL_TEXTURE_FILTER_LINEAR}, prelude::*};
 
 use incredicalculator_core::{IcKey, IcPlatform, IcState};
+
+struct VirtualKey {
+    key: IcKey,
+    x: u32,
+    y: u32,
+    pressed: bool
+}
 
 struct Line {
     x1: f32,
@@ -54,16 +61,49 @@ fn main() {
         m.insert(KeyboardKey::KEY_FOUR, IcKey::Num9);
         m.insert(KeyboardKey::KEY_FIVE, IcKey::NumA);
         m.insert(KeyboardKey::KEY_SIX, IcKey::Func2);
-        m.insert(KeyboardKey::KEY_SEVEN, IcKey::Func3);
-        m.insert(KeyboardKey::KEY_EIGHT, IcKey::Func4);
+        m.insert(KeyboardKey::KEY_SEVEN, IcKey::Shift);
+        m.insert(KeyboardKey::KEY_EIGHT, IcKey::Super);
         m
     };
+    let virtual_keys = [
+        VirtualKey { key: IcKey::Super, x: 16 + 70 * 0, y: 147 + 70 * 0, pressed: false },
+        VirtualKey { key: IcKey::Func1, x: 16 + 70 * 1, y: 147 + 70 * 0, pressed: false },
+        VirtualKey { key: IcKey::Func2, x: 16 + 70 * 2, y: 147 + 70 * 0, pressed: false },
+        VirtualKey { key: IcKey::NumA,  x: 16 + 70 * 3, y: 147 + 70 * 0, pressed: false },
+        VirtualKey { key: IcKey::Num7,  x: 16 + 70 * 0, y: 147 + 70 * 1, pressed: false },
+        VirtualKey { key: IcKey::Num8,  x: 16 + 70 * 1, y: 147 + 70 * 1, pressed: false },
+        VirtualKey { key: IcKey::Num9,  x: 16 + 70 * 2, y: 147 + 70 * 1, pressed: false },
+        VirtualKey { key: IcKey::NumB,  x: 16 + 70 * 3, y: 147 + 70 * 1, pressed: false },
+        VirtualKey { key: IcKey::Num4,  x: 16 + 70 * 0, y: 147 + 70 * 2, pressed: false },
+        VirtualKey { key: IcKey::Num5,  x: 16 + 70 * 1, y: 147 + 70 * 2, pressed: false },
+        VirtualKey { key: IcKey::Num6,  x: 16 + 70 * 2, y: 147 + 70 * 2, pressed: false },
+        VirtualKey { key: IcKey::NumC,  x: 16 + 70 * 3, y: 147 + 70 * 2, pressed: false },
+        VirtualKey { key: IcKey::Num1,  x: 16 + 70 * 0, y: 147 + 70 * 3, pressed: false },
+        VirtualKey { key: IcKey::Num2,  x: 16 + 70 * 1, y: 147 + 70 * 3, pressed: false },
+        VirtualKey { key: IcKey::Num3,  x: 16 + 70 * 2, y: 147 + 70 * 3, pressed: false },
+        VirtualKey { key: IcKey::NumD,  x: 16 + 70 * 3, y: 147 + 70 * 3, pressed: false },
+        VirtualKey { key: IcKey::Shift, x: 16 + 70 * 0, y: 147 + 70 * 4, pressed: false },
+        VirtualKey { key: IcKey::Num0,  x: 16 + 70 * 1, y: 147 + 70 * 4, pressed: false },
+        VirtualKey { key: IcKey::NumF,  x: 16 + 70 * 2, y: 147 + 70 * 4, pressed: false },
+        VirtualKey { key: IcKey::NumE,  x: 16 + 70 * 3, y: 147 + 70 * 4, pressed: false },
+    ];
     
     println!("Hello, world!");
     let (mut rl_handle, rl_thread) = raylib::init()
-        .size(640, 480).title("huh").vsync().build();
+        .size(300, 500).title("Incredicalculator PC").vsync().build();
     rl_handle.set_target_fps(30);
-    
+    let render_w = 320;
+    let render_h = 240;
+    let mut target_tex = match rl_handle.load_render_texture(&rl_thread, render_w, render_h) {
+        Ok(tex) => tex,
+        Err(e) => {
+            eprintln!("Render texture fail: {}", e);
+            return;
+        }
+    };
+    unsafe {
+        SetTextureFilter(target_tex.texture, RL_TEXTURE_FILTER_LINEAR as i32);
+    }    
     while !rl_handle.window_should_close() {
         while let Some(rl_key) = rl_handle.get_key_pressed() {
             if let Some(ic_key) = key_map.get(&rl_key) {
@@ -80,15 +120,53 @@ fn main() {
         icalc.update(&mut ic_rl_platform);
 
         let fps: u32 = rl_handle.get_fps();
-        let mut rl_draw_handle = rl_handle.begin_drawing(&rl_thread);
-        rl_draw_handle.clear_background(Color::GREEN);
-        rl_draw_handle.draw_text(format!("What! {fps} FPS").as_str(),
-             12, 12, 24, Color::WHITE);
-        for l in ic_rl_platform.line_list.iter() {
-            rl_draw_handle.draw_line_ex(
-                Vector2::new(l.x1, l.y1), 
-                Vector2::new(l.x2, l.y2),
-                5.0, Color::WHITE);
+
+        {
+            let mut d_tex = rl_handle.begin_texture_mode(&rl_thread, &mut target_tex);
+            d_tex.clear_background(Color::GREEN);
+            d_tex.clear_background(Color::GREEN);
+            d_tex.draw_text(format!("What! {fps} FPS").as_str(),
+                12, 12, 24, Color::WHITE);
+            for l in ic_rl_platform.line_list.iter() {
+                d_tex.draw_line_ex(
+                    Vector2::new(l.x1, l.y1), 
+                    Vector2::new(l.x2, l.y2),
+                    3.0, Color::WHITE);
+            }
         }
+
+        let mut rl_draw_handle = rl_handle.begin_drawing(&rl_thread);
+        rl_draw_handle.clear_background(Color::GRAY);
+        for vk in virtual_keys.iter() {
+            rl_draw_handle.draw_rectangle(vk.x as i32, vk.y as i32, 64, 64, Color::LIGHTGRAY);
+            let lbl = match vk.key {
+                IcKey::Num0 => "0",
+                IcKey::Num1 => "1",
+                IcKey::Num2 => "2",
+                IcKey::Num3 => "3",
+                IcKey::Num4 => "4",
+                IcKey::Num5 => "5",
+                IcKey::Num6 => "6",
+                IcKey::Num7 => "7",
+                IcKey::Num8 => "8",
+                IcKey::Num9 => "9",
+                IcKey::NumA => "A",
+                IcKey::NumB => "B",
+                IcKey::NumC => "C",
+                IcKey::NumD => "D",
+                IcKey::NumE => "E",
+                IcKey::NumF => "F",
+                IcKey::Shift => "^",
+                IcKey::Super => "§",
+                IcKey::Func1 => "F1",
+                IcKey::Func2 => "F2",
+                _ => "?"
+            };
+            rl_draw_handle.draw_text(&lbl, vk.x as i32 + 16, vk.y as i32 + 16, 20, Color::BLACK);
+        }
+        let source_rec = Rectangle::new(0.0, 0.0, target_tex.texture.width as f32, -target_tex.texture.height as f32);
+        let dest_rec = Rectangle::new(72.0, 17.0, 160.0, 120.0);
+        let origin = Vector2::new(0.0, 0.0);
+        rl_draw_handle.draw_texture_pro(&target_tex, source_rec, dest_rec, origin, 0.0, Color::WHITE);
     }
 }

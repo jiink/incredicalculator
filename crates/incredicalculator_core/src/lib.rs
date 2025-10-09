@@ -270,10 +270,10 @@ pub enum IcKey {
     NumD,
     NumE,
     NumF,
+    Shift,
+    Super,
     Func1,
     Func2,
-    Func3,
-    Func4,
     _Max
 }
 
