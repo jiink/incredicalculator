@@ -272,8 +272,6 @@ pub enum IcKey {
     NumF,
     Shift,
     Super,
-    Func1,
-    Func2,
     _Max
 }
 
@@ -299,7 +297,7 @@ fn key_to_char(key: IcKey) -> Option<(u8, u8)> {
         IcKey::NumD => Some((b'D', b'D')),
         IcKey::NumE => Some((b'E', b'E')),
         IcKey::NumF => Some((b'F', b'F')),
-        IcKey::Shift | IcKey::Super | IcKey::Func1 | IcKey::Func2 | IcKey::_Max => None,
+        IcKey::Shift | IcKey::Super | IcKey::_Max => None,
     }
 }
 
@@ -358,7 +356,7 @@ impl IcState {
                 }
             }
         }
-        if self.key_states[IcKey::Func1 as usize].just_pressed {
+        if self.key_states[IcKey::Super as usize].just_pressed {
             self.backspace();
         }
         draw_text(platform, "hello", 0.5, 0.5, 0.01);

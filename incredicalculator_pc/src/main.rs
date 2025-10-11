@@ -53,54 +53,51 @@ fn main() {
     let mut ic_rl_platform: IcRaylibPlatform = IcRaylibPlatform::new();
     let key_map: HashMap<KeyboardKey, IcKey> = { 
         let mut m: HashMap<KeyboardKey, IcKey> = HashMap::new();
-        m.insert(KeyboardKey::KEY_Z, IcKey::NumE);
-        m.insert(KeyboardKey::KEY_X, IcKey::NumF);
-        m.insert(KeyboardKey::KEY_C, IcKey::Num0);
-        m.insert(KeyboardKey::KEY_V, IcKey::Func1);
-        m.insert(KeyboardKey::KEY_A, IcKey::NumD);
-        m.insert(KeyboardKey::KEY_S, IcKey::Num1);
-        m.insert(KeyboardKey::KEY_D, IcKey::Num2);
-        m.insert(KeyboardKey::KEY_F, IcKey::Num3);
-        m.insert(KeyboardKey::KEY_Q, IcKey::NumC);
-        m.insert(KeyboardKey::KEY_W, IcKey::Num4);
-        m.insert(KeyboardKey::KEY_E, IcKey::Num5);
-        m.insert(KeyboardKey::KEY_R, IcKey::Num6);
-        m.insert(KeyboardKey::KEY_ONE, IcKey::NumB);
-        m.insert(KeyboardKey::KEY_TWO, IcKey::Num7);
-        m.insert(KeyboardKey::KEY_THREE, IcKey::Num8);
-        m.insert(KeyboardKey::KEY_FOUR, IcKey::Num9);
-        m.insert(KeyboardKey::KEY_FIVE, IcKey::NumA);
-        m.insert(KeyboardKey::KEY_SIX, IcKey::Func2);
-        m.insert(KeyboardKey::KEY_SEVEN, IcKey::Shift);
-        m.insert(KeyboardKey::KEY_EIGHT, IcKey::Super);
+        m.insert(KeyboardKey::KEY_E, IcKey::NumE);
+        m.insert(KeyboardKey::KEY_F, IcKey::NumF);
+        m.insert(KeyboardKey::KEY_ZERO, IcKey::Num0);
+        m.insert(KeyboardKey::KEY_D, IcKey::NumD);
+        m.insert(KeyboardKey::KEY_ONE, IcKey::Num1);
+        m.insert(KeyboardKey::KEY_TWO, IcKey::Num2);
+        m.insert(KeyboardKey::KEY_THREE, IcKey::Num3);
+        m.insert(KeyboardKey::KEY_C, IcKey::NumC);
+        m.insert(KeyboardKey::KEY_FOUR, IcKey::Num4);
+        m.insert(KeyboardKey::KEY_FIVE, IcKey::Num5);
+        m.insert(KeyboardKey::KEY_SIX, IcKey::Num6);
+        m.insert(KeyboardKey::KEY_B, IcKey::NumB);
+        m.insert(KeyboardKey::KEY_SEVEN, IcKey::Num7);
+        m.insert(KeyboardKey::KEY_EIGHT, IcKey::Num8);
+        m.insert(KeyboardKey::KEY_NINE, IcKey::Num9);
+        m.insert(KeyboardKey::KEY_A, IcKey::NumA);
+        m.insert(KeyboardKey::KEY_LEFT_SHIFT, IcKey::Shift);
+        m.insert(KeyboardKey::KEY_Z, IcKey::Super);
         m
     };
     let mut virtual_keys = [
-        VirtualKey { key: IcKey::Super, x: 16 + 70 * 0, y: 147 + 70 * 0, pressed: false, hovered: false },
-        VirtualKey { key: IcKey::Func1, x: 16 + 70 * 1, y: 147 + 70 * 0, pressed: false, hovered: false },
-        VirtualKey { key: IcKey::Func2, x: 16 + 70 * 2, y: 147 + 70 * 0, pressed: false, hovered: false },
-        VirtualKey { key: IcKey::NumA,  x: 16 + 70 * 3, y: 147 + 70 * 0, pressed: false, hovered: false },
-        VirtualKey { key: IcKey::Num7,  x: 16 + 70 * 0, y: 147 + 70 * 1, pressed: false, hovered: false },
-        VirtualKey { key: IcKey::Num8,  x: 16 + 70 * 1, y: 147 + 70 * 1, pressed: false, hovered: false },
-        VirtualKey { key: IcKey::Num9,  x: 16 + 70 * 2, y: 147 + 70 * 1, pressed: false, hovered: false },
-        VirtualKey { key: IcKey::NumB,  x: 16 + 70 * 3, y: 147 + 70 * 1, pressed: false, hovered: false },
-        VirtualKey { key: IcKey::Num4,  x: 16 + 70 * 0, y: 147 + 70 * 2, pressed: false, hovered: false },
-        VirtualKey { key: IcKey::Num5,  x: 16 + 70 * 1, y: 147 + 70 * 2, pressed: false, hovered: false },
-        VirtualKey { key: IcKey::Num6,  x: 16 + 70 * 2, y: 147 + 70 * 2, pressed: false, hovered: false },
-        VirtualKey { key: IcKey::NumC,  x: 16 + 70 * 3, y: 147 + 70 * 2, pressed: false, hovered: false },
-        VirtualKey { key: IcKey::Num1,  x: 16 + 70 * 0, y: 147 + 70 * 3, pressed: false, hovered: false },
-        VirtualKey { key: IcKey::Num2,  x: 16 + 70 * 1, y: 147 + 70 * 3, pressed: false, hovered: false },
-        VirtualKey { key: IcKey::Num3,  x: 16 + 70 * 2, y: 147 + 70 * 3, pressed: false, hovered: false },
-        VirtualKey { key: IcKey::NumD,  x: 16 + 70 * 3, y: 147 + 70 * 3, pressed: false, hovered: false },
-        VirtualKey { key: IcKey::Shift, x: 16 + 70 * 0, y: 147 + 70 * 4, pressed: false, hovered: false },
-        VirtualKey { key: IcKey::Num0,  x: 16 + 70 * 1, y: 147 + 70 * 4, pressed: false, hovered: false },
-        VirtualKey { key: IcKey::NumF,  x: 16 + 70 * 2, y: 147 + 70 * 4, pressed: false, hovered: false },
-        VirtualKey { key: IcKey::NumE,  x: 16 + 70 * 3, y: 147 + 70 * 4, pressed: false, hovered: false },
+        
+        VirtualKey { key: IcKey::NumA,  x: 7 + 69 * 3, y: 9 + 69 * 0, pressed: false, hovered: false },
+        VirtualKey { key: IcKey::NumB,  x: 7 + 69 * 3, y: 9 + 69 * 1, pressed: false, hovered: false },
+        VirtualKey { key: IcKey::Num7,  x: 7 + 69 * 0, y: 9 + 69 * 2, pressed: false, hovered: false },
+        VirtualKey { key: IcKey::Num8,  x: 7 + 69 * 1, y: 9 + 69 * 2, pressed: false, hovered: false },
+        VirtualKey { key: IcKey::Num9,  x: 7 + 69 * 2, y: 9 + 69 * 2, pressed: false, hovered: false },
+        VirtualKey { key: IcKey::NumC,  x: 7 + 69 * 3, y: 9 + 69 * 2, pressed: false, hovered: false },
+        VirtualKey { key: IcKey::Num4,  x: 7 + 69 * 0, y: 9 + 69 * 3, pressed: false, hovered: false },
+        VirtualKey { key: IcKey::Num5,  x: 7 + 69 * 1, y: 9 + 69 * 3, pressed: false, hovered: false },
+        VirtualKey { key: IcKey::Num6,  x: 7 + 69 * 2, y: 9 + 69 * 3, pressed: false, hovered: false },
+        VirtualKey { key: IcKey::NumD,  x: 7 + 69 * 3, y: 9 + 69 * 3, pressed: false, hovered: false },
+        VirtualKey { key: IcKey::Num1, x: 7 + 69 * 0, y: 9 + 69 * 4, pressed: false, hovered: false },
+        VirtualKey { key: IcKey::Num2,  x: 7 + 69 * 1, y: 9 + 69 * 4, pressed: false, hovered: false },
+        VirtualKey { key: IcKey::Num3,  x: 7 + 69 * 2, y: 9 + 69 * 4, pressed: false, hovered: false },
+        VirtualKey { key: IcKey::NumE,  x: 7 + 69 * 3, y: 9 + 69 * 4, pressed: false, hovered: false },
+        VirtualKey { key: IcKey::Shift, x: 7 + 69 * 0, y: 9 + 69 * 5, pressed: false, hovered: false },
+        VirtualKey { key: IcKey::Num0, x: 7 + 69 * 1, y: 9 + 69 * 5, pressed: false, hovered: false },
+        VirtualKey { key: IcKey::Super, x: 7 + 69 * 2, y: 9 + 69 * 5, pressed: false, hovered: false },
+        VirtualKey { key: IcKey::NumF,  x: 7 + 69 * 3, y: 9 + 69 * 5, pressed: false, hovered: false },
     ];
     
     println!("Hello, world!");
     let (mut rl_handle, rl_thread) = raylib::init()
-        .size(300, 500).title("Incredicalculator PC").vsync().build();
+        .size(282, 424).title("Incredicalculator PC").vsync().build();
     rl_handle.set_target_fps(30);
     let mut target_tex = match rl_handle.load_render_texture(&rl_thread, RENDER_W, RENDER_H) {
         Ok(tex) => tex,
@@ -190,14 +187,12 @@ fn main() {
                 IcKey::NumF => "F",
                 IcKey::Shift => "^",
                 IcKey::Super => "§",
-                IcKey::Func1 => "F1",
-                IcKey::Func2 => "F2",
                 _ => "?"
             };
             rl_draw_handle.draw_text(&lbl, vk.x as i32 + 16, vk.y as i32 + 16, 20, Color::BLACK);
         }
         let source_rec = Rectangle::new(0.0, 0.0, target_tex.texture.width as f32, -target_tex.texture.height as f32);
-        let dest_rec = Rectangle::new(72.0, 17.0, 160.0, 120.0);
+        let dest_rec = Rectangle::new(23.0, 10.0, 160.0, 120.0);
         let origin = Vector2::new(0.0, 0.0);
         rl_draw_handle.draw_texture_pro(&target_tex, source_rec, dest_rec, origin, 0.0, Color::WHITE);
     }
