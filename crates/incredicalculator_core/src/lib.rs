@@ -281,22 +281,22 @@ impl IcKey {
 
 fn key_to_char(key: IcKey) -> Option<(u8, u8)> {
     match key {
-        IcKey::Num0 => Some((b'0', b')')),
-        IcKey::Num1 => Some((b'1', b'!')),
-        IcKey::Num2 => Some((b'2', b'@')),
-        IcKey::Num3 => Some((b'3', b'#')),
-        IcKey::Num4 => Some((b'4', b'$')),
-        IcKey::Num5 => Some((b'5', b'%')),
-        IcKey::Num6 => Some((b'6', b'^')),
-        IcKey::Num7 => Some((b'7', b'&')),
-        IcKey::Num8 => Some((b'8', b'*')),
-        IcKey::Num9 => Some((b'9', b'(')),
-        IcKey::NumA => Some((b'A', b'A')),
-        IcKey::NumB => Some((b'B', b'B')),
-        IcKey::NumC => Some((b'C', b'C')),
-        IcKey::NumD => Some((b'D', b'D')),
-        IcKey::NumE => Some((b'E', b'E')),
-        IcKey::NumF => Some((b'F', b'F')),
+        IcKey::Num0 => Some((b'0', b'.')),
+        IcKey::Num1 => Some((b'1', b'&')),
+        IcKey::Num2 => Some((b'2', b'|')),
+        IcKey::Num3 => Some((b'3', b'^')),
+        IcKey::Num4 => Some((b'4', b'(')),
+        IcKey::Num5 => Some((b'5', b')')),
+        IcKey::Num6 => Some((b'6', b'%')),
+        IcKey::Num7 => Some((b'7', b'<')),
+        IcKey::Num8 => Some((b'8', b'>')),
+        IcKey::Num9 => Some((b'9', b'c')),
+        IcKey::NumA => Some((b'A', b' ')),
+        IcKey::NumB => Some((b'B', b'/')),
+        IcKey::NumC => Some((b'C', b'*')),
+        IcKey::NumD => Some((b'D', b'-')),
+        IcKey::NumE => Some((b'E', b'+')),
+        IcKey::NumF => Some((b'F', b'=')),
         IcKey::Shift | IcKey::Super | IcKey::_Max => None,
     }
 }
@@ -312,6 +312,7 @@ pub struct IcState {
     pub key_states: [KeyState; IcKey::COUNT],
     pub equation_input: [u8; Self::EQUATION_MAX_SIZE],
     pub equation_cur: usize,
+    pub equation_result: [u8; Self::EQUATION_MAX_SIZE]
 }
 
 #[derive(Clone, Copy)]
@@ -335,7 +336,8 @@ impl IcState {
             pos_x: 0.0,
             key_states: [KeyState::default(); IcKey::COUNT],
             equation_input: [0; Self::EQUATION_MAX_SIZE],
-            equation_cur: 0
+            equation_cur: 0,
+            equation_result: [0; Self::EQUATION_MAX_SIZE],
         }
     }
 
@@ -352,7 +354,10 @@ impl IcState {
             if self.key_states[i].just_pressed {
                 if let Some((chr, shift_chr)) = key_to_char(key) {
                     let to_add = if is_shifted { shift_chr } else { chr };
-                    self.add_char_to_equation(to_add);
+                    match to_add {
+                        b'=' => self.run_equation(),
+                        _ => self.add_char_to_equation(to_add)
+                    };
                 }
             }
         }
@@ -362,6 +367,8 @@ impl IcState {
         draw_text(platform, "hello", 0.5, 0.5, 0.01);
         let equation_disp = core::str::from_utf8(&self.equation_input[..self.equation_cur]).unwrap_or("Invalid UTF-8");
         draw_text(platform, &equation_disp, 0.0, 0.0, 0.01);
+        let equation_result_disp = core::str::from_utf8(&self.equation_result).unwrap_or("Invalid UTF-8");
+        draw_text(platform, &equation_result_disp, 0.0, 0.1, 0.01);
     }
 
     pub fn key_down(&mut self, key: IcKey) {
@@ -391,5 +398,24 @@ impl IcState {
             self.equation_input[self.equation_cur] = 0x00;
         }
     }
-    
+
+    fn run_equation(&mut self) {
+        let equation = core::str::from_utf8(&self.equation_input[..self.equation_cur]).unwrap_or("Invalid UTF-8");
+        match bitwise_expr::evaluate(equation) {
+            Ok(result) => {
+                let mut buf = itoa::Buffer::new();
+                let b_slice = buf.format(result).as_bytes();
+                self.equation_result[0..b_slice.len()].copy_from_slice(b_slice);
+            }
+            Err(msg) => {
+                let msg_bytes = msg.as_bytes();
+                let len_to_copy = core::cmp::min(self.equation_result.len(), msg_bytes.len());
+                let dest_slice = &mut self.equation_result[..len_to_copy];
+                dest_slice.copy_from_slice(&msg_bytes[..len_to_copy]);
+                if len_to_copy < self.equation_result.len() {
+                    self.equation_result[len_to_copy..].fill(0);
+                }
+            }
+        }
+    }
 }

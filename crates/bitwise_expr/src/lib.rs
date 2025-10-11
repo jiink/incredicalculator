@@ -3,7 +3,7 @@
 extern crate alloc;
 
 use alloc::string::String;
-use nom::{branch::alt, bytes::complete::tag, character::complete::digit1, combinator::{map, map_res}, multi::many0, sequence::{delimited, pair, preceded}, IResult};
+use nom::{branch::alt, bytes::complete::tag, character::complete::digit1, combinator::{map, map_res}, multi::many0, sequence::{delimited, pair, preceded}, Err, IResult};
 use core::fmt;
 use core::fmt::Write;
 
@@ -29,7 +29,7 @@ impl fmt::Write for Writer<'_> {
     }
 }
 
-pub fn preprocess<'a>(input: &str, output_buff: &'a mut [u8]) -> Result<&'a str, &'static str> {
+fn preprocess<'a>(input: &str, output_buff: &'a mut [u8]) -> Result<&'a str, &'static str> {
     let mut writer = Writer {
         buffer: output_buff,
         offset: 0
@@ -100,7 +100,15 @@ fn parse_multiplicative(input: &str) -> IResult<&str, i64> {
         if op == "*" {
             result *= val;
         } else {
-            result /= val;
+            if val == 0 {
+                return Err(nom::Err::Error(nom::error::Error::new(
+                    "Division by zero", 
+                    nom::error::ErrorKind::MapRes
+                )));
+
+            } else {
+                result /= val;
+            }
         }
     }
     Ok((input, result))

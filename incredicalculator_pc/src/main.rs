@@ -9,7 +9,9 @@ struct VirtualKey {
     x: u32,
     y: u32,
     pressed: bool,
-    hovered: bool
+    hovered: bool,
+    label: &'static str,
+    sticky: bool
 }
 
 struct Line {
@@ -19,10 +21,10 @@ struct Line {
     y2: f32
 }
 
-// const RENDER_W: u32 = 320;
-// const RENDER_H: u32 = 240;
-const RENDER_W: u32 = 160;
-const RENDER_H: u32 = 120;
+const RENDER_W: u32 = 320;
+const RENDER_H: u32 = 240;
+// const RENDER_W: u32 = 160;
+// const RENDER_H: u32 = 120;
 
 fn world_to_px(x: f32, y: f32) -> (f32, f32) {
     (x * RENDER_W as f32, y * RENDER_W as f32)
@@ -75,29 +77,29 @@ fn main() {
     };
     let mut virtual_keys = [
         
-        VirtualKey { key: IcKey::NumA,  x: 7 + 69 * 3, y: 9 + 69 * 0, pressed: false, hovered: false },
-        VirtualKey { key: IcKey::NumB,  x: 7 + 69 * 3, y: 9 + 69 * 1, pressed: false, hovered: false },
-        VirtualKey { key: IcKey::Num7,  x: 7 + 69 * 0, y: 9 + 69 * 2, pressed: false, hovered: false },
-        VirtualKey { key: IcKey::Num8,  x: 7 + 69 * 1, y: 9 + 69 * 2, pressed: false, hovered: false },
-        VirtualKey { key: IcKey::Num9,  x: 7 + 69 * 2, y: 9 + 69 * 2, pressed: false, hovered: false },
-        VirtualKey { key: IcKey::NumC,  x: 7 + 69 * 3, y: 9 + 69 * 2, pressed: false, hovered: false },
-        VirtualKey { key: IcKey::Num4,  x: 7 + 69 * 0, y: 9 + 69 * 3, pressed: false, hovered: false },
-        VirtualKey { key: IcKey::Num5,  x: 7 + 69 * 1, y: 9 + 69 * 3, pressed: false, hovered: false },
-        VirtualKey { key: IcKey::Num6,  x: 7 + 69 * 2, y: 9 + 69 * 3, pressed: false, hovered: false },
-        VirtualKey { key: IcKey::NumD,  x: 7 + 69 * 3, y: 9 + 69 * 3, pressed: false, hovered: false },
-        VirtualKey { key: IcKey::Num1, x: 7 + 69 * 0, y: 9 + 69 * 4, pressed: false, hovered: false },
-        VirtualKey { key: IcKey::Num2,  x: 7 + 69 * 1, y: 9 + 69 * 4, pressed: false, hovered: false },
-        VirtualKey { key: IcKey::Num3,  x: 7 + 69 * 2, y: 9 + 69 * 4, pressed: false, hovered: false },
-        VirtualKey { key: IcKey::NumE,  x: 7 + 69 * 3, y: 9 + 69 * 4, pressed: false, hovered: false },
-        VirtualKey { key: IcKey::Shift, x: 7 + 69 * 0, y: 9 + 69 * 5, pressed: false, hovered: false },
-        VirtualKey { key: IcKey::Num0, x: 7 + 69 * 1, y: 9 + 69 * 5, pressed: false, hovered: false },
-        VirtualKey { key: IcKey::Super, x: 7 + 69 * 2, y: 9 + 69 * 5, pressed: false, hovered: false },
-        VirtualKey { key: IcKey::NumF,  x: 7 + 69 * 3, y: 9 + 69 * 5, pressed: false, hovered: false },
+        VirtualKey { key: IcKey::NumA,  x: 7 + 69 * 3, y: 9 + 69 * 0, pressed: false, hovered: false, label: "A", sticky: false },
+        VirtualKey { key: IcKey::NumB,  x: 7 + 69 * 3, y: 9 + 69 * 1, pressed: false, hovered: false, label: "B", sticky: false },
+        VirtualKey { key: IcKey::Num7,  x: 7 + 69 * 0, y: 9 + 69 * 2, pressed: false, hovered: false, label: "7", sticky: false },
+        VirtualKey { key: IcKey::Num8,  x: 7 + 69 * 1, y: 9 + 69 * 2, pressed: false, hovered: false, label: "8", sticky: false },
+        VirtualKey { key: IcKey::Num9,  x: 7 + 69 * 2, y: 9 + 69 * 2, pressed: false, hovered: false, label: "9", sticky: false },
+        VirtualKey { key: IcKey::NumC,  x: 7 + 69 * 3, y: 9 + 69 * 2, pressed: false, hovered: false, label: "C", sticky: false },
+        VirtualKey { key: IcKey::Num4,  x: 7 + 69 * 0, y: 9 + 69 * 3, pressed: false, hovered: false, label: "4", sticky: false },
+        VirtualKey { key: IcKey::Num5,  x: 7 + 69 * 1, y: 9 + 69 * 3, pressed: false, hovered: false, label: "5", sticky: false },
+        VirtualKey { key: IcKey::Num6,  x: 7 + 69 * 2, y: 9 + 69 * 3, pressed: false, hovered: false, label: "6", sticky: false },
+        VirtualKey { key: IcKey::NumD,  x: 7 + 69 * 3, y: 9 + 69 * 3, pressed: false, hovered: false, label: "D", sticky: false },
+        VirtualKey { key: IcKey::Num1,  x: 7 + 69 * 0, y: 9 + 69 * 4, pressed: false, hovered: false, label: "1", sticky: false },
+        VirtualKey { key: IcKey::Num2,  x: 7 + 69 * 1, y: 9 + 69 * 4, pressed: false, hovered: false, label: "2", sticky: false },
+        VirtualKey { key: IcKey::Num3,  x: 7 + 69 * 2, y: 9 + 69 * 4, pressed: false, hovered: false, label: "3", sticky: false },
+        VirtualKey { key: IcKey::NumE,  x: 7 + 69 * 3, y: 9 + 69 * 4, pressed: false, hovered: false, label: "E", sticky: false },
+        VirtualKey { key: IcKey::Num0,  x: 7 + 69 * 0, y: 9 + 69 * 5, pressed: false, hovered: false, label: "0", sticky: false },
+        VirtualKey { key: IcKey::Shift, x: 7 + 69 * 1, y: 9 + 69 * 5, pressed: false, hovered: false, label: "^", sticky: true },
+        VirtualKey { key: IcKey::Super, x: 7 + 69 * 2, y: 9 + 69 * 5, pressed: false, hovered: false, label: "§", sticky: true },
+        VirtualKey { key: IcKey::NumF,  x: 7 + 69 * 3, y: 9 + 69 * 5, pressed: false, hovered: false, label: "F", sticky: false },
     ];
     
     println!("Hello, world!");
     let (mut rl_handle, rl_thread) = raylib::init()
-        .size(282, 424).title("Incredicalculator PC").vsync().build();
+        .size(800, 600).title("Incredicalculator PC").vsync().build();
     rl_handle.set_target_fps(30);
     let mut target_tex = match rl_handle.load_render_texture(&rl_thread, RENDER_W, RENDER_H) {
         Ok(tex) => tex,
@@ -139,7 +141,7 @@ fn main() {
 
         icalc.update(&mut ic_rl_platform);
 
-        let fps: u32 = rl_handle.get_fps();
+        //let fps: u32 = rl_handle.get_fps();
 
         {
             let mut d_tex = rl_handle.begin_texture_mode(&rl_thread, &mut target_tex);
@@ -153,12 +155,13 @@ fn main() {
                 d_tex.draw_line_ex(
                     Vector2::new(x1, y1), 
                     Vector2::new(x2, y2),
-                    1.0, Color::WHITE);
+                    2.0, Color::WHITE);
             }
         }
 
         let mut rl_draw_handle = rl_handle.begin_drawing(&rl_thread);
-        rl_draw_handle.clear_background(Color::GRAY);
+        rl_draw_handle.clear_background(Color::BLACK);
+        rl_draw_handle.draw_rectangle(0, 0, 286, 430, Color::GRAY);
         for vk in virtual_keys.iter() {
             let c = if vk.pressed {
                 Color::BLUE
@@ -168,32 +171,13 @@ fn main() {
                 Color::LIGHTGRAY
             };
             rl_draw_handle.draw_rectangle(vk.x as i32, vk.y as i32, virtual_key_size, virtual_key_size, c);
-            let lbl = match vk.key {
-                IcKey::Num0 => "0",
-                IcKey::Num1 => "1",
-                IcKey::Num2 => "2",
-                IcKey::Num3 => "3",
-                IcKey::Num4 => "4",
-                IcKey::Num5 => "5",
-                IcKey::Num6 => "6",
-                IcKey::Num7 => "7",
-                IcKey::Num8 => "8",
-                IcKey::Num9 => "9",
-                IcKey::NumA => "A",
-                IcKey::NumB => "B",
-                IcKey::NumC => "C",
-                IcKey::NumD => "D",
-                IcKey::NumE => "E",
-                IcKey::NumF => "F",
-                IcKey::Shift => "^",
-                IcKey::Super => "§",
-                _ => "?"
-            };
-            rl_draw_handle.draw_text(&lbl, vk.x as i32 + 16, vk.y as i32 + 16, 20, Color::BLACK);
+            rl_draw_handle.draw_text(&vk.label, vk.x as i32 + 16, vk.y as i32 + 16, 20, Color::BLACK);
         }
         let source_rec = Rectangle::new(0.0, 0.0, target_tex.texture.width as f32, -target_tex.texture.height as f32);
         let dest_rec = Rectangle::new(23.0, 10.0, 160.0, 120.0);
         let origin = Vector2::new(0.0, 0.0);
         rl_draw_handle.draw_texture_pro(&target_tex, source_rec, dest_rec, origin, 0.0, Color::WHITE);
+        let dest_rec_zoom = Rectangle::new(300.0, 10.0, RENDER_W as f32, RENDER_H as f32);
+        rl_draw_handle.draw_texture_pro(&target_tex, source_rec, dest_rec_zoom, origin, 0.0, Color::WHITE);
     }
 }
