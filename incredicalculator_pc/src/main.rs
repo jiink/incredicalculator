@@ -25,12 +25,6 @@ struct Line {
 
 const RENDER_W: u32 = 320;
 const RENDER_H: u32 = 240;
-// const RENDER_W: u32 = 160;
-// const RENDER_H: u32 = 120;
-
-fn world_to_px(x: f32, y: f32) -> (f32, f32) {
-    (x * RENDER_W as f32, y * RENDER_W as f32)
-}
 
 pub struct IcRaylibPlatform {
     line_list: Vec<Line>
@@ -168,11 +162,9 @@ fn main() {
             //d_tex.draw_text(format!("What! {fps} FPS").as_str(),
                 //12, 12, 24, Color::WHITE);
             for l in ic_rl_platform.line_list.iter() {
-                let (x1, y1) = world_to_px(l.x1, l.y1);
-                let (x2, y2) = world_to_px(l.x2, l.y2);
                 d_tex.draw_line_ex(
-                    Vector2::new(x1, y1), 
-                    Vector2::new(x2, y2),
+                    Vector2::new(l.x1, l.y1), 
+                    Vector2::new(l.x2, l.y2),
                     2.0, Color::WHITE);
             }
         }
