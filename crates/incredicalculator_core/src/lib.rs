@@ -301,6 +301,7 @@ impl IcState {
             Ok(result) => {
                 let mut buf = itoa::Buffer::new();
                 let b_slice = buf.format(result).as_bytes();
+                answer_len = b_slice.len();
                 answer[0..b_slice.len()].copy_from_slice(b_slice);
             }
             Err(msg) => {
@@ -329,6 +330,7 @@ impl IcState {
         if self.eq_history_len + 1 <= Self::EQ_HISTORY_MAX {
             self.eq_history_len += 1;
         }
+        self.clear_eq();
     }
 
     fn clear_eq(&mut self) {
