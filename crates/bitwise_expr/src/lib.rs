@@ -175,9 +175,9 @@ fn parse_shift(input: &str) -> IResult<&str, i64> {
     )(input)?;
     for (op, val) in ops_and_vals {
         if op == "<<" {
-            result <<= val;
+            result = result.wrapping_shl(val as u32);
         } else {
-            result >>= val;
+            result = result.wrapping_shr(val as u32);
         }
     }
     Ok((input, result))

@@ -148,6 +148,8 @@ pub struct IcState {
     eq_history_write_idx: usize,
     current_eq: [u8; EqEntry::EQUATION_MAX_SIZE],
     current_eq_len: usize,
+    current_result: [u8; EqEntry::EQUATION_MAX_SIZE],
+    current_result_len: usize,
     cursor_pos: usize,
     history_selection_idx: Option<usize> // none means youre editing the current equation
 }
@@ -179,6 +181,8 @@ impl IcState {
             eq_history_write_idx: 0,
             current_eq: [0; EqEntry::EQUATION_MAX_SIZE],
             current_eq_len: 0,
+            current_result: [0; EqEntry::EQUATION_MAX_SIZE],
+            current_result_len: 0,
             cursor_pos: 0,
             history_selection_idx: None
         }
@@ -194,6 +198,7 @@ impl IcState {
         
         let is_shifted = self.key_states[IcKey::Shift as usize].is_down;
         let is_super = self.key_states[IcKey::Super as usize].is_down;
+        let mut dirty: bool = false;
         for i in 0..(IcKey::COUNT) {
             if self.key_states[i].just_pressed {
                 let key = unsafe { core::mem::transmute::<usize, IcKey>(i) };
@@ -212,10 +217,18 @@ impl IcState {
                     Some(KeyAction::End) => self.move_cursor(true),
                     None => ()
                 }
+                dirty = true;
             }
         }
         if self.key_states[IcKey::Super as usize].just_pressed {
             self.backspace();
+            dirty = true;
+        }
+        if dirty {
+            (self.current_result, self.current_result_len) = Self::get_equation_answer(
+                core::str::from_utf8(&self.current_eq[..self.current_eq_len])
+                .unwrap_or("Invalid UTF-8")
+            );
         }
         let mut draw_row: u32 = 0;
         let row_height: u32 = 40;
@@ -236,7 +249,18 @@ impl IcState {
             draw_row += 1;
         }
         let equation_disp = core::str::from_utf8(&self.current_eq[..self.current_eq_len]).unwrap_or("Invalid UTF-8");
-        draw_text(platform, &equation_disp, margin as f32, 170.0, 4.0);
+        let eq_scale = match self.current_eq_len {
+            x if x > 12 => 2.0,
+            _ => 4.0
+        };
+        draw_text(platform, &equation_disp, margin as f32, 170.0, eq_scale);
+        let result_disp = core::str::from_utf8(&self.current_result[..self.current_result_len]).unwrap_or("Invalid UTF-8");
+        let ans_scale = match self.current_result_len {
+            x if x > 12 => 2.0,
+            _ => 4.0
+        };
+        draw_text(platform, "=", margin as f32, 200.0, ans_scale);
+        draw_text(platform, &result_disp, margin as f32 + 24.0, 200.0, ans_scale);
     }
 
     pub fn key_down(&mut self, key: IcKey) {
@@ -293,8 +317,10 @@ impl IcState {
         self.backspace();
     }
 
-    fn run_equation(&mut self) {
-        let equation = core::str::from_utf8(&self.current_eq[..self.current_eq_len]).unwrap_or("Invalid UTF-8");
+    fn get_equation_answer(equation: &str) -> ([u8; EqEntry::EQUATION_MAX_SIZE], usize) {
+        if equation.len() == 0 {
+            return ([0; EqEntry::EQUATION_MAX_SIZE], 0);
+        }
         let mut answer = [b'\0'; EqEntry::EQUATION_MAX_SIZE];
         let mut answer_len: usize = 0;
         match bitwise_expr::evaluate(equation) {
@@ -315,6 +341,13 @@ impl IcState {
                 }
             }
         }
+        (answer, answer_len)
+    }
+
+    fn run_equation(&mut self) {
+        let (answer, answer_len) = Self::get_equation_answer(
+            core::str::from_utf8(&self.current_eq[..self.current_eq_len]).unwrap_or("Invalid UTF-8")
+        );
         let new_hist_entry = EqEntry {
             equation: self.current_eq,
             equation_len: self.current_eq_len,
