@@ -218,25 +218,25 @@ impl IcState {
             self.backspace();
         }
         let mut draw_row: u32 = 0;
-        let row_height: u32 = 30;
+        let row_height: u32 = 40;
         let margin: u32 = 2;
-        let font_size: f32 = 5.0;
+        let font_size: f32 = 2.0;
         for i in 0..(self.eq_history_len as u32) {
             let most_recent_phys_idx = (self.eq_history_write_idx + Self::EQ_HISTORY_MAX - 1) % Self::EQ_HISTORY_MAX;
             let phys_idx = (most_recent_phys_idx + Self::EQ_HISTORY_MAX - i as usize) % Self::EQ_HISTORY_MAX;
             let entry = &self.eq_history[phys_idx];
             let eq_disp = core::str::from_utf8(&entry.equation[..entry.equation_len]).unwrap_or("Invalid UTF-8");
-            let y = margin + draw_row * row_height;
-            draw_row += 1;
+            let y = 120 + margin - draw_row * row_height;
             draw_text(platform, eq_disp, margin as f32, y as f32, font_size);
             let ans_disp = core::str::from_utf8(&entry.result[..entry.result_len]).unwrap_or("Invalid UTF-8");
-            let y2 = margin + draw_row * row_height;
-            draw_text(platform, ans_disp, margin as f32, y2 as f32, font_size);
-            platform.draw_line(margin as f32, y2 as f32 + 2.0, (Self::WIDTH - margin) as f32, y2 as f32 + 2.0);
+            let y2 = 140 + margin - draw_row * row_height;
+            draw_text(platform, "=", margin as f32, y2 as f32, font_size);
+            draw_text(platform, ans_disp, margin as f32 + 11.0, y2 as f32, font_size);
+            platform.draw_line(margin as f32, y2 as f32 + 16.0, (Self::WIDTH - margin) as f32, y2 as f32 + 16.0);
             draw_row += 1;
         }
         let equation_disp = core::str::from_utf8(&self.current_eq[..self.current_eq_len]).unwrap_or("Invalid UTF-8");
-        draw_text(platform, &equation_disp, margin as f32, (margin + draw_row * row_height) as f32, font_size);
+        draw_text(platform, &equation_disp, margin as f32, 170.0, 4.0);
     }
 
     pub fn key_down(&mut self, key: IcKey) {

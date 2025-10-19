@@ -4,7 +4,7 @@ extern crate alloc;
 
 use alloc::string::String;
 use nom::{branch::alt, bytes::complete::tag, character::complete::digit1, combinator::{map, map_res}, multi::many0, sequence::{delimited, pair, preceded}, Err, IResult};
-use core::fmt;
+use core::{fmt, num};
 use core::fmt::Write;
 
 struct Writer<'a> {
@@ -44,13 +44,29 @@ fn preprocess<'a>(input: &str, output_buff: &'a mut [u8]) -> Result<&'a str, &'s
                     match next_char {
                         'x' => {
                             chars.next();
-                            let num_str: String = chars.by_ref().take_while(|ch| ch.is_ascii_hexdigit()).collect();
+                            let mut num_str = String::new();
+                            while let Some(&ch) = chars.peek() {
+                                if ch.is_ascii_hexdigit() {
+                                    num_str.push(ch);
+                                    chars.next();
+                                } else {
+                                    break;
+                                }
+                            }
                             let val = u64::from_str_radix(&num_str, 16).map_err(|_| "Invalid hex number")?;
                             write!(writer, "{}", val).map_err(|_| "Output buffer too small")?;
                         },
                         'b' => {
                             chars.next();
-                            let num_str: String = chars.by_ref().take_while(|ch| *ch == '0' || *ch == '1').collect();
+                            let mut num_str = String::new();
+                            while let Some(&ch) = chars.peek() {
+                                if ch == '0' || ch == '1' {
+                                    num_str.push(ch);
+                                    chars.next();
+                                } else {
+                                    break;
+                                }
+                            }
                             let val = u64::from_str_radix(&num_str, 2).map_err(|_| "Invalid binary number")?;
                             write!(writer, "{}", val).map_err(|_| "Output buffer too small")?;
                         },
@@ -204,11 +220,23 @@ mod tests {
 
     #[test]
     fn test_preprocess() {
-        let mut buf = [0u8; 128];
-        assert_eq!(preprocess(" 1 + 2   *  3 ", &mut buf), Ok("1+2*3"));
-        assert_eq!(preprocess("0x10 + 0xA", &mut buf), Ok("16+10"));
-        assert_eq!(preprocess("0b101 << 0b11 + 0", &mut buf), Ok("5<<3+0"));
-        assert_eq!(preprocess("0b101 << 0xA", &mut buf), Ok("5<<10"));
+        // Each test gets its own clean buffer.
+        let mut buf1 = [0u8; 128];
+        assert_eq!(preprocess(" 1 + 2   *  3 ", &mut buf1), Ok("1+2*3"));
+
+        let mut buf2 = [0u8; 128];
+        assert_eq!(preprocess("0x10 + 0xA", &mut buf2), Ok("16+10"));
+
+        let mut buf3 = [0u8; 128];
+        assert_eq!(preprocess("0x10+0xA", &mut buf3), Ok("16+10")); // This will now pass
+
+        let mut buf4 = [0u8; 128];
+        assert_eq!(preprocess("0b101 << 0b11 + 0", &mut buf4), Ok("5<<3+0"));
+
+        let mut buf5 = [0u8; 128];
+        assert_eq!(preprocess("0b101 << 0xA", &mut buf5), Ok("5<<10"));
+
+        // Test for small buffer still works correctly
         let mut small_buf = [0u8; 3];
         assert_eq!(preprocess("0b101 << 0xA", &mut small_buf), Err("Output buffer too small"));
     }
@@ -271,5 +299,12 @@ mod tests {
         assert_eq!(evaluate("~1 * 5"), Ok(!1 * 5));
         assert_eq!(evaluate("~10 + 5"), Ok(!10 + 5));
         assert_eq!(evaluate("~(10 + 5)"), Ok(!(10 + 5)));
+    }
+
+    #[test]
+    fn test_trouble() {
+        assert_eq!(evaluate("0x01 + 2"), Ok(0x01+2));
+        assert_eq!(evaluate("0xC+2"), Ok(0xC+2));
+        assert_eq!(evaluate("0xC*2"), Ok(0xC*2));
     }
 }
