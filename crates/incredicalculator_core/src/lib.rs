@@ -298,7 +298,7 @@ impl IcState {
 
     fn move_cursor(&mut self, right: bool) {
         if right {
-            if self.cursor_pos < self.current_eq_len - 1 {
+            if self.cursor_pos < self.current_eq_len {
                 self.cursor_pos += 1;
             }
         } else {
@@ -309,14 +309,13 @@ impl IcState {
     }
 
     fn backspace(&mut self) {
-        if self.current_eq_len > 0 {
-            for i in self.cursor_pos..(self.current_eq_len - 1) {
-                self.current_eq[i] = self.current_eq[i+1];
+        if self.cursor_pos > 0 {
+            for i in self.cursor_pos..self.current_eq_len {
+                self.current_eq[i-1] = self.current_eq[i];
             }
-            if self.cursor_pos > 0 {
-                self.cursor_pos -= 1;
-            }
+            self.cursor_pos -= 1;
             self.current_eq_len -= 1;
+            self.current_eq[self.current_eq_len] = 0;
         }
     }
 
