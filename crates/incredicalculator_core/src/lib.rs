@@ -239,6 +239,9 @@ impl IcState {
             let eq_disp = core::str::from_utf8(&entry.equation[..entry.equation_len]).unwrap_or("Invalid UTF-8");
             let y = 120 + margin - draw_row * row_height;
             draw_text(platform, eq_disp, margin as f32, y as f32, font_size);
+            if Some(phys_idx as usize) == self.history_selection_idx {
+                draw_text(platform, "\x03", (Self::WIDTH - margin - 9) as f32, y as f32, font_size);
+            }
             let ans_disp = core::str::from_utf8(&entry.result[..entry.result_len]).unwrap_or("Invalid UTF-8");
             let y2 = 140 + margin - draw_row * row_height;
             draw_text(platform, "=", margin as f32, y2 as f32, font_size);
@@ -262,7 +265,7 @@ impl IcState {
         };
         draw_text(platform, "=", margin as f32, 200.0, ans_scale);
         draw_text(platform, &result_disp, (margin + 24) as f32, 200.0, ans_scale);
-        draw_text_f(platform, format_args!("Cursor: {}", self.cursor_pos), 0.0, 0.0, 2.0);
+        draw_text_f(platform, format_args!("idx: {:?}", self.history_selection_idx), 0.0, 0.0, 2.0);
     }
 
     pub fn key_down(&mut self, key: IcKey) {
@@ -388,19 +391,19 @@ impl IcState {
         match self.history_selection_idx {
             None => {
                 if up && self.eq_history_len > 0 {
-                    self.history_selection_idx = Some(0);
+                    self.history_selection_idx = Some(self.eq_history_len - 1);
                 }
             },
             Some(i) => {
                 if up {
-                    if (i + 1) < self.eq_history_len {
-                        self.history_selection_idx = Some(i + 1);
-                    }
-                } else {
                     if i <= 0 {
                         self.history_selection_idx = None;
                     } else {
                         self.history_selection_idx = Some(i - 1);
+                    }
+                } else {
+                    if (i + 1) < self.eq_history_len {
+                        self.history_selection_idx = Some(i + 1);
                     }
                 }
             }
@@ -408,6 +411,13 @@ impl IcState {
     }
 
     fn copy_from_history(&mut self) {
-
+        if self.history_selection_idx == None {
+            return;
+        }
+        let idx = self.history_selection_idx.unwrap_or(0);
+        let entry = self.eq_history[idx];
+        self.current_eq = entry.equation;
+        self.current_eq_len = entry.equation_len;
+        self.history_selection_idx = None;
     }
 }
