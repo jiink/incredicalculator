@@ -254,7 +254,7 @@ impl IcState {
         let eq_y: f32 = 170.0;
         draw_text(platform, &equation_disp, margin as f32, eq_y, eq_scale);
         let cursor_x_pos = text_to_pos(&equation_disp, margin as f32, eq_scale, self.cursor_pos);
-        draw_text(platform, "_", cursor_x_pos as f32, eq_y + 3.0, eq_scale);
+        draw_text(platform, "|", cursor_x_pos as f32, eq_y, eq_scale);
         let result_disp = core::str::from_utf8(&self.current_result[..self.current_result_len]).unwrap_or("Invalid UTF-8");
         let ans_scale = match self.current_result_len {
             x if x > 12 => 2.0,
@@ -281,6 +281,12 @@ impl IcState {
 
     fn insert_char_into_equation(&mut self, char_code: u8) {
         if self.cursor_pos < EqEntry::EQUATION_MAX_SIZE {
+            for i in (self.cursor_pos..=(self.current_eq_len)).rev() {
+                if i == EqEntry::EQUATION_MAX_SIZE - 1 {
+                    break;
+                }
+                self.current_eq[i+1] = self.current_eq[i];
+            }
             self.current_eq[self.cursor_pos] = char_code;
             self.cursor_pos += 1;
             self.current_eq_len += 1;
