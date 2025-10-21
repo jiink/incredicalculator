@@ -1,6 +1,6 @@
 #![no_std]
 
-use core::cmp;
+use core::{cmp, fmt};
 
 pub const LIFT: u8 = 0xFF;
 // the f_ means font_
@@ -180,7 +180,6 @@ pub fn get_char_def(code: u8) -> &'static[u8] {
     }
 }
 
-
 pub fn draw_text(platform: &mut impl crate::IcPlatform, text: &str, x: f32, y: f32, scale: f32) {
     if scale <= 0.0 {
         return
@@ -247,4 +246,57 @@ pub fn draw_text(platform: &mut impl crate::IcPlatform, text: &str, x: f32, y: f
         };
         current_x += (char_width as f32 + 1.0) * scale;
     }
+}
+
+pub fn draw_text_f(platform: &mut impl crate::IcPlatform, arg: fmt::Arguments, x: f32, y: f32, scale: f32) {
+    let mut buf = [0u8; 128];
+    draw_text(
+        platform, 
+        format_no_std::show(&mut buf, arg).unwrap(),
+        x,
+        y,
+        scale
+    );
+}
+
+pub fn text_to_pos(text: &str, x: f32, scale: f32, cursor: usize) -> f32 {
+    if scale <= 0.0 || cursor == 0 {
+        return x;
+    }
+    let mut current_x = x;
+    const CHAR_HEIGHT: u8 = 9;
+    let mut counter = 0;
+    for c in text.bytes() {
+        if c == b'\n' {
+            current_x = x;
+            continue;
+        }
+        if c == b'\r' {
+            current_x = x;
+            continue;
+        }
+        let fontchar: &'static [u8] = get_char_def(c);
+        // start calcualting width as we go thru points so we know how
+        // much to advance the x coordinate for the next character
+        // todo
+        let mut max_x: u8 = 0;
+        for pt in fontchar.iter() {
+            let p = *pt;
+            if p != LIFT {
+                let fx: u8 = (p >> 4) & 0x0F;
+                max_x = cmp::max(fx, max_x);
+            }
+        }
+        // override char width for some characters
+        let char_width = match c {
+            b' ' => { 9 }
+            _ => { max_x + 1 }
+        };
+        current_x += (char_width as f32 + 1.0) * scale;
+        counter += 1;
+        if counter >= cursor {
+            return current_x;
+        }
+    }
+    current_x
 }

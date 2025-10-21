@@ -51,46 +51,46 @@ fn main() {
     let mut ic_rl_platform: IcRaylibPlatform = IcRaylibPlatform::new();
     let key_map: HashMap<KeyboardKey, IcKey> = {
         let mut m: HashMap<KeyboardKey, IcKey> = HashMap::new();
-        m.insert(KeyboardKey::KEY_E, IcKey::NumE);
-        m.insert(KeyboardKey::KEY_F, IcKey::NumF);
+        m.insert(KeyboardKey::KEY_E, IcKey::Func6);
+        m.insert(KeyboardKey::KEY_F, IcKey::Func5);
         m.insert(KeyboardKey::KEY_ZERO, IcKey::Num0);
-        m.insert(KeyboardKey::KEY_D, IcKey::NumD);
+        m.insert(KeyboardKey::KEY_D, IcKey::Func4);
         m.insert(KeyboardKey::KEY_ONE, IcKey::Num1);
         m.insert(KeyboardKey::KEY_TWO, IcKey::Num2);
         m.insert(KeyboardKey::KEY_THREE, IcKey::Num3);
-        m.insert(KeyboardKey::KEY_C, IcKey::NumC);
+        m.insert(KeyboardKey::KEY_C, IcKey::Func3);
         m.insert(KeyboardKey::KEY_FOUR, IcKey::Num4);
         m.insert(KeyboardKey::KEY_FIVE, IcKey::Num5);
         m.insert(KeyboardKey::KEY_SIX, IcKey::Num6);
-        m.insert(KeyboardKey::KEY_B, IcKey::NumB);
+        m.insert(KeyboardKey::KEY_B, IcKey::Func2);
         m.insert(KeyboardKey::KEY_SEVEN, IcKey::Num7);
         m.insert(KeyboardKey::KEY_EIGHT, IcKey::Num8);
         m.insert(KeyboardKey::KEY_NINE, IcKey::Num9);
-        m.insert(KeyboardKey::KEY_A, IcKey::NumA);
+        m.insert(KeyboardKey::KEY_A, IcKey::Func1);
         m.insert(KeyboardKey::KEY_LEFT_SHIFT, IcKey::Shift);
         m.insert(KeyboardKey::KEY_Z, IcKey::Super);
         m
     };
     let mut virtual_keys = [
         
-        VirtualKey { key: IcKey::NumA,  x: 7 + 69 * 3, y: 9 + 69 * 0, pressed: false, hovered: false, label: "A", shlabel: "^",   sulabel: "", sticky: false },
-        VirtualKey { key: IcKey::NumB,  x: 7 + 69 * 3, y: 9 + 69 * 1, pressed: false, hovered: false, label: "B", shlabel: "/",   sulabel: "", sticky: false },
-        VirtualKey { key: IcKey::Num7,  x: 7 + 69 * 0, y: 9 + 69 * 2, pressed: false, hovered: false, label: "7", shlabel: "<<",  sulabel: "Hm", sticky: false },
-        VirtualKey { key: IcKey::Num8,  x: 7 + 69 * 1, y: 9 + 69 * 2, pressed: false, hovered: false, label: "8", shlabel: ">>",  sulabel: "^", sticky: false },
-        VirtualKey { key: IcKey::Num9,  x: 7 + 69 * 2, y: 9 + 69 * 2, pressed: false, hovered: false, label: "9", shlabel: "clr", sulabel: "", sticky: false },
-        VirtualKey { key: IcKey::NumC,  x: 7 + 69 * 3, y: 9 + 69 * 2, pressed: false, hovered: false, label: "C", shlabel: "*",   sulabel: "", sticky: false },
-        VirtualKey { key: IcKey::Num4,  x: 7 + 69 * 0, y: 9 + 69 * 3, pressed: false, hovered: false, label: "4", shlabel: "(",   sulabel: "<", sticky: false },
-        VirtualKey { key: IcKey::Num5,  x: 7 + 69 * 1, y: 9 + 69 * 3, pressed: false, hovered: false, label: "5", shlabel: ")",   sulabel: "", sticky: false },
-        VirtualKey { key: IcKey::Num6,  x: 7 + 69 * 2, y: 9 + 69 * 3, pressed: false, hovered: false, label: "6", shlabel: "%",   sulabel: ">", sticky: false },
-        VirtualKey { key: IcKey::NumD,  x: 7 + 69 * 3, y: 9 + 69 * 3, pressed: false, hovered: false, label: "D", shlabel: "-",   sulabel: "", sticky: false },
-        VirtualKey { key: IcKey::Num1,  x: 7 + 69 * 0, y: 9 + 69 * 4, pressed: false, hovered: false, label: "1", shlabel: "&",   sulabel: "End", sticky: false },
-        VirtualKey { key: IcKey::Num2,  x: 7 + 69 * 1, y: 9 + 69 * 4, pressed: false, hovered: false, label: "2", shlabel: "|",   sulabel: "v", sticky: false },
-        VirtualKey { key: IcKey::Num3,  x: 7 + 69 * 2, y: 9 + 69 * 4, pressed: false, hovered: false, label: "3", shlabel: "x",   sulabel: "", sticky: false },
-        VirtualKey { key: IcKey::NumE,  x: 7 + 69 * 3, y: 9 + 69 * 4, pressed: false, hovered: false, label: "E", shlabel: "+",   sulabel: "", sticky: false },
-        VirtualKey { key: IcKey::Num0,  x: 7 + 69 * 0, y: 9 + 69 * 5, pressed: false, hovered: false, label: "0", shlabel: ".",   sulabel: "", sticky: false },
-        VirtualKey { key: IcKey::Shift, x: 7 + 69 * 1, y: 9 + 69 * 5, pressed: false, hovered: false, label: "Shft", shlabel: "",    sulabel: "", sticky: true },
-        VirtualKey { key: IcKey::Super, x: 7 + 69 * 2, y: 9 + 69 * 5, pressed: false, hovered: false, label: "§", shlabel: "",    sulabel: "", sticky: true },
-        VirtualKey { key: IcKey::NumF,  x: 7 + 69 * 3, y: 9 + 69 * 5, pressed: false, hovered: false, label: "F", shlabel: "=",   sulabel: "", sticky: false },
+        VirtualKey { key: IcKey::Func1,  x: 7 + 69 * 3, y: 9 + 69 * 0, pressed: false, hovered: false, label: "^", shlabel: ".",   sulabel: "", sticky: false },
+        VirtualKey { key: IcKey::Func2,  x: 7 + 69 * 3, y: 9 + 69 * 1, pressed: false, hovered: false, label: "/", shlabel: "&",   sulabel: "", sticky: false },
+        VirtualKey { key: IcKey::Num7,   x: 7 + 69 * 0, y: 9 + 69 * 2, pressed: false, hovered: false, label: "7", shlabel: "<<",  sulabel: "Hm", sticky: false },
+        VirtualKey { key: IcKey::Num8,   x: 7 + 69 * 1, y: 9 + 69 * 2, pressed: false, hovered: false, label: "8", shlabel: ">>",  sulabel: "^", sticky: false },
+        VirtualKey { key: IcKey::Num9,   x: 7 + 69 * 2, y: 9 + 69 * 2, pressed: false, hovered: false, label: "9", shlabel: "clr", sulabel: "", sticky: false },
+        VirtualKey { key: IcKey::Func3,  x: 7 + 69 * 3, y: 9 + 69 * 2, pressed: false, hovered: false, label: "*", shlabel: "|",   sulabel: "", sticky: false },
+        VirtualKey { key: IcKey::Num4,   x: 7 + 69 * 0, y: 9 + 69 * 3, pressed: false, hovered: false, label: "4", shlabel: "E",   sulabel: "<", sticky: false },
+        VirtualKey { key: IcKey::Num5,   x: 7 + 69 * 1, y: 9 + 69 * 3, pressed: false, hovered: false, label: "5", shlabel: "F",   sulabel: "", sticky: false },
+        VirtualKey { key: IcKey::Num6,   x: 7 + 69 * 2, y: 9 + 69 * 3, pressed: false, hovered: false, label: "6", shlabel: "%",   sulabel: ">", sticky: false },
+        VirtualKey { key: IcKey::Func4,  x: 7 + 69 * 3, y: 9 + 69 * 3, pressed: false, hovered: false, label: "-", shlabel: "Bk",   sulabel: "", sticky: false },
+        VirtualKey { key: IcKey::Num1,   x: 7 + 69 * 0, y: 9 + 69 * 4, pressed: false, hovered: false, label: "1", shlabel: "B",   sulabel: "End", sticky: false },
+        VirtualKey { key: IcKey::Num2,   x: 7 + 69 * 1, y: 9 + 69 * 4, pressed: false, hovered: false, label: "2", shlabel: "C",   sulabel: "v", sticky: false },
+        VirtualKey { key: IcKey::Num3,   x: 7 + 69 * 2, y: 9 + 69 * 4, pressed: false, hovered: false, label: "3", shlabel: "D",   sulabel: "x", sticky: false },
+        VirtualKey { key: IcKey::Func5,  x: 7 + 69 * 3, y: 9 + 69 * 4, pressed: false, hovered: false, label: "+", shlabel: "(",   sulabel: "", sticky: false },
+        VirtualKey { key: IcKey::Num0,   x: 7 + 69 * 0, y: 9 + 69 * 5, pressed: false, hovered: false, label: "0", shlabel: "A",   sulabel: "", sticky: false },
+        VirtualKey { key: IcKey::Shift,  x: 7 + 69 * 1, y: 9 + 69 * 5, pressed: false, hovered: false, label: "Shft", shlabel: "",    sulabel: "", sticky: true },
+        VirtualKey { key: IcKey::Super,  x: 7 + 69 * 2, y: 9 + 69 * 5, pressed: false, hovered: false, label: "§", shlabel: "",    sulabel: "", sticky: true },
+        VirtualKey { key: IcKey::Func6,  x: 7 + 69 * 3, y: 9 + 69 * 5, pressed: false, hovered: false, label: "=", shlabel: ")",   sulabel: "", sticky: false },
     ];
     
     println!("Hello, world!");

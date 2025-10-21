@@ -1,6 +1,8 @@
 #![no_std]
 
-use crate::text::draw_text;
+use core::result;
+
+use crate::text::{draw_text, draw_text_f, text_to_pos};
 mod text;
 
 // IC stands for Incredicalculator
@@ -18,12 +20,12 @@ pub enum IcKey {
     Num7,
     Num8,
     Num9,
-    NumA,
-    NumB,
-    NumC,
-    NumD,
-    NumE,
-    NumF,
+    Func1,
+    Func2,
+    Func3,
+    Func4,
+    Func5,
+    Func6,
     Shift,
     Super,
     _Max
@@ -34,22 +36,22 @@ impl IcKey {
     fn get_action(&self, is_shifted: bool, is_super: bool) -> Option<KeyAction> {
         if is_shifted {
             match self {
-                Self::Num0 => Some(KeyAction::InsertChar(b'.')),
-                Self::Num1 => Some(KeyAction::InsertChar(b'&')),
-                Self::Num2 => Some(KeyAction::InsertChar(b'|')),
-                Self::Num3 => Some(KeyAction::InsertChar(b'x')),
-                Self::Num4 => Some(KeyAction::InsertChar(b'(')),
-                Self::Num5 => Some(KeyAction::InsertChar(b')')),
+                Self::Num0 => Some(KeyAction::InsertChar(b'A')),
+                Self::Num1 => Some(KeyAction::InsertChar(b'B')),
+                Self::Num2 => Some(KeyAction::InsertChar(b'C')),
+                Self::Num3 => Some(KeyAction::InsertChar(b'D')),
+                Self::Num4 => Some(KeyAction::InsertChar(b'E')),
+                Self::Num5 => Some(KeyAction::InsertChar(b'F')),
                 Self::Num6 => Some(KeyAction::InsertChar(b'%')),
                 Self::Num7 => Some(KeyAction::InsertChar(b'<')),
                 Self::Num8 => Some(KeyAction::InsertChar(b'>')),
                 Self::Num9 => Some(KeyAction::Clear),
-                Self::NumA => Some(KeyAction::InsertChar(b'^')),
-                Self::NumB => Some(KeyAction::InsertChar(b'/')),
-                Self::NumC => Some(KeyAction::InsertChar(b'*')),
-                Self::NumD => Some(KeyAction::InsertChar(b'-')),
-                Self::NumE => Some(KeyAction::InsertChar(b'+')),
-                Self::NumF => Some(KeyAction::Enter),
+                Self::Func1 => Some(KeyAction::InsertChar(b'.')),
+                Self::Func2 => Some(KeyAction::InsertChar(b'&')),
+                Self::Func3 => Some(KeyAction::InsertChar(b'|')),
+                Self::Func4 => Some(KeyAction::Backspace),
+                Self::Func5 => Some(KeyAction::InsertChar(b'(')),
+                Self::Func6 => Some(KeyAction::InsertChar(b')')),
                 Self::Shift => None,
                 Self::Super => None,
                 Self::_Max => None
@@ -59,19 +61,19 @@ impl IcKey {
                 Self::Num0 => Some(KeyAction::Backspace),
                 Self::Num1 => Some(KeyAction::End),
                 Self::Num2 => Some(KeyAction::MoveDown),
-                Self::Num3 => None,
+                Self::Num3 => Some(KeyAction::InsertChar(b'x')),
                 Self::Num4 => Some(KeyAction::MoveLeft),
                 Self::Num5 => None,
                 Self::Num6 => Some(KeyAction::MoveRight),
                 Self::Num7 => Some(KeyAction::Home),
                 Self::Num8 => Some(KeyAction::MoveUp),
                 Self::Num9 => None,
-                Self::NumA => Some(KeyAction::Delete),
-                Self::NumB => None,
-                Self::NumC => None,
-                Self::NumD => None,
-                Self::NumE => None,
-                Self::NumF => None,
+                Self::Func1 => Some(KeyAction::Delete),
+                Self::Func2 => None,
+                Self::Func3 => None,
+                Self::Func4 => None,
+                Self::Func5 => None,
+                Self::Func6 => None,
                 Self::Shift => None,
                 Self::Super => None,
                 Self::_Max => None
@@ -88,12 +90,12 @@ impl IcKey {
                 Self::Num7 => Some(KeyAction::InsertChar(b'7')),
                 Self::Num8 => Some(KeyAction::InsertChar(b'8')),
                 Self::Num9 => Some(KeyAction::InsertChar(b'9')),
-                Self::NumA => Some(KeyAction::InsertChar(b'A')),
-                Self::NumB => Some(KeyAction::InsertChar(b'B')),
-                Self::NumC => Some(KeyAction::InsertChar(b'C')),
-                Self::NumD => Some(KeyAction::InsertChar(b'D')),
-                Self::NumE => Some(KeyAction::InsertChar(b'E')),
-                Self::NumF => Some(KeyAction::InsertChar(b'F')),
+                Self::Func1 => Some(KeyAction::InsertChar(b'^')),
+                Self::Func2 => Some(KeyAction::InsertChar(b'/')),
+                Self::Func3 => Some(KeyAction::InsertChar(b'*')),
+                Self::Func4 => Some(KeyAction::InsertChar(b'-')),
+                Self::Func5 => Some(KeyAction::InsertChar(b'+')),
+                Self::Func6 => Some(KeyAction::Enter),
                 Self::Shift => None,
                 Self::Super => None,
                 Self::_Max => None
@@ -220,10 +222,6 @@ impl IcState {
                 dirty = true;
             }
         }
-        if self.key_states[IcKey::Super as usize].just_pressed {
-            self.backspace();
-            dirty = true;
-        }
         if dirty {
             (self.current_result, self.current_result_len) = Self::get_equation_answer(
                 core::str::from_utf8(&self.current_eq[..self.current_eq_len])
@@ -253,14 +251,18 @@ impl IcState {
             x if x > 12 => 2.0,
             _ => 4.0
         };
-        draw_text(platform, &equation_disp, margin as f32, 170.0, eq_scale);
+        let eq_y: f32 = 170.0;
+        draw_text(platform, &equation_disp, margin as f32, eq_y, eq_scale);
+        let cursor_x_pos = text_to_pos(&equation_disp, margin as f32, eq_scale, self.cursor_pos);
+        draw_text(platform, "_", cursor_x_pos as f32, eq_y + 3.0, eq_scale);
         let result_disp = core::str::from_utf8(&self.current_result[..self.current_result_len]).unwrap_or("Invalid UTF-8");
         let ans_scale = match self.current_result_len {
             x if x > 12 => 2.0,
             _ => 4.0
         };
         draw_text(platform, "=", margin as f32, 200.0, ans_scale);
-        draw_text(platform, &result_disp, margin as f32 + 24.0, 200.0, ans_scale);
+        draw_text(platform, &result_disp, (margin + 24) as f32, 200.0, ans_scale);
+        draw_text_f(platform, format_args!("Cursor: {}", self.cursor_pos), 0.0, 0.0, 2.0);
     }
 
     pub fn key_down(&mut self, key: IcKey) {
@@ -301,12 +303,13 @@ impl IcState {
     }
 
     fn backspace(&mut self) {
-        if self.cursor_pos > 0 && self.current_eq_len > 0 {
-            
+        if self.current_eq_len > 0 {
             for i in self.cursor_pos..(self.current_eq_len - 1) {
                 self.current_eq[i] = self.current_eq[i+1];
             }
-            self.cursor_pos -= 1;
+            if self.cursor_pos > 0 {
+                self.cursor_pos -= 1;
+            }
             self.current_eq_len -= 1;
         }
     }
