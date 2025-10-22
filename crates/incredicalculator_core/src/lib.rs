@@ -207,7 +207,7 @@ impl IcState {
                 let action = key.get_action(is_shifted, is_super);
                 match action {
                     Some(KeyAction::InsertChar(c)) => self.insert_char_into_equation(c),
-                    Some(KeyAction::Backspace) =>  self.backspace(),
+                    Some(KeyAction::Backspace) =>  if self.history_selection_idx.is_none() { self.backspace() } else { self.delete_current_history_entry() },
                     Some(KeyAction::Clear) => self.clear_eq(),
                     Some(KeyAction::Delete) => self.backspace_del(),
                     Some(KeyAction::Enter) => if self.history_selection_idx.is_none() { self.run_equation(); } else { self.copy_from_history(); }
@@ -232,7 +232,9 @@ impl IcState {
         let row_height: u32 = 40;
         let margin: u32 = 2;
         let font_size: f32 = 2.0;
-        for i in 0..(self.eq_history_len as u32) {
+        let max_entries_to_disp: u32 = 4;
+        let num_entries_to_disp = core::cmp::min(self.eq_history_len as u32, max_entries_to_disp);
+        for i in 0..num_entries_to_disp {
             let most_recent_phys_idx = (self.eq_history_write_idx + Self::EQ_HISTORY_MAX - 1) % Self::EQ_HISTORY_MAX;
             let phys_idx = (most_recent_phys_idx + Self::EQ_HISTORY_MAX - i as usize) % Self::EQ_HISTORY_MAX;
             let entry = &self.eq_history[phys_idx];
@@ -265,7 +267,6 @@ impl IcState {
         };
         draw_text(platform, "=", margin as f32, 200.0, ans_scale);
         draw_text(platform, &result_disp, (margin + 24) as f32, 200.0, ans_scale);
-        draw_text_f(platform, format_args!("idx: {:?}", self.history_selection_idx), 0.0, 0.0, 2.0);
     }
 
     pub fn key_down(&mut self, key: IcKey) {
@@ -396,14 +397,14 @@ impl IcState {
             },
             Some(i) => {
                 if up {
-                    if i <= 0 {
-                        self.history_selection_idx = None;
-                    } else {
+                    if i > 0 {
                         self.history_selection_idx = Some(i - 1);
                     }
                 } else {
                     if (i + 1) < self.eq_history_len {
                         self.history_selection_idx = Some(i + 1);
+                    } else {
+                        self.history_selection_idx = None;
                     }
                 }
             }
@@ -419,5 +420,41 @@ impl IcState {
         self.current_eq = entry.equation;
         self.current_eq_len = entry.equation_len;
         self.history_selection_idx = None;
+    }
+
+    fn delete_current_history_entry(&mut self) {
+        if self.history_selection_idx.is_none() {
+            return;
+        }
+        if self.eq_history_len == 0 {
+            self.history_selection_idx = None;
+            return;
+        }
+        let prev_history_selection_idx = self.history_selection_idx;
+        let n = Self::EQ_HISTORY_MAX;
+        let mut p = self.history_selection_idx.unwrap();
+        let w = self.eq_history_write_idx;
+        let most_recent = (w + n - 1) % n;
+        while p != most_recent {
+            let next = (p + 1) % n;
+            self.eq_history[p] = self.eq_history[next];
+            p = next;
+        }
+        self.eq_history[most_recent] = EqEntry::default();
+        self.eq_history_write_idx = most_recent;
+        if self.eq_history_len > 0 {
+            self.eq_history_len -= 1;
+        }
+        if self.eq_history_len == 0 {
+            self.history_selection_idx = None;
+        } else {
+            self.history_selection_idx = match prev_history_selection_idx {
+                None => None,
+                Some(i) => match i {
+                    0 => Some(0),
+                    x => Some(x - 1)
+                }
+            };
+        }
     }
 }
