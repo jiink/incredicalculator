@@ -3,4 +3,4 @@ resolver = "2"
 members = [
     "crates/bitwise_expr", "crates/incredicalculator_core",
     "incredicalculator_pc"
-]
+, "incredicalculator_rp"]

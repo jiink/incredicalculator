@@ -1,0 +1,55 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug unit tests in library 'bitwise_expr'",
+            "type": "lldb",
+            "request": "launch",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--package=bitwise_expr"
+                ]
+            }
+        },
+        {
+            "name": "Debug unit tests in library 'incredicalculator_core'",
+            "type": "lldb",
+            "request": "launch",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--package=incredicalculator_core"
+                ]
+            }
+        },
+        {
+            "name": "Debug executable 'incredicalculator_pc'",
+            "type": "lldb",
+            "request": "launch",
+            "cargo": {
+                "args": [
+                    "run",
+                    "--bin=incredicalculator_pc",
+                    "--package=incredicalculator_pc"
+                ]
+            },
+            "args": []
+        },
+        {
+            "name": "Debug unit tests in executable 'incredicalculator_pc'",
+            "type": "lldb",
+            "request": "launch",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--bin=incredicalculator_pc",
+                    "--package=incredicalculator_pc"
+                ]
+            }
+        }
+    ]
+}
