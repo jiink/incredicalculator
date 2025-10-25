@@ -52,7 +52,7 @@
       devShells = forEachSupportedSystem (
         { pkgs }:
         {
-          default = pkgs.mkShellNoCC {
+          default = pkgs.mkShell {
             packages = with pkgs; [
               rustToolchain
               openssl
@@ -61,6 +61,17 @@
               cargo-edit
               cargo-watch
               rust-analyzer
+              cmake
+              xorg.libX11
+              xorg.xorgproto
+              mesa
+              xorg.libxcb
+              xorg.libXrandr
+              xorg.libXinerama
+              xorg.libXcursor
+              xorg.libXi
+              libGL
+              clang
             ];
 
             env = {
