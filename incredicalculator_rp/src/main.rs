@@ -25,12 +25,23 @@ use mipidsi::options::{Orientation, Rotation};
 use mipidsi::Builder;
 use mipidsi::models::ST7789;
 use embassy_time::Timer;
+use embedded_alloc::LlffHeap as Heap;
+use incredicalculator_core::{IcKey, IcPlatform, IcState};
 use {defmt_rtt as _, panic_probe as _};
 
 const DISPLAY_FREQ: u32 = 2_000_000;
 
+#[global_allocator]
+static HEAP: Heap = Heap::empty();
+
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
+    {
+        use core::mem::MaybeUninit;
+        const HEAP_SIZE: usize = 1024;
+        static HEAP_MEM: [MaybeUninit<u8>; HEAP_SIZE] = [MaybeUninit::uninit(); HEAP_SIZE];
+        unsafe { HEAP.init(HEAP_MEM.as_ptr() as usize, HEAP_SIZE) }
+    }
     let p = embassy_rp::init(Default::default());
     info!("Hello World!");
     let mut btn = Input::new(p.PIN_26, embassy_rp::gpio::Pull::Up);
@@ -68,7 +79,7 @@ async fn main(_spawner: Spawner) {
         .invert_colors(mipidsi::options::ColorInversion::Inverted)
         .init(&mut Delay)
         .unwrap();
-    display.clear(Rgb565::BLUE).unwrap();
+    display.clear(Rgb565::GREEN).unwrap();
 
     let raw_image_data = ImageRawLE::new(include_bytes!("../assets/ferris.raw"), 86);
     let ferris = Image::new(&raw_image_data, Point::new(34, 68));
@@ -82,9 +93,9 @@ async fn main(_spawner: Spawner) {
         Point::new(20, 200),
         style,
     )
-    .draw(&mut display)
-    .unwrap();
-
+        .draw(&mut display)
+        .unwrap();
+    let mut icalc: IcState = IcState::new();
     loop {
         btn.wait_for_falling_edge().await;
         let style = PrimitiveStyleBuilder::new().fill_color(Rgb565::WHITE).build();
@@ -93,6 +104,7 @@ async fn main(_spawner: Spawner) {
             .draw(&mut display)
             .unwrap();
         info!("led on!");
+        info!("{}", icalc.current_eq_len);
         led.set_high();
         Timer::after_millis(250).await;
         let style = PrimitiveStyleBuilder::new().fill_color(Rgb565::BLACK).build();

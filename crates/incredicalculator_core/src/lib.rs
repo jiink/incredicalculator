@@ -149,7 +149,7 @@ pub struct IcState {
     eq_history_len: usize,
     eq_history_write_idx: usize,
     current_eq: [u8; EqEntry::EQUATION_MAX_SIZE],
-    current_eq_len: usize,
+    pub current_eq_len: usize,
     current_result: [u8; EqEntry::EQUATION_MAX_SIZE],
     current_result_len: usize,
     cursor_pos: usize,
