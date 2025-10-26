@@ -4,7 +4,7 @@
 runner = "picotool load -u -v -x -t elf"
 
 [build]
-target = "thumbv8m.main-none-eabihf"
+target = "thumbv6m-none-eabi" # if you change this, ALSO change rust-toolchain.toml
 
 [env]
 DEFMT_LOG = "debug"

@@ -2,5 +2,5 @@
 channel = "1.89"
 components = [ "rust-src", "rustfmt", "llvm-tools" ]
 targets = [
-    "thumbv8m.main-none-eabihf"
+    "thumbv6m-none-eabi" # if you change this, ALSO change .cargo/config.toml
 ]
