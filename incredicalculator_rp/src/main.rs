@@ -1,12 +1,15 @@
 #![no_std]
 #![no_main]
 
+extern crate alloc;
+
 use core::cell::RefCell;
 
 use defmt::*;
 use display_interface_spi::SPIInterface;
 use embassy_embedded_hal::shared_bus::blocking::spi::SpiDeviceWithConfig;
 use embassy_executor::Spawner;
+use embassy_futures::select::select_array;
 use embassy_rp::gpio::{Level, Output, Input};
 use embassy_rp::spi;
 use embassy_rp::spi::Spi;
@@ -18,9 +21,10 @@ use embedded_graphics::image::{Image, ImageRawLE};
 use embedded_graphics::mono_font::MonoTextStyle;
 use embedded_graphics::mono_font::ascii::FONT_10X20;
 use embedded_graphics::pixelcolor::Rgb565;
-use embedded_graphics::prelude::*;
-use embedded_graphics::primitives::{PrimitiveStyleBuilder, Rectangle};
+use embedded_graphics::{prelude::*, primitives};
+use embedded_graphics::primitives::{PrimitiveStyleBuilder, Rectangle, PrimitiveStyle};
 use embedded_graphics::text::Text;
+use embedded_graphics_framebuf::FrameBuf;
 use mipidsi::options::{Orientation, Rotation};
 use mipidsi::Builder;
 use mipidsi::models::ST7789;
@@ -34,25 +38,81 @@ const DISPLAY_FREQ: u32 = 2_000_000;
 #[global_allocator]
 static HEAP: Heap = Heap::empty();
 
+#[unsafe(link_section = ".uninit.HEAP_MEM")]
+static mut HEAP_MEM: [u8; 64_000] = [0; 64_000];
+
+#[derive(Copy, Clone)]
+struct Line {
+    x1: f32,
+    y1: f32,
+    x2: f32,
+    y2: f32
+}
+
+impl Line {
+    pub fn new() -> Line {
+        Line { x1: 0.0, y1: 0.0, x2: 0.0, y2: 0.0 }
+    }
+}
+
+pub struct IcRpPlatform {
+    line_list: [Line; 100],
+    line_idx: usize
+}
+
+impl IcRpPlatform {
+    pub fn new() -> IcRpPlatform {
+        IcRpPlatform { line_list: [Line::new(); 100], line_idx: 0 }
+    }
+}
+
+impl IcPlatform for IcRpPlatform {
+    fn draw_line(&mut self, x1: f32, y1: f32, x2: f32, y2:f32) {
+        self.line_list[self.line_idx] = Line { x1: x1, y1: y1, x2: x2, y2: y2 };
+        if self.line_idx + 1 < self.line_list.len() {
+            self.line_idx += 1;
+        }
+    }
+    fn clear_lines(&mut self) {
+        self.line_idx = 0;
+    }
+}
+
+//static mut DATA: [Rgb565; 320 * 240] = [Rgb565::GREEN; 320 * 240];
+
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
-    {
-        use core::mem::MaybeUninit;
-        const HEAP_SIZE: usize = 1024;
-        static HEAP_MEM: [MaybeUninit<u8>; HEAP_SIZE] = [MaybeUninit::uninit(); HEAP_SIZE];
-        unsafe { HEAP.init(HEAP_MEM.as_ptr() as usize, HEAP_SIZE) }
+    unsafe {
+        // Get the raw address of the mutable static without creating a shared reference
+        let base = core::ptr::addr_of_mut!(HEAP_MEM) as usize;
+        // Align up to 8 bytes (RP2040/cortex-m alignment)
+        let aligned = (base + 7) & !7;
+        // Compute how many bytes we lost to alignment adjustment
+        let adjust = aligned - base;
+        // Total size of the static buffer (compile-time)
+        let total = core::mem::size_of::<[u8; 64_000]>();
+        // Remaining usable bytes after alignment
+        let usable = total - adjust;
+        HEAP.init(aligned, usable);
     }
     let p = embassy_rp::init(Default::default());
     info!("Hello World!");
-    let mut btn = Input::new(p.PIN_26, embassy_rp::gpio::Pull::Up);
-    let bootmode_btn = Input::new(p.PIN_12, embassy_rp::gpio::Pull::Up);
+    let mut test_str = alloc::string::String::from("test");
+    info!("alloc works: (len {}) - \"{}\"", test_str.len(), test_str.as_str());
+    let mut btn0 = Input::new(p.PIN_26, embassy_rp::gpio::Pull::Up);
+    let mut btn1 = Input::new(p.PIN_12, embassy_rp::gpio::Pull::Up);
+    let mut btn2 = Input::new(p.PIN_11, embassy_rp::gpio::Pull::Up);
+    let mut btn3 = Input::new(p.PIN_2, embassy_rp::gpio::Pull::Up);
+    let mut btn4 = Input::new(p.PIN_1, embassy_rp::gpio::Pull::Up);
+    let mut btnl = Input::new(p.PIN_27, embassy_rp::gpio::Pull::Up);
+    let mut btnr = Input::new(p.PIN_0, embassy_rp::gpio::Pull::Up);
     let mut led = Output::new(p.PIN_25, Level::Low);
     let rst = p.PIN_4;
     let display_cs = p.PIN_5;
     let dcx = p.PIN_8;
     let mosi = p.PIN_7;
     let clk = p.PIN_6;
-
+    
     // create SPI
     let mut display_config = spi::Config::default();
     display_config.frequency = DISPLAY_FREQ;
@@ -79,7 +139,9 @@ async fn main(_spawner: Spawner) {
         .invert_colors(mipidsi::options::ColorInversion::Inverted)
         .init(&mut Delay)
         .unwrap();
-    display.clear(Rgb565::GREEN).unwrap();
+    display.clear(Rgb565::RED).unwrap();
+
+    //let mut fbuff = unsafe { FrameBuf::new(&mut DATA, 320, 240); };
 
     let raw_image_data = ImageRawLE::new(include_bytes!("../assets/ferris.raw"), 86);
     let ferris = Image::new(&raw_image_data, Point::new(34, 68));
@@ -89,33 +151,62 @@ async fn main(_spawner: Spawner) {
 
     let style = MonoTextStyle::new(&FONT_10X20, Rgb565::GREEN);
     Text::new(
-        "Hello embedded_graphics \n + embassy + RP2040!",
+        "Hello embedded_graphics \n + incredicalculator",
         Point::new(20, 200),
         style,
     )
         .draw(&mut display)
         .unwrap();
     let mut icalc: IcState = IcState::new();
+    //let mut b_states = [false; 7];
+    let mut ic_rp_platform = IcRpPlatform::new();
+    display.clear(Rgb565::CYAN).unwrap();
+
     loop {
-        btn.wait_for_falling_edge().await;
-        let style = PrimitiveStyleBuilder::new().fill_color(Rgb565::WHITE).build();
-        Rectangle::new(Point::new(10, 10), Size::new(16, 16))
-            .into_styled(style)
-            .draw(&mut display)
-            .unwrap();
-        info!("led on!");
-        info!("{}", icalc.current_eq_len);
+        let futures_array = [
+            btn0.wait_for_falling_edge(),
+            btn1.wait_for_falling_edge(),
+            btn2.wait_for_falling_edge(),
+            btn3.wait_for_falling_edge(),
+            btn4.wait_for_falling_edge(),
+            btnl.wait_for_falling_edge(),
+            btnr.wait_for_falling_edge()
+        ];
+        let (_, idx) = select_array(futures_array).await;
+        match idx {
+            0 => icalc.key_down(IcKey::Num0),
+            1 => icalc.key_down(IcKey::Num1),
+            2 => icalc.key_down(IcKey::Num2),
+            3 => icalc.key_down(IcKey::Num3),
+            4 => icalc.key_down(IcKey::Num4),
+            5 => icalc.key_down(IcKey::Func6),
+            6 => icalc.key_down(IcKey::Func5),
+            _ => ()
+        }
         led.set_high();
-        Timer::after_millis(250).await;
-        let style = PrimitiveStyleBuilder::new().fill_color(Rgb565::BLACK).build();
-        Rectangle::new(Point::new(10, 10), Size::new(16, 16))
-            .into_styled(style)
-            .draw(&mut display)
-            .unwrap();
-        info!("led off!");
+        info!("Pre-update");
+        icalc.update(&mut ic_rp_platform);
         led.set_low();
-        Timer::after_millis(250).await;
-        if bootmode_btn.is_low() {
+        info!("Post-update");
+        match idx {
+            0 => icalc.key_up(IcKey::Num0),
+            1 => icalc.key_up(IcKey::Num1),
+            2 => icalc.key_up(IcKey::Num2),
+            3 => icalc.key_up(IcKey::Num3),
+            4 => icalc.key_up(IcKey::Num4),
+            5 => icalc.key_up(IcKey::Func6),
+            6 => icalc.key_up(IcKey::Func2),
+            _ => ()
+        }
+        display.clear(Rgb565::BLUE).unwrap();
+        for i in 0..ic_rp_platform.line_idx {
+            let line = ic_rp_platform.line_list[i];
+            primitives::Line::new(Point::new(line.x1 as i32, line.y1 as i32), Point::new(line.x2 as i32, line.y2 as i32))
+                .into_styled(PrimitiveStyle::with_stroke(Rgb565::WHITE, 3))
+                .draw(&mut display)
+                .unwrap();
+        }
+        if btnr.is_low() {
             rom_data::reset_to_usb_boot(0, 0);
         }
     }

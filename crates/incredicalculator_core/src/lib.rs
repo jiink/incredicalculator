@@ -132,7 +132,7 @@ struct EqEntry {
 }
 
 impl EqEntry {
-    pub const EQUATION_MAX_SIZE: usize = 160;
+    pub const EQUATION_MAX_SIZE: usize = 24;
     pub fn default() -> EqEntry {
         EqEntry {
             equation: [0; Self::EQUATION_MAX_SIZE],
@@ -171,7 +171,7 @@ impl Default for KeyState {
 }
 
 impl IcState {
-    pub const EQ_HISTORY_MAX: usize = 32;
+    pub const EQ_HISTORY_MAX: usize = 4;
     const WIDTH: u32 = 320;
     const HEIGHT: u32 = 240;
 
