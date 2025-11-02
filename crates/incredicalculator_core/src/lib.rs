@@ -4,6 +4,8 @@ use core::result;
 
 use crate::text::{draw_text, draw_text_f, text_to_pos};
 mod text;
+use glam::{IVec2};
+use rgb::*;
 
 // IC stands for Incredicalculator
 
@@ -118,8 +120,14 @@ enum KeyAction {
     End
 }
 
+pub struct Shape {
+    pub start: IVec2,
+    pub end: IVec2,
+    pub color: RGB8
+}
+
 pub trait IcPlatform {
-    fn draw_line(&mut self, x1: f32, y1: f32, x2: f32, y2:f32);
+    fn draw_shape(&mut self, shape: Shape);
     fn clear_lines(&mut self);
 }
 
@@ -240,15 +248,19 @@ impl IcState {
             let entry = &self.eq_history[phys_idx];
             let eq_disp = core::str::from_utf8(&entry.equation[..entry.equation_len]).unwrap_or("Invalid UTF-8");
             let y = 120 + margin - draw_row * row_height;
-            draw_text(platform, eq_disp, margin as f32, y as f32, font_size);
+            draw_text(platform, eq_disp, margin as f32, y as f32, font_size, Rgb { r: 0xff, g: 0xff, b: 0xff });
             if Some(phys_idx as usize) == self.history_selection_idx {
-                draw_text(platform, "\x03", (Self::WIDTH - margin - 9) as f32, y as f32, font_size);
+                draw_text(platform, "\x03", (Self::WIDTH - margin - 9) as f32, y as f32, font_size, Rgb { r: 0xff, g: 0xff, b: 0xff });
             }
             let ans_disp = core::str::from_utf8(&entry.result[..entry.result_len]).unwrap_or("Invalid UTF-8");
             let y2 = 140 + margin - draw_row * row_height;
-            draw_text(platform, "=", margin as f32, y2 as f32, font_size);
-            draw_text(platform, ans_disp, margin as f32 + 11.0, y2 as f32, font_size);
-            platform.draw_line(margin as f32, y2 as f32 + 16.0, (Self::WIDTH - margin) as f32, y2 as f32 + 16.0);
+            draw_text(platform, "=", margin as f32, y2 as f32, font_size, Rgb { r: 0xff, g: 0xff, b: 0xff });
+            draw_text(platform, ans_disp, margin as f32 + 11.0, y2 as f32, font_size, Rgb { r: 0xff, g: 0x00, b: 0xff });
+            platform.draw_shape(Shape {
+                start: IVec2 { x: margin as i32, y: y2 as i32 + 16 },
+                end: IVec2 { x: (Self::WIDTH - margin) as i32, y: y2 as i32 + 16 },
+                color: Rgb { r: 0xFF, g: 0xFF, b: 0xFF }
+            });
             draw_row += 1;
         }
         let equation_disp = core::str::from_utf8(&self.current_eq[..self.current_eq_len]).unwrap_or("Invalid UTF-8");
@@ -257,16 +269,16 @@ impl IcState {
             _ => 4.0
         };
         let eq_y: f32 = 170.0;
-        draw_text(platform, &equation_disp, margin as f32, eq_y, eq_scale);
+        draw_text(platform, &equation_disp, margin as f32, eq_y, eq_scale, Rgb { r: 0xff, g: 0xff, b: 0xff });
         let cursor_x_pos = text_to_pos(&equation_disp, margin as f32, eq_scale, self.cursor_pos);
-        draw_text(platform, "|", cursor_x_pos as f32, eq_y, eq_scale);
+        draw_text(platform, "|", cursor_x_pos as f32, eq_y, eq_scale, Rgb { r: 0xff, g: 0xff, b: 0xff });
         let result_disp = core::str::from_utf8(&self.current_result[..self.current_result_len]).unwrap_or("Invalid UTF-8");
         let ans_scale = match self.current_result_len {
             x if x > 12 => 2.0,
             _ => 4.0
         };
-        draw_text(platform, "=", margin as f32, 200.0, ans_scale);
-        draw_text(platform, &result_disp, (margin + 24) as f32, 200.0, ans_scale);
+        draw_text(platform, "=", margin as f32, 200.0, ans_scale, Rgb { r: 0xff, g: 0xff, b: 0xff });
+        draw_text(platform, &result_disp, (margin + 24) as f32, 200.0, ans_scale, Rgb { r: 0xff, g: 0xff, b: 0xff });
     }
 
     pub fn key_down(&mut self, key: IcKey) {

@@ -1,6 +1,9 @@
 #![no_std]
 
 use core::{cmp, fmt};
+use rgb::*;
+use glam::IVec2;
+use crate::Shape;
 
 pub const LIFT: u8 = 0xFF;
 // the f_ means font_
@@ -180,7 +183,7 @@ pub fn get_char_def(code: u8) -> &'static[u8] {
     }
 }
 
-pub fn draw_text(platform: &mut impl crate::IcPlatform, text: &str, x: f32, y: f32, scale: f32) {
+pub fn draw_text(platform: &mut impl crate::IcPlatform, text: &str, x: f32, y: f32, scale: f32, color: RGB8) {
     if scale <= 0.0 {
         return
     }
@@ -219,13 +222,22 @@ pub fn draw_text(platform: &mut impl crate::IcPlatform, text: &str, x: f32, y: f
                 let sx: f32 = current_x + fx as f32 * scale;
                 let sy: f32 = current_y + fy as f32 * scale;
                 if last_point_valid {
-                    platform.draw_line(last_sx, last_sy, sx, sy);
+                    platform.draw_shape(Shape {
+                        start: IVec2 { x: last_sx as i32, y: last_sy as i32 },
+                        end: IVec2 { x: sx as i32, y: sy as i32 },
+                        color: color
+                    });
                 } else {
                      // This is the first point after a LIFT or the start of the character data.
                     // Check if it's a standalone point (i.e., the next item is LIFT or end of data)
                     if pt_idx + 1 >= fontchar.len() || fontchar[pt_idx + 1] == LIFT {
                         // DOT!
-                        platform.draw_line(sx - (scale * 0.5), sy - (scale * 0.5), sx + (scale * 0.5), sy + (scale * 0.5));
+                        //platform.draw_shape(sx - (scale * 0.5), sy - (scale * 0.5), sx + (scale * 0.5), sy + (scale * 0.5));
+                        platform.draw_shape(Shape {
+                            start: IVec2 { x: (sx - (scale * 0.5)) as i32, y: (sy - (scale * 0.5)) as i32 },
+                            end: IVec2 { x: (sx + (scale * 0.5)) as i32, y: (sy + (scale * 0.5)) as i32 },
+                            color: color
+                        });
                     }
                     // If it's the start of a line segment (next point is not LIFT/end),
                     // we don't draw the point explicitly here. The olivec_line call
@@ -248,14 +260,15 @@ pub fn draw_text(platform: &mut impl crate::IcPlatform, text: &str, x: f32, y: f
     }
 }
 
-pub fn draw_text_f(platform: &mut impl crate::IcPlatform, arg: fmt::Arguments, x: f32, y: f32, scale: f32) {
+pub fn draw_text_f(platform: &mut impl crate::IcPlatform, arg: fmt::Arguments, x: f32, y: f32, scale: f32, color: RGB8) {
     let mut buf = [0u8; 128];
     draw_text(
         platform, 
         format_no_std::show(&mut buf, arg).unwrap(),
         x,
         y,
-        scale
+        scale,
+        color
     );
 }
 

@@ -2,7 +2,7 @@ use std::{collections::HashMap};
 
 use raylib::{ffi::{SetTextureFilter, RL_TEXTURE_FILTER_LINEAR}, prelude::*};
 
-use incredicalculator_core::{IcKey, IcPlatform, IcState};
+use incredicalculator_core::{IcKey, IcPlatform, IcState, Shape};
 
 struct VirtualKey {
     key: IcKey,
@@ -16,33 +16,26 @@ struct VirtualKey {
     sticky: bool
 }
 
-struct Line {
-    x1: f32,
-    y1: f32,
-    x2: f32,
-    y2: f32
-}
-
 const RENDER_W: u32 = 320;
 const RENDER_H: u32 = 240;
 
 pub struct IcRaylibPlatform {
-    line_list: Vec<Line>
+    pub shape_list: Vec<Shape>
 }
 
 impl IcRaylibPlatform {
     pub fn new() -> IcRaylibPlatform {
-        IcRaylibPlatform { line_list: Vec::<Line>::new() }
+        IcRaylibPlatform { shape_list: Vec::<Shape>::new() }
     }
 }
 
 impl IcPlatform for IcRaylibPlatform {
-    fn draw_line(&mut self, x1: f32, y1: f32, x2: f32, y2:f32) {
-        self.line_list.push(Line { x1: x1, y1: y1, x2: x2, y2: y2 });
+    fn draw_shape(&mut self, shape: Shape) {
+        self.shape_list.push(shape);
     }
 
     fn clear_lines(&mut self) {
-        self.line_list.clear();
+        self.shape_list.clear();
     }
 }
 
@@ -158,14 +151,14 @@ fn main() {
 
         {
             let mut d_tex = rl_handle.begin_texture_mode(&rl_thread, &mut target_tex);
-            d_tex.clear_background(Color::GREEN);
+            d_tex.clear_background(Color::BLACK);
             //d_tex.draw_text(format!("What! {fps} FPS").as_str(),
                 //12, 12, 24, Color::WHITE);
-            for l in ic_rl_platform.line_list.iter() {
+            for s in ic_rl_platform.shape_list.iter() {
                 d_tex.draw_line_ex(
-                    Vector2::new(l.x1, l.y1), 
-                    Vector2::new(l.x2, l.y2),
-                    2.0, Color::WHITE);
+                    Vector2::new(s.start.x as f32, s.start.y as f32),
+                    Vector2::new(s.end.x as f32, s.end.y as f32),
+                    2.0, Color { r: s.color.r, g: s.color.g, b: s.color.b, a: 255 } );
             }
         }
 

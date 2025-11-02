@@ -7,3 +7,5 @@ edition = "2024"
 bitwise_expr = { path = "../bitwise_expr" }
 itoa = "1.0"
 format_no_std = "1.2.0"
+glam = { version = "0.30.9", default-features = false, features = ["libm", "scalar-math"] }
+rgb = "0.8.52"
