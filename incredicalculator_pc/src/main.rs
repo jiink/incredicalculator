@@ -150,7 +150,7 @@ fn main() {
         //let fps: u32 = rl_handle.get_fps();
 
         {
-            let mut d_tex = rl_handle.begin_texture_mode(&rl_thread, &mut target_tex);
+            let mut d_tex: RaylibTextureMode<'_, RaylibHandle> = rl_handle.begin_texture_mode(&rl_thread, &mut target_tex);
             d_tex.clear_background(Color::BLACK);
             //d_tex.draw_text(format!("What! {fps} FPS").as_str(),
                 //12, 12, 24, Color::WHITE);
@@ -163,7 +163,7 @@ fn main() {
         }
 
         let mut rl_draw_handle = rl_handle.begin_drawing(&rl_thread);
-        rl_draw_handle.clear_background(Color::BLACK);
+        rl_draw_handle.clear_background(Color::DARKOLIVEGREEN);
         rl_draw_handle.draw_rectangle(0, 0, 286, 430, Color::GRAY);
         for vk in virtual_keys.iter() {
             let c = if vk.pressed {

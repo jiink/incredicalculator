@@ -247,19 +247,21 @@ impl IcState {
             let phys_idx = (most_recent_phys_idx + Self::EQ_HISTORY_MAX - i as usize) % Self::EQ_HISTORY_MAX;
             let entry = &self.eq_history[phys_idx];
             let eq_disp = core::str::from_utf8(&entry.equation[..entry.equation_len]).unwrap_or("Invalid UTF-8");
-            let y = 120 + margin - draw_row * row_height;
-            draw_text(platform, eq_disp, margin as f32, y as f32, font_size, Rgb { r: 0xff, g: 0xff, b: 0xff });
+            let base_y: u32 = 108;
+            let y = base_y + margin - draw_row * row_height;
+            draw_text(platform, eq_disp, margin as f32, y as f32, font_size, Rgb { r: 0x99, g: 0x99, b: 0x99 });
             if Some(phys_idx as usize) == self.history_selection_idx {
-                draw_text(platform, "\x03", (Self::WIDTH - margin - 9) as f32, y as f32, font_size, Rgb { r: 0xff, g: 0xff, b: 0xff });
+                draw_text(platform, "\x03", (Self::WIDTH - margin - 9) as f32, y as f32, font_size, Rgb { r: 0x99, g: 0x99, b: 0x99 });
             }
             let ans_disp = core::str::from_utf8(&entry.result[..entry.result_len]).unwrap_or("Invalid UTF-8");
-            let y2 = 140 + margin - draw_row * row_height;
-            draw_text(platform, "=", margin as f32, y2 as f32, font_size, Rgb { r: 0xff, g: 0xff, b: 0xff });
-            draw_text(platform, ans_disp, margin as f32 + 11.0, y2 as f32, font_size, Rgb { r: 0xff, g: 0x00, b: 0xff });
+            let line_height: u32 = 20;
+            let y2 = base_y + line_height + margin - draw_row * row_height;
+            draw_text(platform, "=", margin as f32, y2 as f32, font_size, Rgb { r: 0x99, g: 0x99, b: 0x99 });
+            draw_text(platform, ans_disp, margin as f32 + 11.0, y2 as f32, font_size, Rgb { r: 0xff, g: 0xff, b: 0x00 });
             platform.draw_shape(Shape {
                 start: IVec2 { x: margin as i32, y: y2 as i32 + 16 },
                 end: IVec2 { x: (Self::WIDTH - margin) as i32, y: y2 as i32 + 16 },
-                color: Rgb { r: 0xFF, g: 0xFF, b: 0xFF }
+                color: Rgb { r: 0x80, g: 0x80, b: 0x80 }
             });
             draw_row += 1;
         }
@@ -268,7 +270,7 @@ impl IcState {
             x if x > 12 => 2.0,
             _ => 4.0
         };
-        let eq_y: f32 = 170.0;
+        let eq_y: f32 = 154.0;
         draw_text(platform, &equation_disp, margin as f32, eq_y, eq_scale, Rgb { r: 0xff, g: 0xff, b: 0xff });
         let cursor_x_pos = text_to_pos(&equation_disp, margin as f32, eq_scale, self.cursor_pos);
         draw_text(platform, "|", cursor_x_pos as f32, eq_y, eq_scale, Rgb { r: 0xff, g: 0xff, b: 0xff });
@@ -277,8 +279,8 @@ impl IcState {
             x if x > 12 => 2.0,
             _ => 4.0
         };
-        draw_text(platform, "=", margin as f32, 200.0, ans_scale, Rgb { r: 0xff, g: 0xff, b: 0xff });
-        draw_text(platform, &result_disp, (margin + 24) as f32, 200.0, ans_scale, Rgb { r: 0xff, g: 0xff, b: 0xff });
+        draw_text(platform, "=", margin as f32, eq_y + 31.0, ans_scale, Rgb { r: 0xff, g: 0xff, b: 0xff });
+        draw_text(platform, &result_disp, (margin + 24) as f32, eq_y + 31.0, ans_scale, Rgb { r: 0xff, g: 0xff, b: 0xff });
     }
 
     pub fn key_down(&mut self, key: IcKey) {
