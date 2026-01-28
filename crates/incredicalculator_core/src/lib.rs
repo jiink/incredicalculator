@@ -1,10 +1,14 @@
 #![no_std]
 
-use core::result;
+extern crate alloc;
+
+use alloc::{format, string::String};
+
+use core::{num::ParseIntError, result};
 
 use crate::text::{draw_text, draw_text_f, text_to_pos};
 mod text;
-use glam::{IVec2};
+use glam::IVec2;
 use rgb::*;
 
 // IC stands for Incredicalculator
@@ -30,7 +34,7 @@ pub enum IcKey {
     Func6,
     Shift,
     Super,
-    _Max
+    _Max,
 }
 
 impl IcKey {
@@ -56,7 +60,7 @@ impl IcKey {
                 Self::Func6 => Some(KeyAction::InsertChar(b')')),
                 Self::Shift => None,
                 Self::Super => None,
-                Self::_Max => None
+                Self::_Max => None,
             }
         } else if is_super {
             match self {
@@ -78,7 +82,7 @@ impl IcKey {
                 Self::Func6 => None,
                 Self::Shift => None,
                 Self::Super => None,
-                Self::_Max => None
+                Self::_Max => None,
             }
         } else {
             match self {
@@ -100,7 +104,7 @@ impl IcKey {
                 Self::Func6 => Some(KeyAction::Enter),
                 Self::Shift => None,
                 Self::Super => None,
-                Self::_Max => None
+                Self::_Max => None,
             }
         }
     }
@@ -117,13 +121,13 @@ enum KeyAction {
     Enter,
     Clear,
     Home,
-    End
+    End,
 }
 
 pub struct Shape {
     pub start: IVec2,
     pub end: IVec2,
-    pub color: RGB8
+    pub color: RGB8,
 }
 
 pub trait IcPlatform {
@@ -136,7 +140,7 @@ struct EqEntry {
     equation: [u8; Self::EQUATION_MAX_SIZE],
     equation_len: usize,
     result: [u8; Self::EQUATION_MAX_SIZE],
-    result_len: usize
+    result_len: usize,
 }
 
 impl EqEntry {
@@ -146,7 +150,7 @@ impl EqEntry {
             equation: [0; Self::EQUATION_MAX_SIZE],
             equation_len: 0,
             result: [0; Self::EQUATION_MAX_SIZE],
-            result_len: 0
+            result_len: 0,
         }
     }
 }
@@ -161,7 +165,7 @@ pub struct IcState {
     current_result: [u8; EqEntry::EQUATION_MAX_SIZE],
     current_result_len: usize,
     cursor_pos: usize,
-    history_selection_idx: Option<usize> // none means youre editing the current equation
+    history_selection_idx: Option<usize>, // none means youre editing the current equation
 }
 
 #[derive(Clone, Copy)]
@@ -169,12 +173,17 @@ pub struct KeyState {
     pub is_down: bool,
     pub was_down: bool,
     pub just_pressed: bool,
-    pub just_released: bool
+    pub just_released: bool,
 }
 
 impl Default for KeyState {
     fn default() -> Self {
-        KeyState { is_down: false, was_down: false, just_pressed: false, just_released: false }
+        KeyState {
+            is_down: false,
+            was_down: false,
+            just_pressed: false,
+            just_released: false,
+        }
     }
 }
 
@@ -194,7 +203,7 @@ impl IcState {
             current_result: [0; EqEntry::EQUATION_MAX_SIZE],
             current_result_len: 0,
             cursor_pos: 0,
-            history_selection_idx: None
+            history_selection_idx: None,
         }
     }
 
@@ -205,7 +214,7 @@ impl IcState {
             s.just_released = !s.is_down && s.was_down;
             s.was_down = s.is_down;
         }
-        
+
         let is_shifted = self.key_states[IcKey::Shift as usize].is_down;
         let is_super = self.key_states[IcKey::Super as usize].is_down;
         let mut dirty: bool = false;
@@ -215,17 +224,29 @@ impl IcState {
                 let action = key.get_action(is_shifted, is_super);
                 match action {
                     Some(KeyAction::InsertChar(c)) => self.insert_char_into_equation(c),
-                    Some(KeyAction::Backspace) =>  if self.history_selection_idx.is_none() { self.backspace() } else { self.delete_current_history_entry() },
+                    Some(KeyAction::Backspace) => {
+                        if self.history_selection_idx.is_none() {
+                            self.backspace()
+                        } else {
+                            self.delete_current_history_entry()
+                        }
+                    }
                     Some(KeyAction::Clear) => self.clear_eq(),
                     Some(KeyAction::Delete) => self.backspace_del(),
-                    Some(KeyAction::Enter) => if self.history_selection_idx.is_none() { self.run_equation(); } else { self.copy_from_history(); }
+                    Some(KeyAction::Enter) => {
+                        if self.history_selection_idx.is_none() {
+                            self.run_equation();
+                        } else {
+                            self.copy_from_history();
+                        }
+                    }
                     Some(KeyAction::MoveUp) => self.history_nav(true),
                     Some(KeyAction::MoveDown) => self.history_nav(false),
                     Some(KeyAction::MoveLeft) => self.move_cursor(false),
                     Some(KeyAction::MoveRight) => self.move_cursor(true),
                     Some(KeyAction::Home) => self.move_cursor(false),
                     Some(KeyAction::End) => self.move_cursor(true),
-                    None => ()
+                    None => (),
                 }
                 dirty = true;
             }
@@ -233,54 +254,177 @@ impl IcState {
         if dirty {
             (self.current_result, self.current_result_len) = Self::get_equation_answer(
                 core::str::from_utf8(&self.current_eq[..self.current_eq_len])
-                .unwrap_or("Invalid UTF-8")
+                    .unwrap_or("Invalid UTF-8"),
             );
         }
         let mut draw_row: u32 = 0;
         let row_height: u32 = 40;
         let margin: u32 = 2;
         let font_size: f32 = 2.0;
-        let max_entries_to_disp: u32 = 4;
+        let max_entries_to_disp: u32 = 3;
         let num_entries_to_disp = core::cmp::min(self.eq_history_len as u32, max_entries_to_disp);
         for i in 0..num_entries_to_disp {
-            let most_recent_phys_idx = (self.eq_history_write_idx + Self::EQ_HISTORY_MAX - 1) % Self::EQ_HISTORY_MAX;
-            let phys_idx = (most_recent_phys_idx + Self::EQ_HISTORY_MAX - i as usize) % Self::EQ_HISTORY_MAX;
+            let most_recent_phys_idx =
+                (self.eq_history_write_idx + Self::EQ_HISTORY_MAX - 1) % Self::EQ_HISTORY_MAX;
+            let phys_idx =
+                (most_recent_phys_idx + Self::EQ_HISTORY_MAX - i as usize) % Self::EQ_HISTORY_MAX;
             let entry = &self.eq_history[phys_idx];
-            let eq_disp = core::str::from_utf8(&entry.equation[..entry.equation_len]).unwrap_or("Invalid UTF-8");
+            let eq_disp = core::str::from_utf8(&entry.equation[..entry.equation_len])
+                .unwrap_or("Invalid UTF-8");
             let base_y: u32 = 108;
             let y = base_y + margin - draw_row * row_height;
-            draw_text(platform, eq_disp, margin as f32, y as f32, font_size, Rgb { r: 0x99, g: 0x99, b: 0x99 });
+            draw_text(
+                platform,
+                eq_disp,
+                margin as f32,
+                y as f32,
+                font_size,
+                Rgb {
+                    r: 0x99,
+                    g: 0x99,
+                    b: 0x99,
+                },
+            );
             if Some(phys_idx as usize) == self.history_selection_idx {
-                draw_text(platform, "\x03", (Self::WIDTH - margin - 9) as f32, y as f32, font_size, Rgb { r: 0x99, g: 0x99, b: 0x99 });
+                draw_text(
+                    platform,
+                    "\x03",
+                    (Self::WIDTH - margin - 9) as f32,
+                    y as f32,
+                    font_size,
+                    Rgb {
+                        r: 0x99,
+                        g: 0x99,
+                        b: 0x99,
+                    },
+                );
             }
-            let ans_disp = core::str::from_utf8(&entry.result[..entry.result_len]).unwrap_or("Invalid UTF-8");
+            let ans_disp =
+                core::str::from_utf8(&entry.result[..entry.result_len]).unwrap_or("Invalid UTF-8");
             let line_height: u32 = 20;
             let y2 = base_y + line_height + margin - draw_row * row_height;
-            draw_text(platform, "=", margin as f32, y2 as f32, font_size, Rgb { r: 0x99, g: 0x99, b: 0x99 });
-            draw_text(platform, ans_disp, margin as f32 + 11.0, y2 as f32, font_size, Rgb { r: 0xff, g: 0xff, b: 0x00 });
+            draw_text(
+                platform,
+                "=",
+                margin as f32,
+                y2 as f32,
+                font_size,
+                Rgb {
+                    r: 0x99,
+                    g: 0x99,
+                    b: 0x99,
+                },
+            );
+            draw_text(
+                platform,
+                ans_disp,
+                margin as f32 + 11.0,
+                y2 as f32,
+                font_size,
+                Rgb {
+                    r: 0xff,
+                    g: 0xff,
+                    b: 0x00,
+                },
+            );
             platform.draw_shape(Shape {
-                start: IVec2 { x: margin as i32, y: y2 as i32 + 16 },
-                end: IVec2 { x: (Self::WIDTH - margin) as i32, y: y2 as i32 + 16 },
-                color: Rgb { r: 0x80, g: 0x80, b: 0x80 }
+                start: IVec2 {
+                    x: margin as i32,
+                    y: y2 as i32 + 16,
+                },
+                end: IVec2 {
+                    x: (Self::WIDTH - margin) as i32,
+                    y: y2 as i32 + 16,
+                },
+                color: Rgb {
+                    r: 0x80,
+                    g: 0x80,
+                    b: 0x80,
+                },
             });
             draw_row += 1;
         }
-        let equation_disp = core::str::from_utf8(&self.current_eq[..self.current_eq_len]).unwrap_or("Invalid UTF-8");
+        let equation_disp = core::str::from_utf8(&self.current_eq[..self.current_eq_len])
+            .unwrap_or("Invalid UTF-8");
         let eq_scale = match self.current_eq_len {
             x if x > 12 => 2.0,
-            _ => 4.0
+            _ => 4.0,
         };
         let eq_y: f32 = 154.0;
-        draw_text(platform, &equation_disp, margin as f32, eq_y, eq_scale, Rgb { r: 0xff, g: 0xff, b: 0xff });
+        draw_text(
+            platform,
+            &equation_disp,
+            margin as f32,
+            eq_y,
+            eq_scale,
+            Rgb {
+                r: 0xff,
+                g: 0xff,
+                b: 0xff,
+            },
+        );
         let cursor_x_pos = text_to_pos(&equation_disp, margin as f32, eq_scale, self.cursor_pos);
-        draw_text(platform, "|", cursor_x_pos as f32, eq_y, eq_scale, Rgb { r: 0xff, g: 0xff, b: 0xff });
-        let result_disp = core::str::from_utf8(&self.current_result[..self.current_result_len]).unwrap_or("Invalid UTF-8");
+        draw_text(
+            platform,
+            "|",
+            cursor_x_pos as f32,
+            eq_y,
+            eq_scale,
+            Rgb {
+                r: 0xff,
+                g: 0xff,
+                b: 0xff,
+            },
+        );
+        let result_disp = core::str::from_utf8(&self.current_result[..self.current_result_len])
+            .unwrap_or("Invalid UTF-8");
         let ans_scale = match self.current_result_len {
             x if x > 12 => 2.0,
-            _ => 4.0
+            _ => 4.0,
         };
-        draw_text(platform, "=", margin as f32, eq_y + 31.0, ans_scale, Rgb { r: 0xff, g: 0xff, b: 0xff });
-        draw_text(platform, &result_disp, (margin + 24) as f32, eq_y + 31.0, ans_scale, Rgb { r: 0xff, g: 0xff, b: 0xff });
+        draw_text(
+            platform,
+            "=",
+            margin as f32,
+            eq_y + 31.0,
+            ans_scale,
+            Rgb {
+                r: 0xff,
+                g: 0xff,
+                b: 0xff,
+            },
+        );
+        draw_text(
+            platform,
+            &result_disp,
+            (margin + 24) as f32,
+            eq_y + 31.0,
+            ans_scale,
+            Rgb {
+                r: 0xff,
+                g: 0xff,
+                b: 0xff,
+            },
+        );
+        // draw hex form of ans
+        let (result_as_hex, hex_err) = match Self::dec_str_to_hex_str(&result_disp, true, true, true) {
+            Ok(s) => (s, false),
+            Err(_) => (String::new(), false)
+        };
+        if !hex_err {
+            draw_text(
+                platform,
+                &result_as_hex,
+                margin as f32,
+                222.0,
+                2.0,
+                Rgb {
+                    r: 0x00,
+                    g: 0xff,
+                    b: 0xff,
+                },
+            );
+        }
     }
 
     pub fn key_down(&mut self, key: IcKey) {
@@ -303,7 +447,7 @@ impl IcState {
                 if i == EqEntry::EQUATION_MAX_SIZE - 1 {
                     break;
                 }
-                self.current_eq[i+1] = self.current_eq[i];
+                self.current_eq[i + 1] = self.current_eq[i];
             }
             self.current_eq[self.cursor_pos] = char_code;
             self.cursor_pos += 1;
@@ -329,7 +473,7 @@ impl IcState {
     fn backspace(&mut self) {
         if self.cursor_pos > 0 {
             for i in self.cursor_pos..self.current_eq_len {
-                self.current_eq[i-1] = self.current_eq[i];
+                self.current_eq[i - 1] = self.current_eq[i];
             }
             self.cursor_pos -= 1;
             self.current_eq_len -= 1;
@@ -372,13 +516,14 @@ impl IcState {
 
     fn run_equation(&mut self) {
         let (answer, answer_len) = Self::get_equation_answer(
-            core::str::from_utf8(&self.current_eq[..self.current_eq_len]).unwrap_or("Invalid UTF-8")
+            core::str::from_utf8(&self.current_eq[..self.current_eq_len])
+                .unwrap_or("Invalid UTF-8"),
         );
         let new_hist_entry = EqEntry {
             equation: self.current_eq,
             equation_len: self.current_eq_len,
             result: answer,
-            result_len: answer_len
+            result_len: answer_len,
         };
         self.eq_history[self.eq_history_write_idx] = new_hist_entry;
         if self.eq_history_write_idx + 1 >= Self::EQ_HISTORY_MAX {
@@ -408,7 +553,7 @@ impl IcState {
                 if up && self.eq_history_len > 0 {
                     self.history_selection_idx = Some(self.eq_history_len - 1);
                 }
-            },
+            }
             Some(i) => {
                 if up {
                     if i > 0 {
@@ -466,9 +611,36 @@ impl IcState {
                 None => None,
                 Some(i) => match i {
                     0 => Some(0),
-                    x => Some(x - 1)
-                }
+                    x => Some(x - 1),
+                },
             };
+        }
+    }
+
+    // If we wanted to stick to heapless no_std, then we would use write!()
+    // instead of format!() and make a struct with a buffer and cursor and 
+    // implement as_str and fmt::Write for that
+    fn dec_str_to_hex_str(
+        input: &str,
+        include_prefix: bool,
+        uppercase: bool,
+        is_signed: bool,
+    ) -> Result<String, ParseIntError> {
+        let raw_bits: u32 = if is_signed {
+            let val = input.parse::<i32>()?;
+            val as u32
+        } else {
+            input.parse::<u32>()?
+        };
+        let hex_str = if uppercase {
+            format!("{:08X}", raw_bits)
+        } else {
+            format!("{:08x}", raw_bits)
+        };
+        if include_prefix {
+            Ok(format!("0x{}", hex_str))
+        } else {
+            Ok(hex_str)
         }
     }
 }

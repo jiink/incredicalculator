@@ -253,10 +253,10 @@ pub fn draw_text(platform: &mut impl crate::IcPlatform, text: &str, x: f32, y: f
         }
         // override char width for some characters
         let char_width = match c {
-            b' ' => { 9 }
-            _ => { max_x + 1 }
+            b' ' => { scale * 2.0 }
+            _ => { max_x as f32 + 1.0 }
         };
-        current_x += (char_width as f32 + 1.0) * scale;
+        current_x += (char_width + 1.0) * scale;
     }
 }
 
