@@ -406,25 +406,113 @@ impl IcState {
                 b: 0xff,
             },
         );
-        // draw hex form of ans
-        let (result_as_hex, hex_err) = match Self::dec_str_to_hex_str(&result_disp, true, true, true) {
-            Ok(s) => (s, false),
-            Err(_) => (String::new(), false)
+        let (result_as_int, result_is_int) = match result_disp.parse::<i32>() {
+            Ok(s) => (s, true),
+            Err(_) => (0, false),
         };
-        if !hex_err {
-            draw_text(
-                platform,
-                &result_as_hex,
-                margin as f32,
-                222.0,
-                2.0,
-                Rgb {
-                    r: 0x00,
+        if result_is_int {
+            // draw hex form of ans
+            let (result_as_hex, hex_err) =
+                match Self::dec_str_to_hex_str(&result_disp, true, true, true) {
+                    Ok(s) => (s, false),
+                    Err(_) => (String::new(), true),
+                };
+            if !hex_err {
+                draw_text(
+                    platform,
+                    &result_as_hex,
+                    margin as f32,
+                    222.0,
+                    2.0,
+                    Rgb {
+                        r: 0x00,
+                        g: 0xff,
+                        b: 0xff,
+                    },
+                );
+            }
+            // draw bin form of ans
+            let bin_widget_bit1_x: u32 = 310;
+            let bin_widget_bit1_y: u32 = 230;
+            let bin_widget_element_w: u32 = 8;
+            let bin_widget_element_margin: u32 = 3;
+            for i in 0..32 {
+                let bit_x: u32 =
+                    bin_widget_bit1_x - ((i % 16) * (bin_widget_element_w + bin_widget_element_margin));
+                let bit_y: u32 = if i < 16 {
+                    bin_widget_bit1_y
+                } else {
+                    bin_widget_bit1_y - bin_widget_element_margin - bin_widget_element_w
+                };
+                let bit_val: bool = (result_as_int >> i) & 1 != 0;
+                let color: Rgb<u8> = Rgb {
+                    r: 0xff,
                     g: 0xff,
-                    b: 0xff,
-                },
-            );
+                    b: 0x00,
+                };
+                if bit_val {
+                    platform.draw_shape(Shape {
+                        start: IVec2 {
+                            x: (bit_x + bin_widget_element_w / 2) as i32,
+                            y: bit_y as i32,
+                        },
+                        end: IVec2 {
+                            x: (bit_x + bin_widget_element_w / 2) as i32,
+                            y: (bit_y + bin_widget_element_w) as i32,
+                        },
+                        color,
+                    });
+                } else {
+                    Self::draw_rect(
+                        platform,
+                        IVec2 {
+                            x: (bit_x + 1) as i32,
+                            y: bit_y as i32,
+                        },
+                        IVec2 {
+                            x: (bit_x + bin_widget_element_w - 1) as i32,
+                            y: (bit_y + bin_widget_element_w) as i32,
+                        },
+                        color,
+                    );
+                }
+            }
         }
+    }
+
+    fn draw_rect(platform: &mut impl IcPlatform, corner1: IVec2, corner2: IVec2, color: Rgb<u8>) {
+        platform.draw_shape(Shape {
+            start: corner1,
+            end: IVec2 {
+                x: corner1.x,
+                y: corner2.y,
+            },
+            color: color,
+        });
+        platform.draw_shape(Shape {
+            start: corner1,
+            end: IVec2 {
+                x: corner2.x,
+                y: corner1.y,
+            },
+            color: color,
+        });
+        platform.draw_shape(Shape {
+            start: IVec2 {
+                x: corner2.x,
+                y: corner1.y,
+            },
+            end: corner2,
+            color: color,
+        });
+        platform.draw_shape(Shape {
+            start: IVec2 {
+                x: corner1.x,
+                y: corner2.y,
+            },
+            end: corner2,
+            color: color,
+        });
     }
 
     pub fn key_down(&mut self, key: IcKey) {
@@ -618,7 +706,7 @@ impl IcState {
     }
 
     // If we wanted to stick to heapless no_std, then we would use write!()
-    // instead of format!() and make a struct with a buffer and cursor and 
+    // instead of format!() and make a struct with a buffer and cursor and
     // implement as_str and fmt::Write for that
     fn dec_str_to_hex_str(
         input: &str,
