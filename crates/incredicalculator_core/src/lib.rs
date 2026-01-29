@@ -124,6 +124,12 @@ enum KeyAction {
     End,
 }
 
+#[derive(Clone, Copy)]
+enum FocusUi {
+    Equation,
+    BinaryWidget
+}
+
 pub struct Shape {
     pub start: IVec2,
     pub end: IVec2,
@@ -166,6 +172,8 @@ pub struct IcState {
     current_result_len: usize,
     cursor_pos: usize,
     history_selection_idx: Option<usize>, // none means youre editing the current equation
+    focused_ui: FocusUi,
+    binary_selection_idx: u8
 }
 
 #[derive(Clone, Copy)]
@@ -187,6 +195,13 @@ impl Default for KeyState {
     }
 }
 
+enum NavDir {
+    Up,
+    Down,
+    Left,
+    Right
+}
+
 impl IcState {
     pub const EQ_HISTORY_MAX: usize = 4;
     const WIDTH: u32 = 320;
@@ -204,6 +219,8 @@ impl IcState {
             current_result_len: 0,
             cursor_pos: 0,
             history_selection_idx: None,
+            focused_ui: FocusUi::Equation,
+            binary_selection_idx: 0
         }
     }
 
@@ -240,10 +257,10 @@ impl IcState {
                             self.copy_from_history();
                         }
                     }
-                    Some(KeyAction::MoveUp) => self.history_nav(true),
-                    Some(KeyAction::MoveDown) => self.history_nav(false),
-                    Some(KeyAction::MoveLeft) => self.move_cursor(false),
-                    Some(KeyAction::MoveRight) => self.move_cursor(true),
+                    Some(KeyAction::MoveUp) => self.ui_nav(NavDir::Up),
+                    Some(KeyAction::MoveDown) => self.ui_nav(NavDir::Down),
+                    Some(KeyAction::MoveLeft) => self.ui_nav(NavDir::Left),
+                    Some(KeyAction::MoveRight) => self.ui_nav(NavDir::Right),
                     Some(KeyAction::Home) => self.move_cursor(false),
                     Some(KeyAction::End) => self.move_cursor(true),
                     None => (),
@@ -257,6 +274,7 @@ impl IcState {
                     .unwrap_or("Invalid UTF-8"),
             );
         }
+        draw_text_f(platform, format_args!("{}, b{}", self.focused_ui as u8, self.binary_selection_idx), 0.0, 0.0, 2.0, Rgb { r: 0xff, g: 0xff, b: 0 });
         let mut draw_row: u32 = 0;
         let row_height: u32 = 40;
         let margin: u32 = 2;
@@ -480,6 +498,53 @@ impl IcState {
         }
     }
 
+    fn ui_nav(&mut self, dir: NavDir) {
+        match self.focused_ui {
+            FocusUi::Equation => {
+                match dir {
+                    NavDir::Up => self.history_nav(true),
+                    NavDir::Down =>  {
+                        if self.history_selection_idx.is_none() {
+                            self.focused_ui = FocusUi::BinaryWidget;
+                        } else {
+                            self.history_nav(false);
+                        }
+                    },
+                    NavDir::Left => self.move_cursor(false),
+                    NavDir::Right => self.move_cursor(true),
+                }
+            },
+            FocusUi::BinaryWidget => {
+                match dir {
+                    NavDir::Up => {
+                        let in_top_row = self.binary_selection_idx > 15;
+                        if in_top_row {
+                            self.focused_ui = FocusUi::Equation;
+                        } else {
+                            self.binary_selection_idx += 16;
+                        }
+                    },
+                    NavDir::Down => {
+                        let in_bottom_row = self.binary_selection_idx <= 15;
+                        if !in_bottom_row {
+                            self.binary_selection_idx -= 16;
+                        }
+                    },
+                    NavDir::Left => {
+                        if self.binary_selection_idx < 31 {
+                            self.binary_selection_idx += 1;
+                        }
+                    },
+                    NavDir::Right => {
+                        if self.binary_selection_idx > 0 {
+                            self.binary_selection_idx -= 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     fn draw_rect(platform: &mut impl IcPlatform, corner1: IVec2, corner2: IVec2, color: Rgb<u8>) {
         platform.draw_shape(Shape {
             start: corner1,
@@ -656,6 +721,17 @@ impl IcState {
                 }
             }
         }
+    }
+
+    fn history_nav_is_at_top(&self) -> bool {
+        return self.history_selection_idx == Some(0);
+    }
+
+    fn history_nav_is_at_bottom(&self) -> bool {
+        if self.eq_history_len == 0 {
+            return false;
+        }
+        return self.history_selection_idx == Some(self.eq_history_len - 1);
     }
 
     fn copy_from_history(&mut self) {
