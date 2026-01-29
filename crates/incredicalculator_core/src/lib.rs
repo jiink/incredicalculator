@@ -240,7 +240,12 @@ impl IcState {
                 let key = unsafe { core::mem::transmute::<usize, IcKey>(i) };
                 let action = key.get_action(is_shifted, is_super);
                 match action {
-                    Some(KeyAction::InsertChar(c)) => self.insert_char_into_equation(c),
+                    Some(KeyAction::InsertChar(c)) => {
+                        match self.focused_ui {
+                            FocusUi::Equation => self.insert_char_into_equation(c),
+                            FocusUi::BinaryWidget => self.binary_widget_set_bit(c != b'0')
+                        }
+                    }
                     Some(KeyAction::Backspace) => {
                         if self.history_selection_idx.is_none() {
                             self.backspace()
@@ -496,6 +501,36 @@ impl IcState {
                 }
             }
         }
+    }
+
+    fn binary_widget_set_bit(&mut self, input_bit: bool) {
+        let result_disp = core::str::from_utf8(&self.current_result[..self.current_result_len])
+            .unwrap_or("Invalid UTF-8");
+        let current_val = match result_disp.parse::<i32>() {
+            Ok(s) => s,
+            Err(_) => 0,
+        };
+        let mut temp_buf = [0u8; 20];
+        let mut idx = 0;
+        let mut new_val = match input_bit {
+            true => current_val | (1 << self.binary_selection_idx),
+            false => current_val & !(1 << self.binary_selection_idx)
+        };
+        if new_val == 0 {
+            self.current_eq[0] = b'0';
+            self.current_eq_len = 1;
+            return;
+        }
+        while new_val > 0 {
+            let digit = (new_val % 10) as u8;
+            temp_buf[idx] = digit + b'0'; // 0-9 to '0'-'9'
+            new_val /= 10;
+            idx += 1;
+        }
+        for i in 0..idx {
+            self.current_eq[i] = temp_buf[idx - 1 - i];
+        }
+        self.current_eq_len = idx;
     }
 
     fn ui_nav(&mut self, dir: NavDir) {
