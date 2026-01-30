@@ -124,10 +124,10 @@ enum KeyAction {
     End,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum FocusUi {
     Equation,
-    BinaryWidget
+    BinaryWidget,
 }
 
 pub struct Shape {
@@ -173,7 +173,7 @@ pub struct IcState {
     cursor_pos: usize,
     history_selection_idx: Option<usize>, // none means youre editing the current equation
     focused_ui: FocusUi,
-    binary_selection_idx: u8
+    binary_selection_idx: u8,
 }
 
 #[derive(Clone, Copy)]
@@ -199,7 +199,7 @@ enum NavDir {
     Up,
     Down,
     Left,
-    Right
+    Right,
 }
 
 impl IcState {
@@ -220,7 +220,7 @@ impl IcState {
             cursor_pos: 0,
             history_selection_idx: None,
             focused_ui: FocusUi::Equation,
-            binary_selection_idx: 0
+            binary_selection_idx: 0,
         }
     }
 
@@ -240,12 +240,10 @@ impl IcState {
                 let key = unsafe { core::mem::transmute::<usize, IcKey>(i) };
                 let action = key.get_action(is_shifted, is_super);
                 match action {
-                    Some(KeyAction::InsertChar(c)) => {
-                        match self.focused_ui {
-                            FocusUi::Equation => self.insert_char_into_equation(c),
-                            FocusUi::BinaryWidget => self.binary_widget_set_bit(c != b'0')
-                        }
-                    }
+                    Some(KeyAction::InsertChar(c)) => match self.focused_ui {
+                        FocusUi::Equation => self.insert_char_into_equation(c),
+                        FocusUi::BinaryWidget => self.binary_widget_set_bit(c != b'0'),
+                    },
                     Some(KeyAction::Backspace) => {
                         if self.history_selection_idx.is_none() {
                             self.backspace()
@@ -279,7 +277,18 @@ impl IcState {
                     .unwrap_or("Invalid UTF-8"),
             );
         }
-        draw_text_f(platform, format_args!("{}, b{}", self.focused_ui as u8, self.binary_selection_idx), 0.0, 0.0, 2.0, Rgb { r: 0xff, g: 0xff, b: 0 });
+        // draw_text_f(
+        //     platform,
+        //     format_args!("{}, b{}", self.focused_ui as u8, self.binary_selection_idx),
+        //     0.0,
+        //     0.0,
+        //     2.0,
+        //     Rgb {
+        //         r: 0xff,
+        //         g: 0xff,
+        //         b: 0,
+        //     },
+        // );
         let mut draw_row: u32 = 0;
         let row_height: u32 = 40;
         let margin: u32 = 2;
@@ -455,23 +464,31 @@ impl IcState {
                 );
             }
             // draw bin form of ans
-            let bin_widget_bit1_x: u32 = 310;
-            let bin_widget_bit1_y: u32 = 230;
-            let bin_widget_element_w: u32 = 8;
-            let bin_widget_element_margin: u32 = 3;
+            let bin_widget_bit1_x: i32 = 310;
+            let bin_widget_bit1_y: i32 = 230;
+            let bin_widget_element_w: i32 = 8;
+            let bin_widget_element_margin: i32 = 3;
             for i in 0..32 {
-                let bit_x: u32 =
-                    bin_widget_bit1_x - ((i % 16) * (bin_widget_element_w + bin_widget_element_margin));
-                let bit_y: u32 = if i < 16 {
+                let bit_x: i32 = bin_widget_bit1_x
+                    - ((i % 16) * (bin_widget_element_w + bin_widget_element_margin));
+                let bit_y: i32 = if i < 16 {
                     bin_widget_bit1_y
                 } else {
                     bin_widget_bit1_y - bin_widget_element_margin - bin_widget_element_w
                 };
                 let bit_val: bool = (result_as_int >> i) & 1 != 0;
-                let color: Rgb<u8> = Rgb {
-                    r: 0xff,
-                    g: 0xff,
-                    b: 0x00,
+                let color: Rgb<u8> = if i == self.binary_selection_idx as i32 && self.focused_ui == FocusUi::BinaryWidget {
+                    Rgb {
+                        r: 0x00,
+                        g: 0xff,
+                        b: 0x55,
+                    }
+                } else {
+                    Rgb {
+                        r: 0xff,
+                        g: 0xff,
+                        b: 0x00,
+                    }
                 };
                 if bit_val {
                     platform.draw_shape(Shape {
@@ -514,7 +531,7 @@ impl IcState {
         let mut idx = 0;
         let mut new_val = match input_bit {
             true => current_val | (1 << self.binary_selection_idx),
-            false => current_val & !(1 << self.binary_selection_idx)
+            false => current_val & !(1 << self.binary_selection_idx),
         };
         if new_val == 0 {
             self.current_eq[0] = b'0';
@@ -535,48 +552,44 @@ impl IcState {
 
     fn ui_nav(&mut self, dir: NavDir) {
         match self.focused_ui {
-            FocusUi::Equation => {
-                match dir {
-                    NavDir::Up => self.history_nav(true),
-                    NavDir::Down =>  {
-                        if self.history_selection_idx.is_none() {
-                            self.focused_ui = FocusUi::BinaryWidget;
-                        } else {
-                            self.history_nav(false);
-                        }
-                    },
-                    NavDir::Left => self.move_cursor(false),
-                    NavDir::Right => self.move_cursor(true),
-                }
-            },
-            FocusUi::BinaryWidget => {
-                match dir {
-                    NavDir::Up => {
-                        let in_top_row = self.binary_selection_idx > 15;
-                        if in_top_row {
-                            self.focused_ui = FocusUi::Equation;
-                        } else {
-                            self.binary_selection_idx += 16;
-                        }
-                    },
-                    NavDir::Down => {
-                        let in_bottom_row = self.binary_selection_idx <= 15;
-                        if !in_bottom_row {
-                            self.binary_selection_idx -= 16;
-                        }
-                    },
-                    NavDir::Left => {
-                        if self.binary_selection_idx < 31 {
-                            self.binary_selection_idx += 1;
-                        }
-                    },
-                    NavDir::Right => {
-                        if self.binary_selection_idx > 0 {
-                            self.binary_selection_idx -= 1;
-                        }
+            FocusUi::Equation => match dir {
+                NavDir::Up => self.history_nav(true),
+                NavDir::Down => {
+                    if self.history_selection_idx.is_none() {
+                        self.focused_ui = FocusUi::BinaryWidget;
+                    } else {
+                        self.history_nav(false);
                     }
                 }
-            }
+                NavDir::Left => self.move_cursor(false),
+                NavDir::Right => self.move_cursor(true),
+            },
+            FocusUi::BinaryWidget => match dir {
+                NavDir::Up => {
+                    let in_top_row = self.binary_selection_idx > 15;
+                    if in_top_row {
+                        self.focused_ui = FocusUi::Equation;
+                    } else {
+                        self.binary_selection_idx += 16;
+                    }
+                }
+                NavDir::Down => {
+                    let in_bottom_row = self.binary_selection_idx <= 15;
+                    if !in_bottom_row {
+                        self.binary_selection_idx -= 16;
+                    }
+                }
+                NavDir::Left => {
+                    if self.binary_selection_idx < 31 {
+                        self.binary_selection_idx += 1;
+                    }
+                }
+                NavDir::Right => {
+                    if self.binary_selection_idx > 0 {
+                        self.binary_selection_idx -= 1;
+                    }
+                }
+            },
         }
     }
 
