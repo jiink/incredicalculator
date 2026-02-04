@@ -3,7 +3,7 @@
 use core::{cmp, fmt};
 use rgb::*;
 use glam::IVec2;
-use crate::Shape;
+use crate::platform::Shape;
 
 pub const LIFT: u8 = 0xFF;
 // the f_ means font_
@@ -183,7 +183,7 @@ pub fn get_char_def(code: u8) -> &'static[u8] {
     }
 }
 
-pub fn draw_text(platform: &mut impl crate::IcPlatform, text: &str, x: f32, y: f32, scale: f32, color: RGB8) {
+pub fn draw_text(platform: &mut dyn crate::platform::IcPlatform, text: &str, x: f32, y: f32, scale: f32, color: RGB8) {
     if scale <= 0.0 {
         return
     }
@@ -260,7 +260,7 @@ pub fn draw_text(platform: &mut impl crate::IcPlatform, text: &str, x: f32, y: f
     }
 }
 
-pub fn draw_text_f(platform: &mut impl crate::IcPlatform, arg: fmt::Arguments, x: f32, y: f32, scale: f32, color: RGB8) {
+pub fn draw_text_f(platform: &mut dyn crate::platform::IcPlatform, arg: fmt::Arguments, x: f32, y: f32, scale: f32, color: RGB8) {
     let mut buf = [0u8; 128];
     draw_text(
         platform, 

@@ -2,7 +2,7 @@ use std::{collections::HashMap};
 
 use raylib::{ffi::{SetTextureFilter, RL_TEXTURE_FILTER_LINEAR}, prelude::*};
 
-use incredicalculator_core::{IcKey, IcPlatform, IcState, Shape};
+use incredicalculator_core::{IcKey, IcPlatform, IcShell, Shape};
 
 struct VirtualKey {
     key: IcKey,
@@ -40,7 +40,7 @@ impl IcPlatform for IcRaylibPlatform {
 }
 
 fn main() {
-    let mut icalc: IcState = IcState::new();
+    let mut icalc: IcShell = IcShell::new();
     let mut ic_rl_platform: IcRaylibPlatform = IcRaylibPlatform::new();
     let key_map: HashMap<KeyboardKey, IcKey> = {
         let mut m: HashMap<KeyboardKey, IcKey> = HashMap::new();
