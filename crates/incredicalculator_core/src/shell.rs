@@ -56,8 +56,8 @@ impl IcShell {
                     let mut input_consumed_by_shell: bool = false;
                     if ctx.is_down(IcKey::Super) {
                         match key {
-                            IcKey::Num1 => { self.switch_app(0); input_consumed_by_shell = true; }
-                            IcKey::Num2 => { self.switch_app(1); input_consumed_by_shell = true; }
+                            IcKey::Func1 => { self.active_app_idx = 0; input_consumed_by_shell = true; }
+                            IcKey::Func2 => { self.active_app_idx = 1; input_consumed_by_shell = true; }
                             _ => {}
                         }
                     } 
@@ -79,12 +79,6 @@ impl IcShell {
                     g: 0xff,
                     b: 0x00,
                 },);
-    }
-
-    fn switch_app(&mut self, idx: usize) {
-        if idx < self.apps.len() {
-            self.active_app_idx = idx;
-        }
     }
 }
 
