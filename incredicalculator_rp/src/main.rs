@@ -10,27 +10,29 @@ use display_interface_spi::SPIInterface;
 use embassy_embedded_hal::shared_bus::blocking::spi::SpiDeviceWithConfig;
 use embassy_executor::Spawner;
 use embassy_futures::select::select_array;
-use embassy_rp::gpio::{Level, Output, Input};
+use embassy_rp::gpio::{Input, Level, Output};
+use embassy_rp::rom_data;
 use embassy_rp::spi;
 use embassy_rp::spi::Spi;
-use embassy_rp::rom_data;
 use embassy_sync::blocking_mutex::Mutex;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_time::Delay;
+use embassy_time::Timer;
+use embedded_alloc::LlffHeap as Heap;
 use embedded_graphics::image::{Image, ImageRawLE};
 use embedded_graphics::mono_font::MonoTextStyle;
 use embedded_graphics::mono_font::ascii::FONT_10X20;
 use embedded_graphics::pixelcolor::Rgb565;
-use embedded_graphics::{prelude::*, primitives};
-use embedded_graphics::primitives::{PrimitiveStyleBuilder, Rectangle, PrimitiveStyle};
+use embedded_graphics::primitives::{PrimitiveStyle, PrimitiveStyleBuilder, Rectangle};
 use embedded_graphics::text::Text;
+use embedded_graphics::{prelude::*, primitives};
 use embedded_graphics_framebuf::FrameBuf;
-use mipidsi::options::{Orientation, Rotation};
+use incredicalculator_core::input::IcKey;
+use incredicalculator_core::platform::{IcPlatform, Shape};
+use incredicalculator_core::shell::IcShell;
 use mipidsi::Builder;
 use mipidsi::models::ST7789;
-use embassy_time::Timer;
-use embedded_alloc::LlffHeap as Heap;
-use incredicalculator_core::{IcKey, IcPlatform, IcState};
+use mipidsi::options::{Orientation, Rotation};
 use {defmt_rtt as _, panic_probe as _};
 
 const DISPLAY_FREQ: u32 = 2_000_000;
@@ -46,29 +48,42 @@ struct Line {
     x1: f32,
     y1: f32,
     x2: f32,
-    y2: f32
+    y2: f32,
 }
 
 impl Line {
     pub fn new() -> Line {
-        Line { x1: 0.0, y1: 0.0, x2: 0.0, y2: 0.0 }
+        Line {
+            x1: 0.0,
+            y1: 0.0,
+            x2: 0.0,
+            y2: 0.0,
+        }
     }
 }
 
 pub struct IcRpPlatform {
     line_list: [Line; 100],
-    line_idx: usize
+    line_idx: usize,
 }
 
 impl IcRpPlatform {
     pub fn new() -> IcRpPlatform {
-        IcRpPlatform { line_list: [Line::new(); 100], line_idx: 0 }
+        IcRpPlatform {
+            line_list: [Line::new(); 100],
+            line_idx: 0,
+        }
     }
 }
 
 impl IcPlatform for IcRpPlatform {
-    fn draw_line(&mut self, x1: f32, y1: f32, x2: f32, y2:f32) {
-        self.line_list[self.line_idx] = Line { x1: x1, y1: y1, x2: x2, y2: y2 };
+    fn draw_shape(&mut self, shape: Shape) {
+        self.line_list[self.line_idx] = Line {
+            x1: shape.start.x as f32,
+            y1: shape.start.y as f32,
+            x2: shape.end.x as f32,
+            y2: shape.end.y as f32,
+        };
         if self.line_idx + 1 < self.line_list.len() {
             self.line_idx += 1;
         }
@@ -98,7 +113,11 @@ async fn main(_spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
     info!("Hello World!");
     let mut test_str = alloc::string::String::from("test");
-    info!("alloc works: (len {}) - \"{}\"", test_str.len(), test_str.as_str());
+    info!(
+        "alloc works: (len {}) - \"{}\"",
+        test_str.len(),
+        test_str.as_str()
+    );
     let mut btn0 = Input::new(p.PIN_26, embassy_rp::gpio::Pull::Up);
     let mut btn1 = Input::new(p.PIN_12, embassy_rp::gpio::Pull::Up);
     let mut btn2 = Input::new(p.PIN_11, embassy_rp::gpio::Pull::Up);
@@ -112,7 +131,7 @@ async fn main(_spawner: Spawner) {
     let dcx = p.PIN_8;
     let mosi = p.PIN_7;
     let clk = p.PIN_6;
-    
+
     // create SPI
     let mut display_config = spi::Config::default();
     display_config.frequency = DISPLAY_FREQ;
@@ -122,7 +141,11 @@ async fn main(_spawner: Spawner) {
     let spi = Spi::new_blocking_txonly(p.SPI0, clk, mosi, display_config.clone());
     let spi_bus: Mutex<NoopRawMutex, _> = Mutex::new(RefCell::new(spi));
 
-    let display_spi = SpiDeviceWithConfig::new(&spi_bus, Output::new(display_cs, Level::High), display_config);
+    let display_spi = SpiDeviceWithConfig::new(
+        &spi_bus,
+        Output::new(display_cs, Level::High),
+        display_config,
+    );
 
     let dcx = Output::new(dcx, Level::Low);
     let rst = Output::new(rst, Level::Low);
@@ -155,9 +178,9 @@ async fn main(_spawner: Spawner) {
         Point::new(20, 200),
         style,
     )
-        .draw(&mut display)
-        .unwrap();
-    let mut icalc: IcState = IcState::new();
+    .draw(&mut display)
+    .unwrap();
+    let mut icalc: IcShell = IcShell::new();
     //let mut b_states = [false; 7];
     let mut ic_rp_platform = IcRpPlatform::new();
     display.clear(Rgb565::CYAN).unwrap();
@@ -170,7 +193,7 @@ async fn main(_spawner: Spawner) {
             btn3.wait_for_falling_edge(),
             btn4.wait_for_falling_edge(),
             btnl.wait_for_falling_edge(),
-            btnr.wait_for_falling_edge()
+            btnr.wait_for_falling_edge(),
         ];
         let (_, idx) = select_array(futures_array).await;
         match idx {
@@ -181,7 +204,7 @@ async fn main(_spawner: Spawner) {
             4 => icalc.key_down(IcKey::Num4),
             5 => icalc.key_down(IcKey::Func6),
             6 => icalc.key_down(IcKey::Func5),
-            _ => ()
+            _ => (),
         }
         led.set_high();
         info!("Pre-update");
@@ -196,15 +219,18 @@ async fn main(_spawner: Spawner) {
             4 => icalc.key_up(IcKey::Num4),
             5 => icalc.key_up(IcKey::Func6),
             6 => icalc.key_up(IcKey::Func2),
-            _ => ()
+            _ => (),
         }
         display.clear(Rgb565::BLUE).unwrap();
         for i in 0..ic_rp_platform.line_idx {
             let line = ic_rp_platform.line_list[i];
-            primitives::Line::new(Point::new(line.x1 as i32, line.y1 as i32), Point::new(line.x2 as i32, line.y2 as i32))
-                .into_styled(PrimitiveStyle::with_stroke(Rgb565::WHITE, 3))
-                .draw(&mut display)
-                .unwrap();
+            primitives::Line::new(
+                Point::new(line.x1 as i32, line.y1 as i32),
+                Point::new(line.x2 as i32, line.y2 as i32),
+            )
+            .into_styled(PrimitiveStyle::with_stroke(Rgb565::WHITE, 3))
+            .draw(&mut display)
+            .unwrap();
         }
         if btnr.is_low() {
             rom_data::reset_to_usb_boot(0, 0);

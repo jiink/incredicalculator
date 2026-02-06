@@ -9,5 +9,8 @@ itoa = "1.0"
 format_no_std = "1.2.0"
 glam = { version = "0.30.9", default-features = false, features = ["libm", "scalar-math"] }
 rgb = "0.8.52"
-num-traits = "0.2"
 num-derive = "0.4.2"
+
+[dependencies.num-traits]
+version = "0.2"
+default-features = false

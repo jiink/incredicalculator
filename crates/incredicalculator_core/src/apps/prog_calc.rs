@@ -1,11 +1,11 @@
 use crate::app::IcApp;
 use crate::app::InputContext;
-use crate::input::{KeyState, IcKey};
+use crate::input::{IcKey, KeyState};
 use crate::platform::IcPlatform;
 use crate::platform::Shape;
+use crate::text::{draw_text, draw_text_f, text_to_pos};
 use alloc::{format, string::String};
 use core::{num::ParseIntError, result};
-use crate::text::{draw_text, draw_text_f, text_to_pos};
 use glam::IVec2;
 use rgb::*;
 
@@ -48,9 +48,6 @@ enum FocusUi {
     Equation,
     BinaryWidget,
 }
-
-
-
 
 enum NavDir {
     Up,
@@ -489,53 +486,43 @@ impl ProgCalc {
 
 impl IcApp for ProgCalc {
     fn on_key(&mut self, key: IcKey, ctx: &InputContext) {
-        let mut dirty: bool = false;
-        for i in 0..(IcKey::COUNT) {
-            if ctx.key_states[i].just_pressed {
-                let key = unsafe { core::mem::transmute::<usize, IcKey>(i) };
-                let action = Self::get_action(key, ctx.is_shifted(), ctx.is_super());
-                match action {
-                    Some(KeyAction::InsertChar(c)) => match self.focused_ui {
-                        FocusUi::Equation => self.insert_char_into_equation(c),
-                        FocusUi::BinaryWidget => self.binary_widget_set_bit(c != b'0'),
-                    },
-                    Some(KeyAction::Backspace) => {
-                        if self.history_selection_idx.is_none() {
-                            self.backspace()
-                        } else {
-                            self.delete_current_history_entry()
-                        }
-                    }
-                    Some(KeyAction::Clear) => self.clear_eq(),
-                    Some(KeyAction::Delete) => self.backspace_del(),
-                    Some(KeyAction::Enter) => {
-                        if self.history_selection_idx.is_none() {
-                            self.run_equation();
-                        } else {
-                            self.copy_from_history();
-                        }
-                    }
-                    Some(KeyAction::MoveUp) => self.ui_nav(NavDir::Up),
-                    Some(KeyAction::MoveDown) => self.ui_nav(NavDir::Down),
-                    Some(KeyAction::MoveLeft) => self.ui_nav(NavDir::Left),
-                    Some(KeyAction::MoveRight) => self.ui_nav(NavDir::Right),
-                    Some(KeyAction::Home) => self.move_cursor(false),
-                    Some(KeyAction::End) => self.move_cursor(true),
-                    None => (),
+        let action = Self::get_action(key, ctx.is_shifted(), ctx.is_super());
+        match action {
+            Some(KeyAction::InsertChar(c)) => match self.focused_ui {
+                FocusUi::Equation => self.insert_char_into_equation(c),
+                FocusUi::BinaryWidget => self.binary_widget_set_bit(c != b'0'),
+            },
+            Some(KeyAction::Backspace) => {
+                if self.history_selection_idx.is_none() {
+                    self.backspace()
+                } else {
+                    self.delete_current_history_entry()
                 }
-                dirty = true;
             }
+            Some(KeyAction::Clear) => self.clear_eq(),
+            Some(KeyAction::Delete) => self.backspace_del(),
+            Some(KeyAction::Enter) => {
+                if self.history_selection_idx.is_none() {
+                    self.run_equation();
+                } else {
+                    self.copy_from_history();
+                }
+            }
+            Some(KeyAction::MoveUp) => self.ui_nav(NavDir::Up),
+            Some(KeyAction::MoveDown) => self.ui_nav(NavDir::Down),
+            Some(KeyAction::MoveLeft) => self.ui_nav(NavDir::Left),
+            Some(KeyAction::MoveRight) => self.ui_nav(NavDir::Right),
+            Some(KeyAction::Home) => self.move_cursor(false),
+            Some(KeyAction::End) => self.move_cursor(true),
+            None => (),
         }
-        if dirty {
-            (self.current_result, self.current_result_len) = Self::get_equation_answer(
-                core::str::from_utf8(&self.current_eq[..self.current_eq_len])
-                    .unwrap_or("Invalid UTF-8"),
-            );
-        }
+        (self.current_result, self.current_result_len) = Self::get_equation_answer(
+            core::str::from_utf8(&self.current_eq[..self.current_eq_len])
+                .unwrap_or("Invalid UTF-8"),
+        );
     }
-    
-    fn update(&mut self, platform: &mut dyn IcPlatform, ctx: &InputContext){
-        
+
+    fn update(&mut self, platform: &mut dyn IcPlatform, ctx: &InputContext) {
         // draw_text_f(
         //     platform,
         //     format_args!("{}, b{}", self.focused_ui as u8, self.binary_selection_idx),
@@ -557,8 +544,7 @@ impl IcApp for ProgCalc {
         for i in 0..num_entries_to_disp {
             let most_recent_phys_idx =
                 (self.eq_history_write_idx + EQ_HISTORY_MAX - 1) % EQ_HISTORY_MAX;
-            let phys_idx =
-                (most_recent_phys_idx + EQ_HISTORY_MAX - i as usize) % EQ_HISTORY_MAX;
+            let phys_idx = (most_recent_phys_idx + EQ_HISTORY_MAX - i as usize) % EQ_HISTORY_MAX;
             let entry = &self.eq_history[phys_idx];
             let eq_disp = core::str::from_utf8(&entry.equation[..entry.equation_len])
                 .unwrap_or("Invalid UTF-8");
@@ -658,13 +644,13 @@ impl IcApp for ProgCalc {
         draw_text(
             platform,
             "|",
-            cursor_x_pos as f32,
+            cursor_x_pos as f32 - 3.0,
             eq_y,
             eq_scale,
             Rgb {
                 r: 0xff,
                 g: 0xff,
-                b: 0xff,
+                b: 0x44,
             },
         );
         let result_disp = core::str::from_utf8(&self.current_result[..self.current_result_len])
@@ -736,7 +722,9 @@ impl IcApp for ProgCalc {
                     bin_widget_bit1_y - bin_widget_element_margin - bin_widget_element_w
                 };
                 let bit_val: bool = (result_as_int >> i) & 1 != 0;
-                let color: Rgb<u8> = if i == self.binary_selection_idx as i32 && self.focused_ui == FocusUi::BinaryWidget {
+                let color: Rgb<u8> = if i == self.binary_selection_idx as i32
+                    && self.focused_ui == FocusUi::BinaryWidget
+                {
                     Rgb {
                         r: 0x00,
                         g: 0xff,
@@ -779,8 +767,6 @@ impl IcApp for ProgCalc {
         }
     }
 
-    
-    
     fn on_enter(&mut self) {
         todo!()
     }
