@@ -390,7 +390,7 @@ impl CalcEngine for ProgrammerEngine {
     }
 }
 
-pub struct ProgCalc {
+pub struct Calculator {
     current_eq: LineBuffer<{ EqEntry::EQUATION_MAX_SIZE }>,
     eq_history: [EqEntry; EQ_HISTORY_MAX],
     eq_history_len: usize,
@@ -403,9 +403,9 @@ pub struct ProgCalc {
     engine: Box<dyn CalcEngine>,
 }
 
-impl ProgCalc {
-    pub fn new() -> ProgCalc {
-        ProgCalc {
+impl Calculator {
+    pub fn new() -> Calculator {
+        Calculator {
             current_eq: LineBuffer::default(),
             eq_history: [EqEntry::default(); EQ_HISTORY_MAX],
             eq_history_len: 0,
@@ -794,7 +794,7 @@ impl ProgCalc {
     }
 }
 
-impl IcApp for ProgCalc {
+impl IcApp for Calculator {
     fn on_key(&mut self, key: IcKey, ctx: &InputContext) {
         let action = Self::get_action(key, ctx.is_shifted(), ctx.is_super());
         if let Some(act) = action {

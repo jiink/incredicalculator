@@ -1,2 +1,2 @@
-mod prog_calc;
-pub use prog_calc::ProgCalc;
+mod calculator;
+pub use calculator::Calculator;

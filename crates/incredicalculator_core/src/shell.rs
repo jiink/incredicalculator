@@ -5,7 +5,7 @@ use crate::app::IcApp;
 use crate::app::InputContext;
 use crate::input::KeyState;
 use crate::input::IcKey;
-use crate::apps::ProgCalc;
+use crate::apps::Calculator;
 use crate::platform::IcPlatform;
 use crate::text::*;
 
@@ -19,7 +19,7 @@ impl IcShell {
     pub fn new() -> Self {
         Self {
             apps: [
-                Box::new(ProgCalc::new())
+                Box::new(Calculator::new())
             ],
             active_app_idx: 0,
             key_states: [KeyState::default(); IcKey::COUNT],
