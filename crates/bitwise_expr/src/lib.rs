@@ -2,7 +2,7 @@
 
 extern crate alloc;
 
-use alloc::string::String;
+use alloc::string::{String, ToString};
 use nom::{branch::alt, bytes::complete::tag, character::complete::digit1, combinator::{map, map_res}, multi::many0, sequence::{delimited, pair, preceded}, Err, IResult};
 use core::{fmt, num};
 use core::fmt::Write;
@@ -209,8 +209,20 @@ pub fn evaluate(input: &str) -> Result<i64, &'static str> {
     let new_input = preprocess(input, &mut buffer)?;
     use nom::Finish;
     match parse_equation(new_input).finish() {
-        Ok((_remaining, value)) => Ok(value),
+        Ok((_remaining, value)) => {
+            Ok(value)
+        },
         Err(_) => Err("Failed to evaluate expression"),
+    }
+}
+
+pub fn evaluate_str(input: &str) -> String {
+    match self::evaluate(input) {
+        Ok(value) => {
+            let mut buf = itoa::Buffer::new();
+            buf.format(value).to_string()
+        },
+        Err(msg) => String::from(msg)
     }
 }
 

@@ -1,9 +1,11 @@
 use crate::app::IcApp;
 use crate::app::InputContext;
 use crate::input::{IcKey, KeyState};
+use crate::platform;
 use crate::platform::IcPlatform;
 use crate::platform::Shape;
 use crate::text::{draw_text, draw_text_f, text_to_pos};
+use alloc::boxed::Box;
 use alloc::{format, string::String};
 use core::{num::ParseIntError, result};
 use glam::IVec2;
@@ -29,6 +31,7 @@ impl EqEntry {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum KeyAction {
     InsertChar(u8),
     MoveLeft,
@@ -46,7 +49,7 @@ enum KeyAction {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum FocusUi {
     Equation,
-    BinaryWidget,
+    Widget,
 }
 
 enum NavDir {
@@ -60,34 +63,359 @@ const EQ_HISTORY_MAX: usize = 4;
 const WIDTH: u32 = 320;
 const HEIGHT: u32 = 240;
 
+struct LineBuffer<const N: usize> {
+    pub data: [u8; N],
+    pub len: usize,
+    pub cursor: usize,
+}
+
+impl<const N: usize> LineBuffer<N> {
+    pub fn default() -> Self {
+        Self {
+            data: [0; N],
+            len: 0,
+            cursor: 0,
+        }
+    }
+
+    pub fn insert_char(&mut self, char_code: u8) {
+        if self.cursor < EqEntry::EQUATION_MAX_SIZE {
+            for i in (self.cursor..=(self.len)).rev() {
+                if i == EqEntry::EQUATION_MAX_SIZE - 1 {
+                    break;
+                }
+                self.data[i + 1] = self.data[i];
+            }
+            self.data[self.cursor] = char_code;
+            self.cursor += 1;
+            self.len += 1;
+            if self.len > EqEntry::EQUATION_MAX_SIZE {
+                self.len = EqEntry::EQUATION_MAX_SIZE;
+            }
+        }
+    }
+
+    pub fn move_cursor(&mut self, right: bool) {
+        if right {
+            if self.cursor < self.len {
+                self.cursor += 1;
+            }
+        } else {
+            if self.cursor > 0 {
+                self.cursor -= 1;
+            }
+        }
+    }
+
+    pub fn backspace(&mut self) {
+        if self.cursor > 0 {
+            for i in self.cursor..self.len {
+                self.data[i - 1] = self.data[i];
+            }
+            self.cursor -= 1;
+            self.len -= 1;
+            self.data[self.len] = 0;
+        }
+    }
+
+    pub fn backspace_del(&mut self) {
+        // delete is the same thing as pressing right and then backspace
+        self.move_cursor(true);
+        self.backspace();
+    }
+
+    pub fn as_str(&self) -> &str {
+        core::str::from_utf8(&self.data[..self.len]).unwrap_or("Invalid UTF-8")
+    }
+
+    pub fn set_content(&mut self, content: &[u8]) {
+        let copy_len = content.len().min(N);
+        self.data[..copy_len].copy_from_slice(&content[..copy_len]);
+        self.len = copy_len;
+        self.cursor = copy_len;
+    }
+
+    pub fn clear(&mut self) {
+        self.data = [0; N];
+        self.len = 0;
+        self.cursor = 0;
+    }
+}
+
+pub trait CalcEngine {
+    fn evaluate(&self, equation: &str) -> String;
+    fn draw_widgets(&self, platform: &mut dyn IcPlatform, result_str: &str);
+    // true means this CalcEngine consumed the input
+    fn on_widget_key(
+        &mut self,
+        key: KeyAction,
+        buffer: &mut LineBuffer<{ EqEntry::EQUATION_MAX_SIZE }>,
+        current_result: &str,
+    ) -> bool;
+    fn has_widget(&self) -> bool;
+}
+
+pub struct ProgrammerEngine {
+    binary_selection_idx: u8,
+}
+
+impl ProgrammerEngine {
+    pub fn default() -> Self {
+        Self {
+            binary_selection_idx: 0,
+        }
+    }
+    fn binary_widget_set_bit(
+        &self,
+        bit_idx: u8,
+        buffer: &mut LineBuffer<24>,
+        current_result: &str,
+    ) {
+        let current_val = match current_result.parse::<i32>() {
+            Ok(s) => s,
+            Err(_) => 0,
+        };
+        let new_val = current_val ^ (1 << bit_idx);
+        let new_str = format!("{}", new_val);
+        buffer.set_content(new_str.as_bytes());
+    }
+
+    // If we wanted to stick to heapless no_std, then we would use write!()
+    // instead of format!() and make a struct with a buffer and cursor and
+    // implement as_str and fmt::Write for that
+    fn dec_str_to_hex_str(
+        input: &str,
+        include_prefix: bool,
+        uppercase: bool,
+        is_signed: bool,
+    ) -> Result<String, ParseIntError> {
+        let raw_bits: u32 = if is_signed {
+            let val = input.parse::<i32>()?;
+            val as u32
+        } else {
+            input.parse::<u32>()?
+        };
+        let hex_str = if uppercase {
+            format!("{:08X}", raw_bits)
+        } else {
+            format!("{:08x}", raw_bits)
+        };
+        if include_prefix {
+            Ok(format!("0x{}", hex_str))
+        } else {
+            Ok(hex_str)
+        }
+    }
+
+    fn draw_rect(platform: &mut dyn IcPlatform, corner1: IVec2, corner2: IVec2, color: Rgb<u8>) {
+        platform.draw_shape(Shape {
+            start: corner1,
+            end: IVec2 {
+                x: corner1.x,
+                y: corner2.y,
+            },
+            color: color,
+        });
+        platform.draw_shape(Shape {
+            start: corner1,
+            end: IVec2 {
+                x: corner2.x,
+                y: corner1.y,
+            },
+            color: color,
+        });
+        platform.draw_shape(Shape {
+            start: IVec2 {
+                x: corner2.x,
+                y: corner1.y,
+            },
+            end: corner2,
+            color: color,
+        });
+        platform.draw_shape(Shape {
+            start: IVec2 {
+                x: corner1.x,
+                y: corner2.y,
+            },
+            end: corner2,
+            color: color,
+        });
+    }
+}
+
+impl CalcEngine for ProgrammerEngine {
+    fn evaluate(&self, equation: &str) -> String {
+        bitwise_expr::evaluate_str(equation)
+    }
+    fn has_widget(&self) -> bool {
+        true
+    }
+    fn on_widget_key(
+        &mut self,
+        key: KeyAction,
+        buffer: &mut LineBuffer<{ EqEntry::EQUATION_MAX_SIZE }>,
+        current_result: &str,
+    ) -> bool {
+        match key {
+            KeyAction::MoveUp => {
+                let in_top_row = self.binary_selection_idx > 15;
+                if in_top_row {
+                    // go back to focus equation
+                    return false;
+                } else {
+                    self.binary_selection_idx += 16;
+                }
+            }
+            KeyAction::MoveDown => {
+                let in_bottom_row = self.binary_selection_idx <= 15;
+                if !in_bottom_row {
+                    self.binary_selection_idx -= 16;
+                }
+            }
+            KeyAction::MoveLeft => {
+                if self.binary_selection_idx < 31 {
+                    self.binary_selection_idx += 1;
+                }
+            }
+            KeyAction::MoveRight => {
+                if self.binary_selection_idx > 0 {
+                    self.binary_selection_idx -= 1;
+                }
+            }
+            KeyAction::InsertChar(c) => match c {
+                b'0'..=b'9' => {
+                    let set = c != b'0';
+                    let current_val = current_result.parse::<i32>().unwrap_or(0);
+                    let is_set = (current_val & (1 << self.binary_selection_idx)) != 0;
+                    if set != is_set {
+                        self.binary_widget_set_bit(
+                            self.binary_selection_idx,
+                            buffer,
+                            current_result,
+                        );
+                    }
+                }
+                _ => {}
+            },
+            KeyAction::Enter => {
+                self.binary_widget_set_bit(self.binary_selection_idx, buffer, current_result);
+            }
+            _ => return false,
+        }
+        true
+    }
+
+    fn draw_widgets(&self, platform: &mut dyn IcPlatform, result_str: &str) {
+        let margin = 2;
+        let (result_as_int, result_is_int) = match result_str.parse::<i32>() {
+            Ok(s) => (s, true),
+            Err(_) => (0, false),
+        };
+        if result_is_int {
+            // draw hex form of ans
+            let (result_as_hex, hex_err) =
+                match Self::dec_str_to_hex_str(&result_str, true, true, true) {
+                    Ok(s) => (s, false),
+                    Err(_) => (String::new(), true),
+                };
+            if !hex_err {
+                draw_text(
+                    platform,
+                    &result_as_hex,
+                    margin as f32,
+                    222.0,
+                    2.0,
+                    Rgb {
+                        r: 0x00,
+                        g: 0xff,
+                        b: 0xff,
+                    },
+                );
+            }
+            // draw bin form of ans
+            let bin_widget_bit1_x: i32 = 310;
+            let bin_widget_bit1_y: i32 = 230;
+            let bin_widget_element_w: i32 = 8;
+            let bin_widget_element_margin: i32 = 3;
+            for i in 0..32 {
+                let bit_x: i32 = bin_widget_bit1_x
+                    - ((i % 16) * (bin_widget_element_w + bin_widget_element_margin));
+                let bit_y: i32 = if i < 16 {
+                    bin_widget_bit1_y
+                } else {
+                    bin_widget_bit1_y - bin_widget_element_margin - bin_widget_element_w
+                };
+                let bit_val: bool = (result_as_int >> i) & 1 != 0;
+                let color: Rgb<u8> = if i == self.binary_selection_idx as i32 {
+                    Rgb {
+                        r: 0x00,
+                        g: 0xff,
+                        b: 0x55,
+                    }
+                } else {
+                    Rgb {
+                        r: 0xff,
+                        g: 0xff,
+                        b: 0x00,
+                    }
+                };
+                if bit_val {
+                    platform.draw_shape(Shape {
+                        start: IVec2 {
+                            x: (bit_x + bin_widget_element_w / 2) as i32,
+                            y: bit_y as i32,
+                        },
+                        end: IVec2 {
+                            x: (bit_x + bin_widget_element_w / 2) as i32,
+                            y: (bit_y + bin_widget_element_w) as i32,
+                        },
+                        color,
+                    });
+                } else {
+                    Self::draw_rect(
+                        platform,
+                        IVec2 {
+                            x: (bit_x + 1) as i32,
+                            y: bit_y as i32,
+                        },
+                        IVec2 {
+                            x: (bit_x + bin_widget_element_w - 1) as i32,
+                            y: (bit_y + bin_widget_element_w) as i32,
+                        },
+                        color,
+                    );
+                }
+            }
+        }
+    }
+}
+
 pub struct ProgCalc {
+    current_eq: LineBuffer<{ EqEntry::EQUATION_MAX_SIZE }>,
     eq_history: [EqEntry; EQ_HISTORY_MAX],
     eq_history_len: usize,
     eq_history_write_idx: usize,
-    current_eq: [u8; EqEntry::EQUATION_MAX_SIZE],
-    pub current_eq_len: usize,
     current_result: [u8; EqEntry::EQUATION_MAX_SIZE],
     current_result_len: usize,
-    cursor_pos: usize,
     history_selection_idx: Option<usize>, // none means youre editing the current equation
     focused_ui: FocusUi,
     binary_selection_idx: u8,
+    engine: Box<dyn CalcEngine>,
 }
 
 impl ProgCalc {
     pub fn new() -> ProgCalc {
         ProgCalc {
+            current_eq: LineBuffer::default(),
             eq_history: [EqEntry::default(); EQ_HISTORY_MAX],
             eq_history_len: 0,
             eq_history_write_idx: 0,
-            current_eq: [0; EqEntry::EQUATION_MAX_SIZE],
-            current_eq_len: 0,
             current_result: [0; EqEntry::EQUATION_MAX_SIZE],
             current_result_len: 0,
-            cursor_pos: 0,
             history_selection_idx: None,
             focused_ui: FocusUi::Equation,
             binary_selection_idx: 0,
+            engine: Box::new(ProgrammerEngine::default()),
         }
     }
 
@@ -161,214 +489,61 @@ impl ProgCalc {
         }
     }
 
-    fn binary_widget_set_bit(&mut self, input_bit: bool) {
-        let result_disp = core::str::from_utf8(&self.current_result[..self.current_result_len])
-            .unwrap_or("Invalid UTF-8");
-        let current_val = match result_disp.parse::<i32>() {
-            Ok(s) => s,
-            Err(_) => 0,
-        };
-        let mut temp_buf = [0u8; 20];
-        let mut idx = 0;
-        let mut new_val = match input_bit {
-            true => current_val | (1 << self.binary_selection_idx),
-            false => current_val & !(1 << self.binary_selection_idx),
-        };
-        if new_val == 0 {
-            self.current_eq[0] = b'0';
-            self.current_eq_len = 1;
-            return;
-        }
-        while new_val > 0 {
-            let digit = (new_val % 10) as u8;
-            temp_buf[idx] = digit + b'0'; // 0-9 to '0'-'9'
-            new_val /= 10;
-            idx += 1;
-        }
-        for i in 0..idx {
-            self.current_eq[i] = temp_buf[idx - 1 - i];
-        }
-        self.current_eq_len = idx;
-    }
-
     fn ui_nav(&mut self, dir: NavDir) {
         match self.focused_ui {
             FocusUi::Equation => match dir {
                 NavDir::Up => self.history_nav(true),
                 NavDir::Down => {
                     if self.history_selection_idx.is_none() {
-                        self.focused_ui = FocusUi::BinaryWidget;
+                        if self.engine.has_widget() {
+                            self.focused_ui = FocusUi::Widget;
+                        }
                     } else {
                         self.history_nav(false);
                     }
                 }
-                NavDir::Left => self.move_cursor(false),
-                NavDir::Right => self.move_cursor(true),
+                NavDir::Left => self.current_eq.move_cursor(false),
+                NavDir::Right => self.current_eq.move_cursor(true),
             },
-            FocusUi::BinaryWidget => match dir {
-                NavDir::Up => {
-                    let in_top_row = self.binary_selection_idx > 15;
-                    if in_top_row {
-                        self.focused_ui = FocusUi::Equation;
-                    } else {
-                        self.binary_selection_idx += 16;
-                    }
-                }
-                NavDir::Down => {
-                    let in_bottom_row = self.binary_selection_idx <= 15;
-                    if !in_bottom_row {
-                        self.binary_selection_idx -= 16;
-                    }
-                }
-                NavDir::Left => {
-                    if self.binary_selection_idx < 31 {
-                        self.binary_selection_idx += 1;
-                    }
-                }
-                NavDir::Right => {
-                    if self.binary_selection_idx > 0 {
-                        self.binary_selection_idx -= 1;
-                    }
-                }
-            },
+            FocusUi::Widget => {}
         }
-    }
-
-    fn draw_rect(platform: &mut dyn IcPlatform, corner1: IVec2, corner2: IVec2, color: Rgb<u8>) {
-        platform.draw_shape(Shape {
-            start: corner1,
-            end: IVec2 {
-                x: corner1.x,
-                y: corner2.y,
-            },
-            color: color,
-        });
-        platform.draw_shape(Shape {
-            start: corner1,
-            end: IVec2 {
-                x: corner2.x,
-                y: corner1.y,
-            },
-            color: color,
-        });
-        platform.draw_shape(Shape {
-            start: IVec2 {
-                x: corner2.x,
-                y: corner1.y,
-            },
-            end: corner2,
-            color: color,
-        });
-        platform.draw_shape(Shape {
-            start: IVec2 {
-                x: corner1.x,
-                y: corner2.y,
-            },
-            end: corner2,
-            color: color,
-        });
-    }
-
-    fn insert_char_into_equation(&mut self, char_code: u8) {
-        if self.cursor_pos < EqEntry::EQUATION_MAX_SIZE {
-            for i in (self.cursor_pos..=(self.current_eq_len)).rev() {
-                if i == EqEntry::EQUATION_MAX_SIZE - 1 {
-                    break;
-                }
-                self.current_eq[i + 1] = self.current_eq[i];
-            }
-            self.current_eq[self.cursor_pos] = char_code;
-            self.cursor_pos += 1;
-            self.current_eq_len += 1;
-            if self.current_eq_len > EqEntry::EQUATION_MAX_SIZE {
-                self.current_eq_len = EqEntry::EQUATION_MAX_SIZE;
-            }
-        }
-    }
-
-    fn move_cursor(&mut self, right: bool) {
-        if right {
-            if self.cursor_pos < self.current_eq_len {
-                self.cursor_pos += 1;
-            }
-        } else {
-            if self.cursor_pos > 0 {
-                self.cursor_pos -= 1;
-            }
-        }
-    }
-
-    fn backspace(&mut self) {
-        if self.cursor_pos > 0 {
-            for i in self.cursor_pos..self.current_eq_len {
-                self.current_eq[i - 1] = self.current_eq[i];
-            }
-            self.cursor_pos -= 1;
-            self.current_eq_len -= 1;
-            self.current_eq[self.current_eq_len] = 0;
-        }
-    }
-
-    fn backspace_del(&mut self) {
-        // delete is the same thing as pressing right and then backspace
-        self.move_cursor(true);
-        self.backspace();
-    }
-
-    fn get_equation_answer(equation: &str) -> ([u8; EqEntry::EQUATION_MAX_SIZE], usize) {
-        if equation.len() == 0 {
-            return ([0; EqEntry::EQUATION_MAX_SIZE], 0);
-        }
-        let mut answer = [b'\0'; EqEntry::EQUATION_MAX_SIZE];
-        let mut answer_len: usize = 0;
-        match bitwise_expr::evaluate(equation) {
-            Ok(result) => {
-                let mut buf = itoa::Buffer::new();
-                let b_slice = buf.format(result).as_bytes();
-                answer_len = b_slice.len();
-                answer[0..b_slice.len()].copy_from_slice(b_slice);
-            }
-            Err(msg) => {
-                let msg_bytes = msg.as_bytes();
-                let len_to_copy = core::cmp::min(answer.len(), msg_bytes.len());
-                let dest_slice = &mut answer[..len_to_copy];
-                dest_slice.copy_from_slice(&msg_bytes[..len_to_copy]);
-                if len_to_copy < answer.len() {
-                    answer[len_to_copy..].fill(0);
-                    answer_len = len_to_copy;
-                }
-            }
-        }
-        (answer, answer_len)
     }
 
     fn run_equation(&mut self) {
-        let (answer, answer_len) = Self::get_equation_answer(
-            core::str::from_utf8(&self.current_eq[..self.current_eq_len])
-                .unwrap_or("Invalid UTF-8"),
-        );
-        let new_hist_entry = EqEntry {
-            equation: self.current_eq,
-            equation_len: self.current_eq_len,
-            result: answer,
-            result_len: answer_len,
-        };
-        self.eq_history[self.eq_history_write_idx] = new_hist_entry;
-        if self.eq_history_write_idx + 1 >= EQ_HISTORY_MAX {
-            self.eq_history_write_idx = 0;
-        } else {
-            self.eq_history_write_idx += 1;
+        if self.current_eq.len == 0 {
+            return;
         }
-        if self.eq_history_len + 1 <= EQ_HISTORY_MAX {
+        let answer_str = self.engine.evaluate(self.current_eq.as_str());
+        let mut new_hist_entry = EqEntry {
+            equation: self.current_eq.data,
+            equation_len: self.current_eq.len,
+            result: [0; EqEntry::EQUATION_MAX_SIZE],
+            result_len: 0,
+        };
+        let bytes = answer_str.as_bytes();
+        let copy_len = bytes.len().min(EqEntry::EQUATION_MAX_SIZE);
+        new_hist_entry.result[..copy_len].copy_from_slice(&bytes[..copy_len]);
+        new_hist_entry.result_len = copy_len;
+        self.eq_history[self.eq_history_write_idx] = new_hist_entry;
+        self.eq_history_write_idx = (self.eq_history_write_idx + 1) % EQ_HISTORY_MAX;
+        if self.eq_history_len < EQ_HISTORY_MAX {
             self.eq_history_len += 1;
         }
-        self.clear_eq();
+        self.current_eq.clear();
+        self.current_result_len = 0;
     }
 
-    fn clear_eq(&mut self) {
-        self.current_eq = [0; EqEntry::EQUATION_MAX_SIZE];
-        self.current_eq_len = 0;
-        self.cursor_pos = 0;
+    fn update_realtime_result(&mut self) {
+        let eq_str = self.current_eq.as_str();
+        if eq_str.is_empty() {
+            self.current_result_len = 0;
+            return;
+        }
+        let answer_str = self.engine.evaluate(eq_str);
+        let bytes = answer_str.as_bytes();
+        let copy_len = bytes.len().min(EqEntry::EQUATION_MAX_SIZE);
+        self.current_result[..copy_len].copy_from_slice(&bytes[..copy_len]);
+        self.current_result_len = copy_len;
     }
 
     fn history_nav(&mut self, up: bool) {
@@ -398,26 +573,13 @@ impl ProgCalc {
         }
     }
 
-    fn history_nav_is_at_top(&self) -> bool {
-        return self.history_selection_idx == Some(0);
-    }
-
-    fn history_nav_is_at_bottom(&self) -> bool {
-        if self.eq_history_len == 0 {
-            return false;
-        }
-        return self.history_selection_idx == Some(self.eq_history_len - 1);
-    }
-
     fn copy_from_history(&mut self) {
-        if self.history_selection_idx == None {
-            return;
+        if let Some(idx) = self.history_selection_idx {
+            let entry = self.eq_history[idx];
+            self.current_eq.data = entry.equation;
+            self.current_eq.len = entry.equation_len;
+            self.history_selection_idx = None;
         }
-        let idx = self.history_selection_idx.unwrap_or(0);
-        let entry = self.eq_history[idx];
-        self.current_eq = entry.equation;
-        self.current_eq_len = entry.equation_len;
-        self.history_selection_idx = None;
     }
 
     fn delete_current_history_entry(&mut self) {
@@ -456,73 +618,7 @@ impl ProgCalc {
         }
     }
 
-    // If we wanted to stick to heapless no_std, then we would use write!()
-    // instead of format!() and make a struct with a buffer and cursor and
-    // implement as_str and fmt::Write for that
-    fn dec_str_to_hex_str(
-        input: &str,
-        include_prefix: bool,
-        uppercase: bool,
-        is_signed: bool,
-    ) -> Result<String, ParseIntError> {
-        let raw_bits: u32 = if is_signed {
-            let val = input.parse::<i32>()?;
-            val as u32
-        } else {
-            input.parse::<u32>()?
-        };
-        let hex_str = if uppercase {
-            format!("{:08X}", raw_bits)
-        } else {
-            format!("{:08x}", raw_bits)
-        };
-        if include_prefix {
-            Ok(format!("0x{}", hex_str))
-        } else {
-            Ok(hex_str)
-        }
-    }
-}
-
-impl IcApp for ProgCalc {
-    fn on_key(&mut self, key: IcKey, ctx: &InputContext) {
-        let action = Self::get_action(key, ctx.is_shifted(), ctx.is_super());
-        match action {
-            Some(KeyAction::InsertChar(c)) => match self.focused_ui {
-                FocusUi::Equation => self.insert_char_into_equation(c),
-                FocusUi::BinaryWidget => self.binary_widget_set_bit(c != b'0'),
-            },
-            Some(KeyAction::Backspace) => {
-                if self.history_selection_idx.is_none() {
-                    self.backspace()
-                } else {
-                    self.delete_current_history_entry()
-                }
-            }
-            Some(KeyAction::Clear) => self.clear_eq(),
-            Some(KeyAction::Delete) => self.backspace_del(),
-            Some(KeyAction::Enter) => {
-                if self.history_selection_idx.is_none() {
-                    self.run_equation();
-                } else {
-                    self.copy_from_history();
-                }
-            }
-            Some(KeyAction::MoveUp) => self.ui_nav(NavDir::Up),
-            Some(KeyAction::MoveDown) => self.ui_nav(NavDir::Down),
-            Some(KeyAction::MoveLeft) => self.ui_nav(NavDir::Left),
-            Some(KeyAction::MoveRight) => self.ui_nav(NavDir::Right),
-            Some(KeyAction::Home) => self.move_cursor(false),
-            Some(KeyAction::End) => self.move_cursor(true),
-            None => (),
-        }
-        (self.current_result, self.current_result_len) = Self::get_equation_answer(
-            core::str::from_utf8(&self.current_eq[..self.current_eq_len])
-                .unwrap_or("Invalid UTF-8"),
-        );
-    }
-
-    fn update(&mut self, platform: &mut dyn IcPlatform, ctx: &InputContext) {
+    fn draw_history(&self, platform: &mut dyn IcPlatform) {
         // draw_text_f(
         //     platform,
         //     format_args!("{}, b{}", self.focused_ui as u8, self.binary_selection_idx),
@@ -621,9 +717,13 @@ impl IcApp for ProgCalc {
             });
             draw_row += 1;
         }
-        let equation_disp = core::str::from_utf8(&self.current_eq[..self.current_eq_len])
+    }
+
+    fn draw_editor(&self, platform: &mut dyn IcPlatform) {
+        let margin: u32 = 2;
+        let equation_disp = core::str::from_utf8(&self.current_eq.data[..self.current_eq.len])
             .unwrap_or("Invalid UTF-8");
-        let eq_scale = match self.current_eq_len {
+        let eq_scale = match self.current_eq.len {
             x if x > 12 => 2.0,
             _ => 4.0,
         };
@@ -640,7 +740,12 @@ impl IcApp for ProgCalc {
                 b: 0xff,
             },
         );
-        let cursor_x_pos = text_to_pos(&equation_disp, margin as f32, eq_scale, self.cursor_pos);
+        let cursor_x_pos = text_to_pos(
+            &equation_disp,
+            margin as f32,
+            eq_scale,
+            self.current_eq.cursor,
+        );
         draw_text(
             platform,
             "|",
@@ -653,6 +758,9 @@ impl IcApp for ProgCalc {
                 b: 0x44,
             },
         );
+
+        // draw result -------------
+
         let result_disp = core::str::from_utf8(&self.current_result[..self.current_result_len])
             .unwrap_or("Invalid UTF-8");
         let ans_scale = match self.current_result_len {
@@ -683,88 +791,63 @@ impl IcApp for ProgCalc {
                 b: 0xff,
             },
         );
-        let (result_as_int, result_is_int) = match result_disp.parse::<i32>() {
-            Ok(s) => (s, true),
-            Err(_) => (0, false),
-        };
-        if result_is_int {
-            // draw hex form of ans
-            let (result_as_hex, hex_err) =
-                match Self::dec_str_to_hex_str(&result_disp, true, true, true) {
-                    Ok(s) => (s, false),
-                    Err(_) => (String::new(), true),
-                };
-            if !hex_err {
-                draw_text(
-                    platform,
-                    &result_as_hex,
-                    margin as f32,
-                    222.0,
-                    2.0,
-                    Rgb {
-                        r: 0x00,
-                        g: 0xff,
-                        b: 0xff,
-                    },
-                );
-            }
-            // draw bin form of ans
-            let bin_widget_bit1_x: i32 = 310;
-            let bin_widget_bit1_y: i32 = 230;
-            let bin_widget_element_w: i32 = 8;
-            let bin_widget_element_margin: i32 = 3;
-            for i in 0..32 {
-                let bit_x: i32 = bin_widget_bit1_x
-                    - ((i % 16) * (bin_widget_element_w + bin_widget_element_margin));
-                let bit_y: i32 = if i < 16 {
-                    bin_widget_bit1_y
-                } else {
-                    bin_widget_bit1_y - bin_widget_element_margin - bin_widget_element_w
-                };
-                let bit_val: bool = (result_as_int >> i) & 1 != 0;
-                let color: Rgb<u8> = if i == self.binary_selection_idx as i32
-                    && self.focused_ui == FocusUi::BinaryWidget
-                {
-                    Rgb {
-                        r: 0x00,
-                        g: 0xff,
-                        b: 0x55,
+    }
+}
+
+impl IcApp for ProgCalc {
+    fn on_key(&mut self, key: IcKey, ctx: &InputContext) {
+        let action = Self::get_action(key, ctx.is_shifted(), ctx.is_super());
+        if let Some(act) = action {
+            if self.focused_ui == FocusUi::Widget {
+                let current_result_str =
+                    core::str::from_utf8(&self.current_result[..self.current_result_len])
+                        .unwrap_or("0");
+                let handled =
+                    self.engine
+                        .on_widget_key(act, &mut self.current_eq, current_result_str);
+                if !handled {
+                    if act == KeyAction::MoveUp {
+                        self.focused_ui = FocusUi::Equation;
                     }
                 } else {
-                    Rgb {
-                        r: 0xff,
-                        g: 0xff,
-                        b: 0x00,
-                    }
-                };
-                if bit_val {
-                    platform.draw_shape(Shape {
-                        start: IVec2 {
-                            x: (bit_x + bin_widget_element_w / 2) as i32,
-                            y: bit_y as i32,
-                        },
-                        end: IVec2 {
-                            x: (bit_x + bin_widget_element_w / 2) as i32,
-                            y: (bit_y + bin_widget_element_w) as i32,
-                        },
-                        color,
-                    });
-                } else {
-                    Self::draw_rect(
-                        platform,
-                        IVec2 {
-                            x: (bit_x + 1) as i32,
-                            y: bit_y as i32,
-                        },
-                        IVec2 {
-                            x: (bit_x + bin_widget_element_w - 1) as i32,
-                            y: (bit_y + bin_widget_element_w) as i32,
-                        },
-                        color,
-                    );
+                    self.update_realtime_result();
+                    return;
                 }
             }
+            match act {
+                KeyAction::InsertChar(c) => self.current_eq.insert_char(c),
+                KeyAction::Backspace => {
+                    if self.history_selection_idx.is_none() {
+                        self.current_eq.backspace()
+                    } else {
+                        self.delete_current_history_entry()
+                    }
+                }
+                KeyAction::Clear => self.current_eq.clear(),
+                KeyAction::Delete => self.current_eq.backspace_del(),
+                KeyAction::Enter => {
+                    if self.history_selection_idx.is_none() {
+                        self.run_equation();
+                    } else {
+                        self.copy_from_history();
+                    }
+                }
+                KeyAction::MoveUp => self.ui_nav(NavDir::Up),
+                KeyAction::MoveDown => self.ui_nav(NavDir::Down),
+                KeyAction::MoveLeft => self.ui_nav(NavDir::Left),
+                KeyAction::MoveRight => self.ui_nav(NavDir::Right),
+                KeyAction::Home => self.current_eq.move_cursor(false),
+                KeyAction::End => self.current_eq.move_cursor(true),
+            }
+            self.update_realtime_result();
         }
+    }
+
+    fn update(&mut self, platform: &mut dyn IcPlatform, _ctx: &InputContext) {
+        self.draw_history(platform);
+        self.draw_editor(platform);
+        let result_str = core::str::from_utf8(&self.current_result[..self.current_result_len]).unwrap_or("0");
+        self.engine.draw_widgets(platform, result_str);
     }
 
     fn on_enter(&mut self) {

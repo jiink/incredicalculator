@@ -5,3 +5,5 @@ edition = "2024"
 
 [dependencies]
 nom = { version = "7", default-features = false, features = ["alloc"] }
+itoa = "1.0"
+format_no_std = "1.2.0"
