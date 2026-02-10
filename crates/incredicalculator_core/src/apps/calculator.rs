@@ -520,15 +520,8 @@ impl Calculator {
             result: [0; EqEntry::EQUATION_MAX_SIZE],
             result_len: 0,
         };
-        let bytes = answer_str.as_bytes();
-        let copy_len = bytes.len().min(EqEntry::EQUATION_MAX_SIZE);
-        new_hist_entry.result[..copy_len].copy_from_slice(&bytes[..copy_len]);
-        new_hist_entry.result_len = copy_len;
-        self.eq_history[self.eq_history_write_idx] = new_hist_entry;
-        self.eq_history_write_idx = (self.eq_history_write_idx + 1) % EQ_HISTORY_MAX;
-        if self.eq_history_len < EQ_HISTORY_MAX {
-            self.eq_history_len += 1;
-        }
+        Self::copy_str_to_buffer(&mut new_hist_entry.result, &mut new_hist_entry.result_len, &answer_str);
+        self.history_append(&new_hist_entry);
         self.current_eq.clear();
         self.current_result_len = 0;
     }
@@ -540,10 +533,22 @@ impl Calculator {
             return;
         }
         let answer_str = self.engine.evaluate(eq_str);
-        let bytes = answer_str.as_bytes();
-        let copy_len = bytes.len().min(EqEntry::EQUATION_MAX_SIZE);
-        self.current_result[..copy_len].copy_from_slice(&bytes[..copy_len]);
-        self.current_result_len = copy_len;
+        Self::copy_str_to_buffer(&mut self.current_result, &mut self.current_result_len, &answer_str);
+    }
+
+    fn copy_str_to_buffer(buffer: &mut [u8], len: &mut usize, s: &str) {
+        let bytes = s.as_bytes();
+        let copy_len = bytes.len().min(buffer.len());
+        buffer[..copy_len].copy_from_slice(&bytes[..copy_len]);
+        *len = copy_len;
+    }
+
+    fn history_append(&mut self, new_entry: &EqEntry) {
+        self.eq_history[self.eq_history_write_idx] = *new_entry;
+        self.eq_history_write_idx = (self.eq_history_write_idx + 1) % EQ_HISTORY_MAX;
+        if self.eq_history_len < EQ_HISTORY_MAX {
+            self.eq_history_len += 1;
+        }
     }
 
     fn history_nav(&mut self, up: bool) {
