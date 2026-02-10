@@ -6,7 +6,9 @@ use crate::platform::IcPlatform;
 use crate::platform::Shape;
 use crate::text::{draw_text, draw_text_f, text_to_pos};
 use alloc::boxed::Box;
+use alloc::string::ToString;
 use alloc::{format, string::String};
+use core::str::FromStr;
 use core::{num::ParseIntError, result};
 use glam::IVec2;
 use rgb::*;
@@ -142,7 +144,7 @@ impl<const N: usize> LineBuffer<N> {
     }
 }
 
-pub trait CalcEngine {
+trait CalcEngine {
     fn evaluate(&self, equation: &str) -> String;
     fn draw_widgets(&self, platform: &mut dyn IcPlatform, result_str: &str);
     // true means this CalcEngine consumed the input
@@ -153,6 +155,38 @@ pub trait CalcEngine {
         current_result: &str,
     ) -> bool;
     fn has_widget(&self) -> bool;
+}
+
+pub struct ScientificEngine {}
+
+impl ScientificEngine {
+    pub fn default() -> Self {
+        Self {}
+    }
+}
+
+impl CalcEngine for ScientificEngine {
+    fn evaluate(&self, equation: &str) -> String {
+        match exp_rs::interp(equation, None) {
+            Ok(v) => format!("{}", v),
+            Err(msg) => msg.to_string(),
+        }
+    }
+
+    fn draw_widgets(&self, _platform: &mut dyn IcPlatform, _result_str: &str) {}
+
+    fn on_widget_key(
+        &mut self,
+        _key: KeyAction,
+        _buffer: &mut LineBuffer<{ EqEntry::EQUATION_MAX_SIZE }>,
+        _current_result: &str,
+    ) -> bool {
+        false
+    }
+
+    fn has_widget(&self) -> bool {
+        false
+    }
 }
 
 pub struct ProgrammerEngine {
@@ -399,7 +433,6 @@ pub struct Calculator {
     current_result_len: usize,
     history_selection_idx: Option<usize>, // none means youre editing the current equation
     focused_ui: FocusUi,
-    binary_selection_idx: u8,
     engine: Box<dyn CalcEngine>,
 }
 
@@ -414,8 +447,7 @@ impl Calculator {
             current_result_len: 0,
             history_selection_idx: None,
             focused_ui: FocusUi::Equation,
-            binary_selection_idx: 0,
-            engine: Box::new(ProgrammerEngine::default()),
+            engine: Box::new(ScientificEngine::default()),
         }
     }
 
@@ -520,7 +552,11 @@ impl Calculator {
             result: [0; EqEntry::EQUATION_MAX_SIZE],
             result_len: 0,
         };
-        Self::copy_str_to_buffer(&mut new_hist_entry.result, &mut new_hist_entry.result_len, &answer_str);
+        Self::copy_str_to_buffer(
+            &mut new_hist_entry.result,
+            &mut new_hist_entry.result_len,
+            &answer_str,
+        );
         self.history_append(&new_hist_entry);
         self.current_eq.clear();
         self.current_result_len = 0;
@@ -533,7 +569,11 @@ impl Calculator {
             return;
         }
         let answer_str = self.engine.evaluate(eq_str);
-        Self::copy_str_to_buffer(&mut self.current_result, &mut self.current_result_len, &answer_str);
+        Self::copy_str_to_buffer(
+            &mut self.current_result,
+            &mut self.current_result_len,
+            &answer_str,
+        );
     }
 
     fn copy_str_to_buffer(buffer: &mut [u8], len: &mut usize, s: &str) {
@@ -851,7 +891,8 @@ impl IcApp for Calculator {
     fn update(&mut self, platform: &mut dyn IcPlatform, _ctx: &InputContext) {
         self.draw_history(platform);
         self.draw_editor(platform);
-        let result_str = core::str::from_utf8(&self.current_result[..self.current_result_len]).unwrap_or("0");
+        let result_str =
+            core::str::from_utf8(&self.current_result[..self.current_result_len]).unwrap_or("0");
         self.engine.draw_widgets(platform, result_str);
     }
 
