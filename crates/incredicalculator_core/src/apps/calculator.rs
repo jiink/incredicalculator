@@ -46,6 +46,7 @@ enum KeyAction {
     Clear,
     Home,
     End,
+    Mode
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -59,6 +60,12 @@ enum NavDir {
     Down,
     Left,
     Right,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum EngineMode {
+    Programmer,
+    Scientific
 }
 
 const EQ_HISTORY_MAX: usize = 4;
@@ -173,7 +180,20 @@ impl CalcEngine for ScientificEngine {
         }
     }
 
-    fn draw_widgets(&self, _platform: &mut dyn IcPlatform, _result_str: &str) {}
+    fn draw_widgets(&self, platform: &mut dyn IcPlatform, _result_str: &str) {
+        draw_text(
+            platform,
+            "Scientific",
+            2.0,
+            222.0,
+            2.0,
+            Rgb {
+                r: 0x44,
+                g: 0x44,
+                b: 0x44,
+            },
+        );
+    }
 
     fn on_widget_key(
         &mut self,
@@ -420,6 +440,19 @@ impl CalcEngine for ProgrammerEngine {
                     );
                 }
             }
+        } else {
+            draw_text(
+                platform,
+                "Programmer",
+                margin as f32,
+                222.0,
+                2.0,
+                Rgb {
+                    r: 0x44,
+                    g: 0x44,
+                    b: 0x44,
+                },
+            );
         }
     }
 }
@@ -434,6 +467,7 @@ pub struct Calculator {
     history_selection_idx: Option<usize>, // none means youre editing the current equation
     focused_ui: FocusUi,
     engine: Box<dyn CalcEngine>,
+    engine_mode: EngineMode
 }
 
 impl Calculator {
@@ -447,7 +481,8 @@ impl Calculator {
             current_result_len: 0,
             history_selection_idx: None,
             focused_ui: FocusUi::Equation,
-            engine: Box::new(ScientificEngine::default()),
+            engine: Box::new(ProgrammerEngine::default()),
+            engine_mode: EngineMode::Programmer
         }
     }
 
@@ -476,7 +511,7 @@ impl Calculator {
             }
         } else if is_super {
             match key {
-                IcKey::Num0 => Some(KeyAction::Backspace),
+                IcKey::Num0 => Some(KeyAction::Mode),
                 IcKey::Num1 => Some(KeyAction::MoveLeft),
                 IcKey::Num2 => Some(KeyAction::MoveDown),
                 IcKey::Num3 => Some(KeyAction::MoveRight),
@@ -883,6 +918,19 @@ impl IcApp for Calculator {
                 KeyAction::MoveRight => self.ui_nav(NavDir::Right),
                 KeyAction::Home => self.current_eq.move_cursor(false),
                 KeyAction::End => self.current_eq.move_cursor(true),
+                KeyAction::Mode => {
+                    match self.engine_mode {
+                        EngineMode::Programmer => {
+                            self.engine_mode = EngineMode::Scientific;
+                            self.engine = Box::new(ScientificEngine::default());
+                        }
+                        EngineMode::Scientific => {
+                            self.engine_mode = EngineMode::Programmer;
+                            self.engine = Box::new(ProgrammerEngine::default());
+                        }
+                    }
+                    self.focused_ui = FocusUi::Equation;
+                } 
             }
             self.update_realtime_result();
         }
