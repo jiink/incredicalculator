@@ -1,12 +1,13 @@
 use std::{collections::HashMap};
 
+use embedded_graphics::{Drawable, pixelcolor::{BinaryColor, Rgb565}, prelude::{Primitive, RgbColor}, primitives::PrimitiveStyle};
+use embedded_graphics_framebuf::FrameBuf;
 use raylib::{ffi::{SetTextureFilter, RL_TEXTURE_FILTER_LINEAR}, prelude::*};
 
 //use incredicalculator_core::{IcKey, IcPlatform, IcShell, Shape};
 use incredicalculator_core::input::IcKey;
 use incredicalculator_core::platform::{IcPlatform, Shape};
 use incredicalculator_core::shell::IcShell;
-
 struct VirtualKey {
     key: IcKey,
     x: u32,
@@ -40,6 +41,14 @@ impl IcPlatform for IcRaylibPlatform {
     fn clear_lines(&mut self) {
         self.shape_list.clear();
     }
+}
+
+fn rgb565_to_rl_color(rgb565_col: Rgb565) -> Color {
+    Color { r: rgb565_col.r() << 3, g: rgb565_col.g() << 2, b: rgb565_col.b() << 3, a: 255 }
+}
+
+fn rgbu8_to_rgb565(rgbu8_col: rgb::Rgb<u8>) -> Rgb565 {
+    Rgb565::new(rgbu8_col.r >> 3, rgbu8_col.g >> 2, rgbu8_col.b >> 3)
 }
 
 fn main() {
@@ -150,19 +159,28 @@ fn main() {
 
         icalc.update(&mut ic_rl_platform);
 
-        //let fps: u32 = rl_handle.get_fps();
+        let fps: u32 = rl_handle.get_fps();
+
+        let mut canvasData = [Rgb565::BLACK; (RENDER_W * RENDER_H) as usize];
+        let mut embeddedFrameBuf = FrameBuf::new(&mut canvasData, RENDER_W as usize, RENDER_H as usize);
+        for s in ic_rl_platform.shape_list.iter() {
+            embedded_graphics::primitives::Line::new(
+                embedded_graphics::prelude::Point { x: s.start.x, y: s.start.y },
+                embedded_graphics::prelude::Point { x: s.end.x, y: s.end.y }
+            )
+            .into_styled(PrimitiveStyle::with_stroke(rgbu8_to_rgb565(s.color), 2))
+            .draw(&mut embeddedFrameBuf)
+            .unwrap();
+        }
 
         {
             let mut d_tex: RaylibTextureMode<'_, RaylibHandle> = rl_handle.begin_texture_mode(&rl_thread, &mut target_tex);
             d_tex.clear_background(Color::BLACK);
-            //d_tex.draw_text(format!("What! {fps} FPS").as_str(),
-                //12, 12, 24, Color::WHITE);
-            for s in ic_rl_platform.shape_list.iter() {
-                d_tex.draw_line_ex(
-                    Vector2::new(s.start.x as f32, s.start.y as f32),
-                    Vector2::new(s.end.x as f32, s.end.y as f32),
-                    2.0, Color { r: s.color.r, g: s.color.g, b: s.color.b, a: 255 } );
+            for i in 0..(RENDER_W*RENDER_H) {
+                d_tex.draw_pixel((i % RENDER_W) as i32, (i / RENDER_W) as i32, rgb565_to_rl_color(canvasData[i as usize]));
             }
+            d_tex.draw_text(format!("What! {fps} FPS").as_str(),
+                12, 12, 24, Color::WHITE);
         }
 
         let mut rl_draw_handle = rl_handle.begin_drawing(&rl_thread);

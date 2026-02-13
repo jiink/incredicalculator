@@ -1297,8 +1297,11 @@ dependencies = [
 name = "incredicalculator_pc"
 version = "0.1.0"
 dependencies = [
+ "embedded-graphics",
+ "embedded-graphics-framebuf",
  "incredicalculator_core",
  "raylib",
+ "rgb",
 ]
 
 [[package]]

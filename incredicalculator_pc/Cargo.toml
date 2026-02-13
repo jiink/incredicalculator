@@ -6,3 +6,6 @@ edition = "2024"
 [dependencies]
 incredicalculator_core = { path = "../crates/incredicalculator_core" }
 raylib = "5.5.1"
+embedded-graphics = "0.8.1"
+embedded-graphics-framebuf = "0.5.0"
+rgb = "0.8.52"
