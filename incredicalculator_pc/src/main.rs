@@ -161,27 +161,27 @@ fn main() {
 
         let fps: u32 = rl_handle.get_fps();
 
-        let mut canvasData = [Rgb565::BLACK; (RENDER_W * RENDER_H) as usize];
-        let mut embeddedFrameBuf = FrameBuf::new(&mut canvasData, RENDER_W as usize, RENDER_H as usize);
+        let mut canvas_data = [Rgb565::BLACK; (RENDER_W * RENDER_H) as usize];
+        let mut embedded_frame_buf = FrameBuf::new(&mut canvas_data, RENDER_W as usize, RENDER_H as usize);
         for s in ic_rl_platform.shape_list.iter() {
             embedded_graphics::primitives::Line::new(
                 embedded_graphics::prelude::Point { x: s.start.x, y: s.start.y },
                 embedded_graphics::prelude::Point { x: s.end.x, y: s.end.y }
             )
             .into_styled(PrimitiveStyle::with_stroke(rgbu8_to_rgb565(s.color), 2))
-            .draw(&mut embeddedFrameBuf)
+            .draw(&mut embedded_frame_buf)
             .unwrap();
         }
 
-        {
-            let mut d_tex: RaylibTextureMode<'_, RaylibHandle> = rl_handle.begin_texture_mode(&rl_thread, &mut target_tex);
-            d_tex.clear_background(Color::BLACK);
-            for i in 0..(RENDER_W*RENDER_H) {
-                d_tex.draw_pixel((i % RENDER_W) as i32, (i / RENDER_W) as i32, rgb565_to_rl_color(canvasData[i as usize]));
-            }
-            d_tex.draw_text(format!("What! {fps} FPS").as_str(),
-                12, 12, 24, Color::WHITE);
+        let mut raw_pixels: Vec<u8> = Vec::with_capacity((RENDER_W * RENDER_H * 4) as usize);
+        for pixel in canvas_data.iter() {
+            let c = rgb565_to_rl_color(*pixel);
+            raw_pixels.push(c.r);
+            raw_pixels.push(c.g);
+            raw_pixels.push(c.b);
+            raw_pixels.push(c.a);
         }
+        target_tex.update_texture(&raw_pixels).unwrap();
 
         let mut rl_draw_handle = rl_handle.begin_drawing(&rl_thread);
         rl_draw_handle.clear_background(Color::DARKOLIVEGREEN);
@@ -199,11 +199,13 @@ fn main() {
             rl_draw_handle.draw_text(&vk.shlabel, vk.x as i32 + 46, vk.y as i32 + 46, 20, Color::BLUE);
             rl_draw_handle.draw_text(&vk.sulabel, vk.x as i32 + 6, vk.y as i32 + 46, 20, Color::RED);
         }
-        let source_rec = Rectangle::new(0.0, 0.0, target_tex.texture.width as f32, -target_tex.texture.height as f32);
+        let source_rec = Rectangle::new(0.0, 0.0, target_tex.texture.width as f32, target_tex.texture.height as f32);
         let dest_rec = Rectangle::new(23.0, 10.0, 160.0, 120.0);
         let origin = Vector2::new(0.0, 0.0);
         rl_draw_handle.draw_texture_pro(&target_tex, source_rec, dest_rec, origin, 0.0, Color::WHITE);
         let dest_rec_zoom = Rectangle::new(300.0, 10.0, RENDER_W as f32, RENDER_H as f32);
         rl_draw_handle.draw_texture_pro(&target_tex, source_rec, dest_rec_zoom, origin, 0.0, Color::WHITE);
+         rl_draw_handle.draw_text(format!("What! {fps} FPS").as_str(),
+                12, 12, 24, Color::WHITE);
     }
 }
