@@ -4,6 +4,7 @@ use crate::input::{IcKey, KeyState};
 use crate::platform;
 use crate::platform::IcPlatform;
 use crate::platform::Shape;
+use crate::platform::debug_log;
 use crate::text::{draw_text, draw_text_f, text_to_pos};
 use alloc::boxed::Box;
 use alloc::string::ToString;
@@ -21,6 +22,12 @@ struct EqEntry {
     result_len: usize,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum EqEntryPart {
+    Equation,
+    Result,
+}
+
 impl EqEntry {
     pub const EQUATION_MAX_SIZE: usize = 24;
     pub fn default() -> EqEntry {
@@ -33,9 +40,16 @@ impl EqEntry {
     }
 }
 
+#[derive(Clone, Copy)]
+struct HistorySelection {
+    idx: usize,
+    part: EqEntryPart,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum KeyAction {
     InsertChar(u8),
+    InsertChar2(u8, u8),
     MoveLeft,
     MoveRight,
     MoveUp,
@@ -46,7 +60,7 @@ enum KeyAction {
     Clear,
     Home,
     End,
-    Mode
+    Mode,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -65,7 +79,7 @@ enum NavDir {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum EngineMode {
     Programmer,
-    Scientific
+    Scientific,
 }
 
 const EQ_HISTORY_MAX: usize = 4;
@@ -114,6 +128,14 @@ impl<const N: usize> LineBuffer<N> {
                 self.cursor -= 1;
             }
         }
+    }
+
+    pub fn move_cursor_home(&mut self) {
+        self.cursor = 0;
+    }
+
+    pub fn move_cursor_end(&mut self) {
+        self.cursor = self.len;
     }
 
     pub fn backspace(&mut self) {
@@ -464,10 +486,10 @@ pub struct Calculator {
     eq_history_write_idx: usize,
     current_result: [u8; EqEntry::EQUATION_MAX_SIZE],
     current_result_len: usize,
-    history_selection_idx: Option<usize>, // none means youre editing the current equation
+    history_selection: Option<HistorySelection>, // none means youre editing the current equation
     focused_ui: FocusUi,
     engine: Box<dyn CalcEngine>,
-    engine_mode: EngineMode
+    engine_mode: EngineMode,
 }
 
 impl Calculator {
@@ -479,10 +501,10 @@ impl Calculator {
             eq_history_write_idx: 0,
             current_result: [0; EqEntry::EQUATION_MAX_SIZE],
             current_result_len: 0,
-            history_selection_idx: None,
+            history_selection: None,
             focused_ui: FocusUi::Equation,
             engine: Box::new(ProgrammerEngine::default()),
-            engine_mode: EngineMode::Programmer
+            engine_mode: EngineMode::Programmer,
         }
     }
 
@@ -498,13 +520,13 @@ impl Calculator {
                 IcKey::Num6 => Some(KeyAction::InsertChar(b'.')),
                 IcKey::Num7 => Some(KeyAction::InsertChar(b'(')),
                 IcKey::Num8 => Some(KeyAction::InsertChar(b')')),
-                IcKey::Num9 => Some(KeyAction::InsertChar(b'x')),
+                IcKey::Num9 => Some(KeyAction::InsertChar2(b'0', b'x')),
                 IcKey::Func1 => Some(KeyAction::InsertChar(b'&')),
                 IcKey::Func2 => Some(KeyAction::InsertChar(b'|')),
                 IcKey::Func3 => Some(KeyAction::InsertChar(b'%')),
-                IcKey::Func4 => Some(KeyAction::InsertChar(b'<')),
-                IcKey::Func5 => Some(KeyAction::InsertChar(b'>')),
-                IcKey::Func6 => None,
+                IcKey::Func4 => Some(KeyAction::InsertChar2(b'<', b'<')),
+                IcKey::Func5 => Some(KeyAction::InsertChar2(b'>', b'>')),
+                IcKey::Func6 => Some(KeyAction::InsertChar(b'^')),
                 IcKey::Shift => None,
                 IcKey::Super => None,
                 IcKey::_Max => None,
@@ -514,13 +536,13 @@ impl Calculator {
                 IcKey::Num0 => None,
                 IcKey::Num1 => Some(KeyAction::End),
                 IcKey::Num2 => Some(KeyAction::MoveDown),
-                IcKey::Num3 => Some(KeyAction::Clear),
+                IcKey::Num3 => None,
                 IcKey::Num4 => Some(KeyAction::MoveLeft),
                 IcKey::Num5 => Some(KeyAction::Mode),
-                IcKey::Num6 => Some(KeyAction::End),
+                IcKey::Num6 => Some(KeyAction::MoveRight),
                 IcKey::Num7 => Some(KeyAction::Home),
                 IcKey::Num8 => Some(KeyAction::MoveUp),
-                IcKey::Num9 => Some(KeyAction::Backspace),
+                IcKey::Num9 => Some(KeyAction::Clear),
                 IcKey::Func1 => None,
                 IcKey::Func2 => None,
                 IcKey::Func3 => None,
@@ -543,7 +565,7 @@ impl Calculator {
                 IcKey::Num7 => Some(KeyAction::InsertChar(b'7')),
                 IcKey::Num8 => Some(KeyAction::InsertChar(b'8')),
                 IcKey::Num9 => Some(KeyAction::InsertChar(b'9')),
-                IcKey::Func1 => Some(KeyAction::InsertChar(b'^')),
+                IcKey::Func1 => Some(KeyAction::Backspace),
                 IcKey::Func2 => Some(KeyAction::InsertChar(b'/')),
                 IcKey::Func3 => Some(KeyAction::InsertChar(b'*')),
                 IcKey::Func4 => Some(KeyAction::InsertChar(b'-')),
@@ -561,7 +583,7 @@ impl Calculator {
             FocusUi::Equation => match dir {
                 NavDir::Up => self.history_nav(true),
                 NavDir::Down => {
-                    if self.history_selection_idx.is_none() {
+                    if self.history_selection.is_none() {
                         if self.engine.has_widget() {
                             self.focused_ui = FocusUi::Widget;
                         }
@@ -628,25 +650,44 @@ impl Calculator {
 
     fn history_nav(&mut self, up: bool) {
         if self.eq_history_len == 0 {
-            self.history_selection_idx = None;
+            self.history_selection = None;
             return;
         }
-        match self.history_selection_idx {
+        match self.history_selection.as_mut() {
             None => {
                 if up && self.eq_history_len > 0 {
-                    self.history_selection_idx = Some(self.eq_history_len - 1);
+                    self.history_selection = Some(HistorySelection {
+                        idx: self.eq_history_len - 1,
+                        part: EqEntryPart::Result,
+                    });
                 }
             }
-            Some(i) => {
+            Some(selection) => {
                 if up {
-                    if i > 0 {
-                        self.history_selection_idx = Some(i - 1);
+                    match selection.part {
+                        EqEntryPart::Equation => {
+                            if selection.idx > 0 {
+                                selection.idx = selection.idx - 1;
+                                selection.part = EqEntryPart::Result;
+                            }
+                        }
+                        EqEntryPart::Result => {
+                            selection.part = EqEntryPart::Equation;
+                        }
                     }
                 } else {
-                    if (i + 1) < self.eq_history_len {
-                        self.history_selection_idx = Some(i + 1);
-                    } else {
-                        self.history_selection_idx = None;
+                    match selection.part {
+                        EqEntryPart::Equation => {
+                            selection.part = EqEntryPart::Result;
+                        }
+                        EqEntryPart::Result => {
+                            if (selection.idx + 1) < self.eq_history_len {
+                                selection.idx = selection.idx + 1;
+                                selection.part = EqEntryPart::Equation;
+                            } else {
+                                self.history_selection = None;
+                            }
+                        }
                     }
                 }
             }
@@ -654,47 +695,53 @@ impl Calculator {
     }
 
     fn copy_from_history(&mut self) {
-        if let Some(idx) = self.history_selection_idx {
+        if let Some(hs) = self.history_selection {
+            let idx = hs.idx;
             let entry = self.eq_history[idx];
-            self.current_eq.data = entry.equation;
-            self.current_eq.len = entry.equation_len;
-            self.history_selection_idx = None;
+            match hs.part {
+                EqEntryPart::Equation => {
+                    self.current_eq.data = entry.equation;
+                    self.current_eq.len = entry.equation_len;       
+                },
+                EqEntryPart::Result => {
+                    self.current_eq.data = entry.result;
+                    self.current_eq.len = entry.result_len;
+                },
+            }
+            self.history_selection = None;
+            self.current_eq.cursor = self.current_eq.len;
         }
     }
 
     fn delete_current_history_entry(&mut self) {
-        if self.history_selection_idx.is_none() {
-            return;
-        }
-        if self.eq_history_len == 0 {
-            self.history_selection_idx = None;
-            return;
-        }
-        let prev_history_selection_idx = self.history_selection_idx;
-        let n = EQ_HISTORY_MAX;
-        let mut p = self.history_selection_idx.unwrap();
-        let w = self.eq_history_write_idx;
-        let most_recent = (w + n - 1) % n;
-        while p != most_recent {
-            let next = (p + 1) % n;
-            self.eq_history[p] = self.eq_history[next];
-            p = next;
-        }
-        self.eq_history[most_recent] = EqEntry::default();
-        self.eq_history_write_idx = most_recent;
-        if self.eq_history_len > 0 {
-            self.eq_history_len -= 1;
-        }
-        if self.eq_history_len == 0 {
-            self.history_selection_idx = None;
-        } else {
-            self.history_selection_idx = match prev_history_selection_idx {
-                None => None,
-                Some(i) => match i {
-                    0 => Some(0),
-                    x => Some(x - 1),
-                },
-            };
+        if let Some(ref mut current_selection) = self.history_selection {
+            if self.eq_history_len == 0 {
+                self.history_selection = None;
+                return;
+            }
+            let prev_history_selection_idx = current_selection.idx;
+            let n = EQ_HISTORY_MAX;
+            let mut p = current_selection.idx;
+            let w = self.eq_history_write_idx;
+            let most_recent = (w + n - 1) % n;
+            while p != most_recent {
+                let next = (p + 1) % n;
+                self.eq_history[p] = self.eq_history[next];
+                p = next;
+            }
+            self.eq_history[most_recent] = EqEntry::default();
+            self.eq_history_write_idx = most_recent;
+            if self.eq_history_len > 0 {
+                self.eq_history_len -= 1;
+            }
+            if self.eq_history_len == 0 {
+                self.history_selection = None;
+            } else {
+                current_selection.idx = match prev_history_selection_idx {
+                    0 => 0,
+                    x => x - 1,
+                };
+            }
         }
     }
 
@@ -738,20 +785,6 @@ impl Calculator {
                     b: 0x99,
                 },
             );
-            if Some(phys_idx as usize) == self.history_selection_idx {
-                draw_text(
-                    platform,
-                    "\x03",
-                    (WIDTH - margin - 9) as f32,
-                    y as f32,
-                    font_size,
-                    Rgb {
-                        r: 0x99,
-                        g: 0x99,
-                        b: 0x99,
-                    },
-                );
-            }
             let ans_disp =
                 core::str::from_utf8(&entry.result[..entry.result_len]).unwrap_or("Invalid UTF-8");
             let line_height: u32 = 20;
@@ -780,6 +813,26 @@ impl Calculator {
                     b: 0x00,
                 },
             );
+            if let Some(selection) = self.history_selection {
+                let y_pos = match selection.part {
+                    EqEntryPart::Equation => y,
+                    EqEntryPart::Result => y2,
+                };
+                if phys_idx as usize == selection.idx {
+                    draw_text(
+                        platform,
+                        "\x03",
+                        (WIDTH - margin - 9) as f32,
+                        y_pos as f32,
+                        font_size,
+                        Rgb {
+                            r: 0xff,
+                            g: 0,
+                            b: 0,
+                        },
+                    );
+                }
+            }
             platform.draw_shape(Shape {
                 start: IVec2 {
                     x: margin as i32,
@@ -896,8 +949,12 @@ impl IcApp for Calculator {
             }
             match act {
                 KeyAction::InsertChar(c) => self.current_eq.insert_char(c),
+                KeyAction::InsertChar2(c1, c2) => {
+                    self.current_eq.insert_char(c1);
+                    self.current_eq.insert_char(c2);
+                }
                 KeyAction::Backspace => {
-                    if self.history_selection_idx.is_none() {
+                    if self.history_selection.is_none() {
                         self.current_eq.backspace()
                     } else {
                         self.delete_current_history_entry()
@@ -906,7 +963,7 @@ impl IcApp for Calculator {
                 KeyAction::Clear => self.current_eq.clear(),
                 KeyAction::Delete => self.current_eq.backspace_del(),
                 KeyAction::Enter => {
-                    if self.history_selection_idx.is_none() {
+                    if self.history_selection.is_none() {
                         self.run_equation();
                     } else {
                         self.copy_from_history();
@@ -916,8 +973,8 @@ impl IcApp for Calculator {
                 KeyAction::MoveDown => self.ui_nav(NavDir::Down),
                 KeyAction::MoveLeft => self.ui_nav(NavDir::Left),
                 KeyAction::MoveRight => self.ui_nav(NavDir::Right),
-                KeyAction::Home => self.current_eq.move_cursor(false),
-                KeyAction::End => self.current_eq.move_cursor(true),
+                KeyAction::Home => self.current_eq.move_cursor_home(),
+                KeyAction::End => self.current_eq.move_cursor_end(),
                 KeyAction::Mode => {
                     match self.engine_mode {
                         EngineMode::Programmer => {
@@ -930,7 +987,7 @@ impl IcApp for Calculator {
                         }
                     }
                     self.focused_ui = FocusUi::Equation;
-                } 
+                }
             }
             self.update_realtime_result();
         }

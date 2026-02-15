@@ -1,3 +1,4 @@
+use ::core::fmt;
 use std::{collections::HashMap};
 
 use embedded_graphics::{Drawable, pixelcolor::{BinaryColor, Rgb565}, prelude::{Primitive, RgbColor}, primitives::PrimitiveStyle};
@@ -41,6 +42,10 @@ impl IcPlatform for IcRaylibPlatform {
     fn clear_lines(&mut self) {
         self.shape_list.clear();
     }
+    
+    fn log(&mut self, arg: fmt::Arguments) {
+        println!("{}", arg);
+    }    
 }
 
 fn rgb565_to_rl_color(rgb565_col: Rgb565) -> Color {
@@ -78,11 +83,11 @@ fn main() {
     };
     let mut virtual_keys = [
         
-        VirtualKey { key: IcKey::Func1,  x: 7 + 69 * 3, y: 9 + 69 * 0, pressed: false, hovered: false, label: "^", shlabel: "&",   sulabel: "F1", sticky: false },
+        VirtualKey { key: IcKey::Func1,  x: 7 + 69 * 3, y: 9 + 69 * 0, pressed: false, hovered: false, label: "Bk", shlabel: "&",   sulabel: "F1", sticky: false },
         VirtualKey { key: IcKey::Func2,  x: 7 + 69 * 3, y: 9 + 69 * 1, pressed: false, hovered: false, label: "/", shlabel: "|",   sulabel: "F2", sticky: false },
         VirtualKey { key: IcKey::Num7,   x: 7 + 69 * 0, y: 9 + 69 * 2, pressed: false, hovered: false, label: "7", shlabel: "(",  sulabel: "Hm", sticky: false },
         VirtualKey { key: IcKey::Num8,   x: 7 + 69 * 1, y: 9 + 69 * 2, pressed: false, hovered: false, label: "8", shlabel: ")",  sulabel: "^", sticky: false },
-        VirtualKey { key: IcKey::Num9,   x: 7 + 69 * 2, y: 9 + 69 * 2, pressed: false, hovered: false, label: "9", shlabel: "0x", sulabel: "Bk", sticky: false },
+        VirtualKey { key: IcKey::Num9,   x: 7 + 69 * 2, y: 9 + 69 * 2, pressed: false, hovered: false, label: "9", shlabel: "0x", sulabel: "Clr", sticky: false },
         VirtualKey { key: IcKey::Func3,  x: 7 + 69 * 3, y: 9 + 69 * 2, pressed: false, hovered: false, label: "*", shlabel: "%",   sulabel: "F3", sticky: false },
         VirtualKey { key: IcKey::Num4,   x: 7 + 69 * 0, y: 9 + 69 * 3, pressed: false, hovered: false, label: "4", shlabel: "E",   sulabel: "<", sticky: false },
         VirtualKey { key: IcKey::Num5,   x: 7 + 69 * 1, y: 9 + 69 * 3, pressed: false, hovered: false, label: "5", shlabel: "F",   sulabel: "Sel", sticky: false },
@@ -90,12 +95,12 @@ fn main() {
         VirtualKey { key: IcKey::Func4,  x: 7 + 69 * 3, y: 9 + 69 * 3, pressed: false, hovered: false, label: "-", shlabel: "<<",  sulabel: "F4", sticky: false },
         VirtualKey { key: IcKey::Num1,   x: 7 + 69 * 0, y: 9 + 69 * 4, pressed: false, hovered: false, label: "1", shlabel: "B",   sulabel: "End", sticky: false },
         VirtualKey { key: IcKey::Num2,   x: 7 + 69 * 1, y: 9 + 69 * 4, pressed: false, hovered: false, label: "2", shlabel: "C",   sulabel: "v", sticky: false },
-        VirtualKey { key: IcKey::Num3,   x: 7 + 69 * 2, y: 9 + 69 * 4, pressed: false, hovered: false, label: "3", shlabel: "D",   sulabel: "Clr", sticky: false },
+        VirtualKey { key: IcKey::Num3,   x: 7 + 69 * 2, y: 9 + 69 * 4, pressed: false, hovered: false, label: "3", shlabel: "D",   sulabel: "", sticky: false },
         VirtualKey { key: IcKey::Func5,  x: 7 + 69 * 3, y: 9 + 69 * 4, pressed: false, hovered: false, label: "+", shlabel: ">>",   sulabel: "F5", sticky: false },
         VirtualKey { key: IcKey::Num0,   x: 7 + 69 * 0, y: 9 + 69 * 5, pressed: false, hovered: false, label: "0", shlabel: "A",   sulabel: "", sticky: false },
         VirtualKey { key: IcKey::Shift,  x: 7 + 69 * 1, y: 9 + 69 * 5, pressed: false, hovered: false, label: "Shft", shlabel: "",    sulabel: "", sticky: true },
         VirtualKey { key: IcKey::Super,  x: 7 + 69 * 2, y: 9 + 69 * 5, pressed: false, hovered: false, label: "§", shlabel: "",    sulabel: "", sticky: true },
-        VirtualKey { key: IcKey::Func6,  x: 7 + 69 * 3, y: 9 + 69 * 5, pressed: false, hovered: false, label: "=", shlabel: "",   sulabel: "F6", sticky: false },
+        VirtualKey { key: IcKey::Func6,  x: 7 + 69 * 3, y: 9 + 69 * 5, pressed: false, hovered: false, label: "=", shlabel: "^",   sulabel: "F6", sticky: false },
     ];
     
     println!("Hello, world!");
