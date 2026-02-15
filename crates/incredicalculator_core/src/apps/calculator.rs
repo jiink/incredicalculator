@@ -640,6 +640,12 @@ impl Calculator {
         *len = copy_len;
     }
 
+    fn get_physical_idx(&self, logical_idx: usize) -> usize {
+        let oldest_idx =
+            (self.eq_history_write_idx + EQ_HISTORY_MAX - self.eq_history_len) % EQ_HISTORY_MAX;
+        (oldest_idx + logical_idx) % EQ_HISTORY_MAX
+    }
+
     fn history_append(&mut self, new_entry: &EqEntry) {
         self.eq_history[self.eq_history_write_idx] = *new_entry;
         self.eq_history_write_idx = (self.eq_history_write_idx + 1) % EQ_HISTORY_MAX;
@@ -696,17 +702,17 @@ impl Calculator {
 
     fn copy_from_history(&mut self) {
         if let Some(hs) = self.history_selection {
-            let idx = hs.idx;
+            let idx = self.get_physical_idx(hs.idx);
             let entry = self.eq_history[idx];
             match hs.part {
                 EqEntryPart::Equation => {
                     self.current_eq.data = entry.equation;
-                    self.current_eq.len = entry.equation_len;       
-                },
+                    self.current_eq.len = entry.equation_len;
+                }
                 EqEntryPart::Result => {
                     self.current_eq.data = entry.result;
                     self.current_eq.len = entry.result_len;
-                },
+                }
             }
             self.history_selection = None;
             self.current_eq.cursor = self.current_eq.len;
@@ -714,29 +720,33 @@ impl Calculator {
     }
 
     fn delete_current_history_entry(&mut self) {
-        if let Some(ref mut current_selection) = self.history_selection {
-            if self.eq_history_len == 0 {
-                self.history_selection = None;
-                return;
-            }
-            let prev_history_selection_idx = current_selection.idx;
-            let n = EQ_HISTORY_MAX;
-            let mut p = current_selection.idx;
-            let w = self.eq_history_write_idx;
-            let most_recent = (w + n - 1) % n;
-            while p != most_recent {
-                let next = (p + 1) % n;
-                self.eq_history[p] = self.eq_history[next];
-                p = next;
-            }
-            self.eq_history[most_recent] = EqEntry::default();
-            self.eq_history_write_idx = most_recent;
-            if self.eq_history_len > 0 {
-                self.eq_history_len -= 1;
-            }
-            if self.eq_history_len == 0 {
-                self.history_selection = None;
-            } else {
+        let logical_idx = match self.history_selection {
+            Some(s) => s.idx,
+            None => return,
+        };
+        if self.eq_history_len == 0 {
+            self.history_selection = None;
+            return;
+        }
+        let prev_history_selection_idx = logical_idx;
+        let n = EQ_HISTORY_MAX;
+        let mut p = self.get_physical_idx(logical_idx);
+        let w = self.eq_history_write_idx;
+        let most_recent = (w + n - 1) % n;
+        while p != most_recent {
+            let next = (p + 1) % n;
+            self.eq_history[p] = self.eq_history[next];
+            p = next;
+        }
+        self.eq_history[most_recent] = EqEntry::default();
+        self.eq_history_write_idx = most_recent;
+        if self.eq_history_len > 0 {
+            self.eq_history_len -= 1;
+        }
+        if self.eq_history_len == 0 {
+            self.history_selection = None;
+        } else {
+            if let Some(ref mut current_selection) = self.history_selection {
                 current_selection.idx = match prev_history_selection_idx {
                     0 => 0,
                     x => x - 1,
@@ -818,7 +828,8 @@ impl Calculator {
                     EqEntryPart::Equation => y,
                     EqEntryPart::Result => y2,
                 };
-                if phys_idx as usize == selection.idx {
+                let logical_idx = self.eq_history_len - 1 - i as usize;
+                if logical_idx == selection.idx {
                     draw_text(
                         platform,
                         "\x03",
