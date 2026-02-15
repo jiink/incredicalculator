@@ -175,7 +175,7 @@ impl<const N: usize> LineBuffer<N> {
 
 trait CalcEngine {
     fn evaluate(&self, equation: &str) -> String;
-    fn draw_widgets(&self, platform: &mut dyn IcPlatform, result_str: &str);
+    fn draw_widgets(&self, platform: &mut dyn IcPlatform, result_str: &str, is_focused: bool);
     // true means this CalcEngine consumed the input
     fn on_widget_key(
         &mut self,
@@ -202,7 +202,7 @@ impl CalcEngine for ScientificEngine {
         }
     }
 
-    fn draw_widgets(&self, platform: &mut dyn IcPlatform, _result_str: &str) {
+    fn draw_widgets(&self, platform: &mut dyn IcPlatform, _result_str: &str, is_focused: bool) {
         draw_text(
             platform,
             "Scientific",
@@ -381,7 +381,7 @@ impl CalcEngine for ProgrammerEngine {
         true
     }
 
-    fn draw_widgets(&self, platform: &mut dyn IcPlatform, result_str: &str) {
+    fn draw_widgets(&self, platform: &mut dyn IcPlatform, result_str: &str, is_focused: bool) {
         let margin = 2;
         let (result_as_int, result_is_int) = match result_str.parse::<i32>() {
             Ok(s) => (s, true),
@@ -422,7 +422,7 @@ impl CalcEngine for ProgrammerEngine {
                     bin_widget_bit1_y - bin_widget_element_margin - bin_widget_element_w
                 };
                 let bit_val: bool = (result_as_int >> i) & 1 != 0;
-                let color: Rgb<u8> = if i == self.binary_selection_idx as i32 {
+                let color: Rgb<u8> = if is_focused && i == self.binary_selection_idx as i32 {
                     Rgb {
                         r: 0x00,
                         g: 0xff,
@@ -890,18 +890,20 @@ impl Calculator {
             eq_scale,
             self.current_eq.cursor,
         );
-        draw_text(
-            platform,
-            "|",
-            cursor_x_pos as f32 - 3.0,
-            eq_y,
-            eq_scale,
-            Rgb {
-                r: 0xff,
-                g: 0xff,
-                b: 0x44,
-            },
-        );
+        if self.focused_ui == FocusUi::Equation {
+            draw_text(
+                platform,
+                "|",
+                cursor_x_pos as f32 - 3.0,
+                eq_y,
+                eq_scale,
+                Rgb {
+                    r: 0xff,
+                    g: 0xff,
+                    b: 0x44,
+                },
+            );
+        }
 
         // draw result -------------
 
@@ -941,7 +943,7 @@ impl Calculator {
 impl IcApp for Calculator {
     fn on_key(&mut self, key: IcKey, ctx: &InputContext) {
         let action = Self::get_action(key, ctx.is_shifted(), ctx.is_super());
-        if let Some(act) = action {
+        if let Some(mut act) = action {
             if self.focused_ui == FocusUi::Widget {
                 let current_result_str =
                     core::str::from_utf8(&self.current_result[..self.current_result_len])
@@ -952,6 +954,7 @@ impl IcApp for Calculator {
                 if !handled {
                     if act == KeyAction::MoveUp {
                         self.focused_ui = FocusUi::Equation;
+                        return;
                     }
                 } else {
                     self.update_realtime_result();
@@ -1009,7 +1012,7 @@ impl IcApp for Calculator {
         self.draw_editor(platform);
         let result_str =
             core::str::from_utf8(&self.current_result[..self.current_result_len]).unwrap_or("0");
-        self.engine.draw_widgets(platform, result_str);
+        self.engine.draw_widgets(platform, result_str, self.focused_ui == FocusUi::Widget);
     }
 
     fn on_enter(&mut self) {
