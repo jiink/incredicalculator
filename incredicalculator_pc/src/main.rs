@@ -1,11 +1,10 @@
 use ::core::fmt;
 use std::{collections::HashMap};
 
-use embedded_graphics::{Drawable, pixelcolor::{BinaryColor, Rgb565}, prelude::{Primitive, RgbColor}, primitives::PrimitiveStyle};
+use embedded_graphics::{Drawable, pixelcolor::{BinaryColor, Rgb565}, prelude::{Primitive, RgbColor}, primitives::{PrimitiveStyle, PrimitiveStyleBuilder}};
 use embedded_graphics_framebuf::FrameBuf;
 use raylib::{ffi::{SetTextureFilter, RL_TEXTURE_FILTER_LINEAR}, prelude::*};
 
-//use incredicalculator_core::{IcKey, IcPlatform, IcShell, Shape};
 use incredicalculator_core::input::IcKey;
 use incredicalculator_core::platform::{IcPlatform};
 use incredicalculator_core::shell::IcShell;
@@ -59,11 +58,30 @@ impl IcPlatform for IcRaylibPlatform {
     }
     
     fn draw_rectangle(&mut self, start: IVec2, end: IVec2, stroke_color: rgb::RGB8, stroke_width: u32, fill_color: Option<rgb::RGB8>) {
-        todo!()
+        let mut fbuf = FrameBuf::new(&mut self.canvas_data, RENDER_W as usize, RENDER_H as usize);
+        let style = PrimitiveStyleBuilder::new()
+        .stroke_color(rgbu8_to_rgb565(stroke_color))
+        .stroke_width(stroke_width)
+        .stroke_alignment(embedded_graphics::primitives::StrokeAlignment::Center)
+        .build();
+        embedded_graphics::primitives::Rectangle::with_corners(embedded_graphics::prelude::Point::new(start.x, start.y),
+            embedded_graphics::prelude::Point::new(end.x, end.y)).into_styled(style).draw(&mut fbuf).unwrap();
     }
     
     fn draw_string(&mut self, text: &str, pos: IVec2, size: u32, color: rgb::RGB8) {
-        todo!()
+        let mut fbuf = FrameBuf::new(&mut self.canvas_data, RENDER_W as usize, RENDER_H as usize);
+        let style = embedded_graphics::mono_font::MonoTextStyle::new(
+            &embedded_graphics::mono_font::ascii::FONT_10X20,
+            rgbu8_to_rgb565(color)
+        );
+        embedded_graphics::text::Text::with_alignment(
+            text,
+            embedded_graphics::prelude::Point::new(pos.x, pos.y),
+            style,
+            embedded_graphics::text::Alignment::Left,
+        )
+        .draw(&mut fbuf)
+        .unwrap();
     }
 }
 

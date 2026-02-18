@@ -281,13 +281,6 @@ impl ProgrammerEngine {
             Ok(hex_str)
         }
     }
-
-    fn draw_rect(platform: &mut dyn IcPlatform, corner1: IVec2, corner2: IVec2, color: Rgb<u8>) {
-        platform.draw_line(corner1, IVec2::new(corner1.x, corner2.y), color, 2);
-        platform.draw_line(corner1, IVec2::new(corner2.x, corner1.y), color, 2);
-        platform.draw_line(IVec2::new(corner2.x, corner1.y), corner2, color, 2);
-        platform.draw_line(IVec2::new(corner1.x, corner2.y), corner2, color, 2);
-    }
 }
 
 impl CalcEngine for ProgrammerEngine {
@@ -417,17 +410,15 @@ impl CalcEngine for ProgrammerEngine {
                         2,
                     );
                 } else {
-                    Self::draw_rect(
-                        platform,
-                        IVec2 {
-                            x: (bit_x + 1) as i32,
-                            y: bit_y as i32,
-                        },
-                        IVec2 {
-                            x: (bit_x + bin_widget_element_w - 1) as i32,
-                            y: (bit_y + bin_widget_element_w) as i32,
-                        },
+                    platform.draw_rectangle(
+                        IVec2::new((bit_x + 1) as i32, bit_y as i32),
+                        IVec2::new(
+                            (bit_x + bin_widget_element_w - 1) as i32,
+                            (bit_y + bin_widget_element_w) as i32,
+                        ),
                         color,
+                        1,
+                        None,
                     );
                 }
             }
