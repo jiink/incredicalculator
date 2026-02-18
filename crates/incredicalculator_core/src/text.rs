@@ -3,7 +3,6 @@
 use core::{cmp, fmt};
 use rgb::*;
 use glam::IVec2;
-use crate::platform::Shape;
 
 pub const LIFT: u8 = 0xFF;
 // the f_ means font_
@@ -222,22 +221,21 @@ pub fn draw_text(platform: &mut dyn crate::platform::IcPlatform, text: &str, x: 
                 let sx: f32 = current_x + fx as f32 * scale;
                 let sy: f32 = current_y + fy as f32 * scale;
                 if last_point_valid {
-                    platform.draw_shape(Shape {
-                        start: IVec2 { x: last_sx as i32, y: last_sy as i32 },
-                        end: IVec2 { x: sx as i32, y: sy as i32 },
-                        color: color
-                    });
+                    platform.draw_line(IVec2::new( last_sx as i32, last_sy as i32 ),
+                        IVec2::new( sx as i32,  sy as i32 ),
+                        color,
+                        2
+                    );
                 } else {
                      // This is the first point after a LIFT or the start of the character data.
                     // Check if it's a standalone point (i.e., the next item is LIFT or end of data)
                     if pt_idx + 1 >= fontchar.len() || fontchar[pt_idx + 1] == LIFT {
                         // DOT!
-                        //platform.draw_shape(sx - (scale * 0.5), sy - (scale * 0.5), sx + (scale * 0.5), sy + (scale * 0.5));
-                        platform.draw_shape(Shape {
-                            start: IVec2 { x: (sx - (scale * 0.5)) as i32, y: (sy - (scale * 0.5)) as i32 },
-                            end: IVec2 { x: (sx + (scale * 0.5)) as i32, y: (sy + (scale * 0.5)) as i32 },
-                            color: color
-                        });
+                        platform.draw_line(IVec2::new(  (sx - (scale * 0.5)) as i32, (sy - (scale * 0.5)) as i32 ),
+                            IVec2::new( (sx + (scale * 0.5)) as i32,  (sy + (scale * 0.5)) as i32 ),
+                            color,
+                            2
+                        );
                     }
                     // If it's the start of a line segment (next point is not LIFT/end),
                     // we don't draw the point explicitly here. The olivec_line call

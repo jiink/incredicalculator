@@ -1299,6 +1299,7 @@ version = "0.1.0"
 dependencies = [
  "embedded-graphics",
  "embedded-graphics-framebuf",
+ "glam",
  "incredicalculator_core",
  "raylib",
  "rgb",

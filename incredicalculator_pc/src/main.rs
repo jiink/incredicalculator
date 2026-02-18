@@ -7,8 +7,10 @@ use raylib::{ffi::{SetTextureFilter, RL_TEXTURE_FILTER_LINEAR}, prelude::*};
 
 //use incredicalculator_core::{IcKey, IcPlatform, IcShell, Shape};
 use incredicalculator_core::input::IcKey;
-use incredicalculator_core::platform::{IcPlatform, Shape};
+use incredicalculator_core::platform::{IcPlatform};
 use incredicalculator_core::shell::IcShell;
+use glam::IVec2;
+
 struct VirtualKey {
     key: IcKey,
     x: u32,
@@ -25,27 +27,44 @@ const RENDER_W: u32 = 320;
 const RENDER_H: u32 = 240;
 
 pub struct IcRaylibPlatform {
-    pub shape_list: Vec<Shape>
+    pub canvas_data: [Rgb565; (RENDER_W * RENDER_H) as usize]
 }
 
 impl IcRaylibPlatform {
     pub fn new() -> IcRaylibPlatform {
-        IcRaylibPlatform { shape_list: Vec::<Shape>::new() }
+        IcRaylibPlatform {
+            canvas_data: [Rgb565::BLACK; (RENDER_W * RENDER_H) as usize]
+        }
     }
 }
 
 impl IcPlatform for IcRaylibPlatform {
-    fn draw_shape(&mut self, shape: Shape) {
-        self.shape_list.push(shape);
+    fn clear(&mut self, color: rgb::RGB8) {
+        self.canvas_data.fill(rgbu8_to_rgb565(color));
     }
 
-    fn clear_lines(&mut self) {
-        self.shape_list.clear();
+    fn draw_line(&mut self, start: IVec2, end: IVec2, color: rgb::RGB8, width: u32) {
+        let mut fbuf = FrameBuf::new(&mut self.canvas_data, RENDER_W as usize, RENDER_H as usize);
+        embedded_graphics::primitives::Line::new(
+            embedded_graphics::prelude::Point::new(start.x, start.y),
+            embedded_graphics::prelude::Point::new(end.x, end.y)
+        )
+        .into_styled(PrimitiveStyle::with_stroke(rgbu8_to_rgb565(color), 2))
+        .draw(&mut fbuf)
+        .unwrap();
     }
     
     fn log(&mut self, arg: fmt::Arguments) {
         println!("{}", arg);
-    }    
+    }
+    
+    fn draw_rectangle(&mut self, start: IVec2, end: IVec2, stroke_color: rgb::RGB8, stroke_width: u32, fill_color: Option<rgb::RGB8>) {
+        todo!()
+    }
+    
+    fn draw_string(&mut self, text: &str, pos: IVec2, size: u32, color: rgb::RGB8) {
+        todo!()
+    }
 }
 
 fn rgb565_to_rl_color(rgb565_col: Rgb565) -> Color {
@@ -58,7 +77,7 @@ fn rgbu8_to_rgb565(rgbu8_col: rgb::Rgb<u8>) -> Rgb565 {
 
 fn main() {
     let mut icalc: IcShell = IcShell::new();
-    let mut ic_rl_platform: IcRaylibPlatform = IcRaylibPlatform::new();
+    let mut ic_rl_platform = Box::new(IcRaylibPlatform::new());
     let key_map: HashMap<KeyboardKey, IcKey> = {
         let mut m: HashMap<KeyboardKey, IcKey> = HashMap::new();
         m.insert(KeyboardKey::KEY_E, IcKey::Func6);
@@ -162,24 +181,12 @@ fn main() {
             }
         }
 
-        icalc.update(&mut ic_rl_platform);
+        icalc.update(ic_rl_platform.as_mut());
 
         let fps: u32 = rl_handle.get_fps();
 
-        let mut canvas_data = [Rgb565::BLACK; (RENDER_W * RENDER_H) as usize];
-        let mut embedded_frame_buf = FrameBuf::new(&mut canvas_data, RENDER_W as usize, RENDER_H as usize);
-        for s in ic_rl_platform.shape_list.iter() {
-            embedded_graphics::primitives::Line::new(
-                embedded_graphics::prelude::Point { x: s.start.x, y: s.start.y },
-                embedded_graphics::prelude::Point { x: s.end.x, y: s.end.y }
-            )
-            .into_styled(PrimitiveStyle::with_stroke(rgbu8_to_rgb565(s.color), 2))
-            .draw(&mut embedded_frame_buf)
-            .unwrap();
-        }
-
         let mut raw_pixels: Vec<u8> = Vec::with_capacity((RENDER_W * RENDER_H * 4) as usize);
-        for pixel in canvas_data.iter() {
+        for pixel in ic_rl_platform.canvas_data.iter() {
             let c = rgb565_to_rl_color(*pixel);
             raw_pixels.push(c.r);
             raw_pixels.push(c.g);

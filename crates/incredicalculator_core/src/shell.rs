@@ -8,6 +8,7 @@ use crate::input::IcKey;
 use crate::apps::Calculator;
 use crate::platform::IcPlatform;
 use crate::text::*;
+use rgb::*;
 
 pub struct IcShell {
     apps: [Box<dyn IcApp>; 1], // INCREASE THIS SIZE WHEN ADDING NEW APPS
@@ -41,7 +42,7 @@ impl IcShell {
     }
 
     pub fn update(&mut self, platform: &mut dyn IcPlatform) {
-        platform.clear_lines();
+        platform.clear(RGB8::new(0, 0, 0));
         for s in self.key_states.iter_mut() {
             s.just_pressed = s.is_down && !s.was_down;
             s.just_released = !s.is_down && s.was_down;
@@ -74,11 +75,7 @@ impl IcShell {
                 0.0,
                 0.0,
                 3.0,
-                Rgb {
-                    r: 0xff,
-                    g: 0xff,
-                    b: 0x00,
-                },);
+                Rgb::new(0xff, 0xff, 0x00));
     }
 }
 

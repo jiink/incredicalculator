@@ -3,7 +3,6 @@ use crate::app::InputContext;
 use crate::input::{IcKey, KeyState};
 use crate::platform;
 use crate::platform::IcPlatform;
-use crate::platform::Shape;
 use crate::platform::debug_log;
 use crate::text::{draw_text, draw_text_f, text_to_pos};
 use alloc::boxed::Box;
@@ -284,38 +283,10 @@ impl ProgrammerEngine {
     }
 
     fn draw_rect(platform: &mut dyn IcPlatform, corner1: IVec2, corner2: IVec2, color: Rgb<u8>) {
-        platform.draw_shape(Shape {
-            start: corner1,
-            end: IVec2 {
-                x: corner1.x,
-                y: corner2.y,
-            },
-            color: color,
-        });
-        platform.draw_shape(Shape {
-            start: corner1,
-            end: IVec2 {
-                x: corner2.x,
-                y: corner1.y,
-            },
-            color: color,
-        });
-        platform.draw_shape(Shape {
-            start: IVec2 {
-                x: corner2.x,
-                y: corner1.y,
-            },
-            end: corner2,
-            color: color,
-        });
-        platform.draw_shape(Shape {
-            start: IVec2 {
-                x: corner1.x,
-                y: corner2.y,
-            },
-            end: corner2,
-            color: color,
-        });
+        platform.draw_line(corner1, IVec2::new(corner1.x, corner2.y), color, 2);
+        platform.draw_line(corner1, IVec2::new(corner2.x, corner1.y), color, 2);
+        platform.draw_line(IVec2::new(corner2.x, corner1.y), corner2, color, 2);
+        platform.draw_line(IVec2::new(corner1.x, corner2.y), corner2, color, 2);
     }
 }
 
@@ -436,17 +407,15 @@ impl CalcEngine for ProgrammerEngine {
                     }
                 };
                 if bit_val {
-                    platform.draw_shape(Shape {
-                        start: IVec2 {
-                            x: (bit_x + bin_widget_element_w / 2) as i32,
-                            y: bit_y as i32,
-                        },
-                        end: IVec2 {
-                            x: (bit_x + bin_widget_element_w / 2) as i32,
-                            y: (bit_y + bin_widget_element_w) as i32,
-                        },
+                    platform.draw_line(
+                        IVec2::new((bit_x + bin_widget_element_w / 2) as i32, bit_y as i32),
+                        IVec2::new(
+                            (bit_x + bin_widget_element_w / 2) as i32,
+                            (bit_y + bin_widget_element_w) as i32,
+                        ),
                         color,
-                    });
+                        2,
+                    );
                 } else {
                     Self::draw_rect(
                         platform,
@@ -844,21 +813,16 @@ impl Calculator {
                     );
                 }
             }
-            platform.draw_shape(Shape {
-                start: IVec2 {
-                    x: margin as i32,
-                    y: y2 as i32 + 16,
-                },
-                end: IVec2 {
-                    x: (WIDTH - margin) as i32,
-                    y: y2 as i32 + 16,
-                },
-                color: Rgb {
+            platform.draw_line(
+                IVec2::new(margin as i32, y2 as i32 + 16),
+                IVec2::new((WIDTH - margin) as i32, y2 as i32 + 16),
+                Rgb {
                     r: 0x80,
                     g: 0x80,
                     b: 0x80,
                 },
-            });
+                2,
+            );
             draw_row += 1;
         }
     }
@@ -1012,7 +976,8 @@ impl IcApp for Calculator {
         self.draw_editor(platform);
         let result_str =
             core::str::from_utf8(&self.current_result[..self.current_result_len]).unwrap_or("0");
-        self.engine.draw_widgets(platform, result_str, self.focused_ui == FocusUi::Widget);
+        self.engine
+            .draw_widgets(platform, result_str, self.focused_ui == FocusUi::Widget);
     }
 
     fn on_enter(&mut self) {
