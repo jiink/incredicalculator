@@ -49,6 +49,9 @@ struct HistorySelection {
 enum KeyAction {
     InsertChar(u8),
     InsertChar2(u8, u8),
+    InsertChar3(u8, u8, u8),
+    InsertChar4(u8, u8, u8, u8),
+    InsertChar5(u8, u8, u8, u8, u8),
     MoveLeft,
     MoveRight,
     MoveUp,
@@ -183,6 +186,7 @@ trait CalcEngine {
         current_result: &str,
     ) -> bool;
     fn has_widget(&self) -> bool;
+    fn get_action(&self, key: IcKey, is_shifted: bool, is_super: bool) -> Option<KeyAction>;
 }
 
 pub struct ScientificEngine {}
@@ -227,6 +231,76 @@ impl CalcEngine for ScientificEngine {
 
     fn has_widget(&self) -> bool {
         false
+    }
+
+    fn get_action(&self, key: IcKey, is_shifted: bool, is_super: bool) -> Option<KeyAction> {
+        if is_shifted {
+            match key {
+                IcKey::Num0 => Some(KeyAction::InsertChar4(b's', b'i', b'n', b'(')),
+                IcKey::Num1 => Some(KeyAction::InsertChar4(b'c', b'o', b's', b'(')),
+                IcKey::Num2 => Some(KeyAction::InsertChar4(b't', b'a', b'n', b'(')),
+                IcKey::Num3 => Some(KeyAction::InsertChar5(b'a', b's', b'i', b'n', b'(')),
+                IcKey::Num4 => Some(KeyAction::InsertChar5(b'a', b'c', b'o', b's', b'(')),
+                IcKey::Num5 => Some(KeyAction::InsertChar5(b'a', b't', b'a', b'n', b'(')),
+                IcKey::Num6 => Some(KeyAction::InsertChar(b'.')),
+                IcKey::Num7 => Some(KeyAction::InsertChar(b'(')),
+                IcKey::Num8 => Some(KeyAction::InsertChar(b')')),
+                IcKey::Num9 => Some(KeyAction::InsertChar5(b's', b'q', b'r', b't', b'(')),
+                IcKey::Func1 => None,
+                IcKey::Func2 => None,
+                IcKey::Func3 => None,
+                IcKey::Func4 => None,
+                IcKey::Func5 => None,
+                IcKey::Func6 => Some(KeyAction::InsertChar(b'^')),
+                IcKey::Shift => None,
+                IcKey::Super => None,
+                IcKey::_Max => None,
+            }
+        } else if is_super {
+            match key {
+                IcKey::Num0 => None,
+                IcKey::Num1 => Some(KeyAction::End),
+                IcKey::Num2 => Some(KeyAction::MoveDown),
+                IcKey::Num3 => None,
+                IcKey::Num4 => Some(KeyAction::MoveLeft),
+                IcKey::Num5 => Some(KeyAction::Mode),
+                IcKey::Num6 => Some(KeyAction::MoveRight),
+                IcKey::Num7 => Some(KeyAction::Home),
+                IcKey::Num8 => Some(KeyAction::MoveUp),
+                IcKey::Num9 => Some(KeyAction::Clear),
+                IcKey::Func1 => None,
+                IcKey::Func2 => None,
+                IcKey::Func3 => None,
+                IcKey::Func4 => None,
+                IcKey::Func5 => None,
+                IcKey::Func6 => None,
+                IcKey::Shift => None,
+                IcKey::Super => None,
+                IcKey::_Max => None,
+            }
+        } else {
+            match key {
+                IcKey::Num0 => Some(KeyAction::InsertChar(b'0')),
+                IcKey::Num1 => Some(KeyAction::InsertChar(b'1')),
+                IcKey::Num2 => Some(KeyAction::InsertChar(b'2')),
+                IcKey::Num3 => Some(KeyAction::InsertChar(b'3')),
+                IcKey::Num4 => Some(KeyAction::InsertChar(b'4')),
+                IcKey::Num5 => Some(KeyAction::InsertChar(b'5')),
+                IcKey::Num6 => Some(KeyAction::InsertChar(b'6')),
+                IcKey::Num7 => Some(KeyAction::InsertChar(b'7')),
+                IcKey::Num8 => Some(KeyAction::InsertChar(b'8')),
+                IcKey::Num9 => Some(KeyAction::InsertChar(b'9')),
+                IcKey::Func1 => Some(KeyAction::Backspace),
+                IcKey::Func2 => Some(KeyAction::InsertChar(b'/')),
+                IcKey::Func3 => Some(KeyAction::InsertChar(b'*')),
+                IcKey::Func4 => Some(KeyAction::InsertChar(b'-')),
+                IcKey::Func5 => Some(KeyAction::InsertChar(b'+')),
+                IcKey::Func6 => Some(KeyAction::Enter),
+                IcKey::Shift => None,
+                IcKey::Super => None,
+                IcKey::_Max => None,
+            }
+        }
     }
 }
 
@@ -437,38 +511,8 @@ impl CalcEngine for ProgrammerEngine {
             );
         }
     }
-}
 
-pub struct Calculator {
-    current_eq: LineBuffer<{ EqEntry::EQUATION_MAX_SIZE }>,
-    eq_history: [EqEntry; EQ_HISTORY_MAX],
-    eq_history_len: usize,
-    eq_history_write_idx: usize,
-    current_result: [u8; EqEntry::EQUATION_MAX_SIZE],
-    current_result_len: usize,
-    history_selection: Option<HistorySelection>, // none means youre editing the current equation
-    focused_ui: FocusUi,
-    engine: Box<dyn CalcEngine>,
-    engine_mode: EngineMode,
-}
-
-impl Calculator {
-    pub fn new() -> Calculator {
-        Calculator {
-            current_eq: LineBuffer::default(),
-            eq_history: [EqEntry::default(); EQ_HISTORY_MAX],
-            eq_history_len: 0,
-            eq_history_write_idx: 0,
-            current_result: [0; EqEntry::EQUATION_MAX_SIZE],
-            current_result_len: 0,
-            history_selection: None,
-            focused_ui: FocusUi::Equation,
-            engine: Box::new(ProgrammerEngine::default()),
-            engine_mode: EngineMode::Programmer,
-        }
-    }
-
-    fn get_action(key: IcKey, is_shifted: bool, is_super: bool) -> Option<KeyAction> {
+    fn get_action(&self, key: IcKey, is_shifted: bool, is_super: bool) -> Option<KeyAction> {
         if is_shifted {
             match key {
                 IcKey::Num0 => Some(KeyAction::InsertChar(b'A')),
@@ -535,6 +579,36 @@ impl Calculator {
                 IcKey::Super => None,
                 IcKey::_Max => None,
             }
+        }
+    }
+}
+
+pub struct Calculator {
+    current_eq: LineBuffer<{ EqEntry::EQUATION_MAX_SIZE }>,
+    eq_history: [EqEntry; EQ_HISTORY_MAX],
+    eq_history_len: usize,
+    eq_history_write_idx: usize,
+    current_result: [u8; EqEntry::EQUATION_MAX_SIZE],
+    current_result_len: usize,
+    history_selection: Option<HistorySelection>, // none means youre editing the current equation
+    focused_ui: FocusUi,
+    engine: Box<dyn CalcEngine>,
+    engine_mode: EngineMode,
+}
+
+impl Calculator {
+    pub fn new() -> Calculator {
+        Calculator {
+            current_eq: LineBuffer::default(),
+            eq_history: [EqEntry::default(); EQ_HISTORY_MAX],
+            eq_history_len: 0,
+            eq_history_write_idx: 0,
+            current_result: [0; EqEntry::EQUATION_MAX_SIZE],
+            current_result_len: 0,
+            history_selection: None,
+            focused_ui: FocusUi::Equation,
+            engine: Box::new(ProgrammerEngine::default()),
+            engine_mode: EngineMode::Programmer,
         }
     }
 
@@ -897,7 +971,7 @@ impl Calculator {
 
 impl IcApp for Calculator {
     fn on_key(&mut self, key: IcKey, ctx: &InputContext) {
-        let action = Self::get_action(key, ctx.is_shifted(), ctx.is_super());
+        let action = self.engine.get_action(key, ctx.is_shifted(), ctx.is_super());
         if let Some(mut act) = action {
             if self.focused_ui == FocusUi::Widget {
                 let current_result_str =
@@ -921,7 +995,25 @@ impl IcApp for Calculator {
                 KeyAction::InsertChar2(c1, c2) => {
                     self.current_eq.insert_char(c1);
                     self.current_eq.insert_char(c2);
-                }
+                },
+                KeyAction::InsertChar3(c1, c2, c3) => {
+                    self.current_eq.insert_char(c1);
+                    self.current_eq.insert_char(c2);
+                    self.current_eq.insert_char(c3);
+                },
+                KeyAction::InsertChar4(c1, c2, c3, c4) => {
+                    self.current_eq.insert_char(c1);
+                    self.current_eq.insert_char(c2);
+                    self.current_eq.insert_char(c3);
+                    self.current_eq.insert_char(c4);
+                },
+                KeyAction::InsertChar5(c1, c2, c3, c4, c5) => {
+                    self.current_eq.insert_char(c1);
+                    self.current_eq.insert_char(c2);
+                    self.current_eq.insert_char(c3);
+                    self.current_eq.insert_char(c4);
+                    self.current_eq.insert_char(c5);
+                },
                 KeyAction::Backspace => {
                     if self.history_selection.is_none() {
                         self.current_eq.backspace()
