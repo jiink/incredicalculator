@@ -41,18 +41,30 @@ impl IcShell {
     }
 
     fn draw_battery(&mut self, platform: &mut dyn IcPlatform) {
+        let batt_percentage: i32 = 70;
+        let batt_icon_pos = IVec2::new(282, 3);
+        let batt_icon_w = 34;
+        let batt_icon_h = 17;
+        let fill_w = (batt_percentage * batt_icon_w) / 100;
         platform.draw_rectangle(
-            IVec2::new(289, 4),
-            IVec2::new(315, 16),
-            RGB8::new(0xff, 0xff, 0xff),
-            2,
-            None,
+            batt_icon_pos,
+            batt_icon_pos + IVec2::new(batt_icon_w, batt_icon_h),
+            RGB8::new(0, 0, 0),
+            0,
+            Some(RGB::new(0x80, 0x80, 0x80)),
         );
-        platform.draw_string(
-            "99%",
-            IVec2::new(20, 20),
+        platform.draw_rectangle(
+            batt_icon_pos,
+            batt_icon_pos + IVec2::new(fill_w, batt_icon_h),
+            RGB8::new(0, 0, 0),
+            0,
+            Some(RGB::new(0xff, 0xff, 0xff)),
+        );
+        platform.draw_string_f(
+            format_args!("{}", batt_percentage),
+            IVec2::new(290, 2),
             4,
-            Rgb::new(0xff, 0xff, 0x00),
+            Rgb::new(0, 0, 0),
         );
     }
 

@@ -59,29 +59,59 @@ impl IcPlatform for IcRaylibPlatform {
     
     fn draw_rectangle(&mut self, start: IVec2, end: IVec2, stroke_color: rgb::RGB8, stroke_width: u32, fill_color: Option<rgb::RGB8>) {
         let mut fbuf = FrameBuf::new(&mut self.canvas_data, RENDER_W as usize, RENDER_H as usize);
-        let style = PrimitiveStyleBuilder::new()
+        let mut style_builder = PrimitiveStyleBuilder::new()
         .stroke_color(rgbu8_to_rgb565(stroke_color))
         .stroke_width(stroke_width)
-        .stroke_alignment(embedded_graphics::primitives::StrokeAlignment::Center)
-        .build();
+        .stroke_alignment(embedded_graphics::primitives::StrokeAlignment::Center);
+        if let Some(c) = fill_color {
+            style_builder = style_builder.fill_color(rgbu8_to_rgb565(c));
+        }
+        let style = style_builder.build();
         embedded_graphics::primitives::Rectangle::with_corners(embedded_graphics::prelude::Point::new(start.x, start.y),
             embedded_graphics::prelude::Point::new(end.x, end.y)).into_styled(style).draw(&mut fbuf).unwrap();
     }
     
     fn draw_string(&mut self, text: &str, pos: IVec2, size: u32, color: rgb::RGB8) {
         let mut fbuf = FrameBuf::new(&mut self.canvas_data, RENDER_W as usize, RENDER_H as usize);
-        let style = embedded_graphics::mono_font::MonoTextStyle::new(
+        
+        // using a BUILT-IN FONT!
+        let char_style = embedded_graphics::mono_font::MonoTextStyle::new(
             &embedded_graphics::mono_font::ascii::FONT_10X20,
             rgbu8_to_rgb565(color)
         );
-        embedded_graphics::text::Text::with_alignment(
+        let text_style = embedded_graphics::text::TextStyleBuilder::new()
+        .alignment(embedded_graphics::text::Alignment::Left)
+        .baseline(embedded_graphics::text::Baseline::Top)
+        .build();
+        embedded_graphics::text::Text::with_text_style(
             text,
             embedded_graphics::prelude::Point::new(pos.x, pos.y),
-            style,
-            embedded_graphics::text::Alignment::Left,
+            char_style,
+            text_style,
         )
         .draw(&mut fbuf)
         .unwrap();
+
+        // using a TTF FONT!
+        // let style = embedded_ttf::FontTextStyleBuilder::new(
+        // rusttype::Font::try_from_bytes(include_bytes!("../assets/Roboto-Regular.ttf")).unwrap())
+        // .font_size(30)
+        // .text_color(Rgb565::WHITE)
+        // //.anti_aliasing_color(Rgb565::BLACK)
+        // .build();
+        // embedded_graphics::text::Text::with_alignment(
+        //     text,
+        //     embedded_graphics::prelude::Point::new(pos.x, pos.y),
+        //     style,
+        //     embedded_graphics::text::Alignment::Left,
+        // )
+        // .draw(&mut fbuf)
+        // .unwrap();
+    }
+
+    fn draw_string_f(&mut self, arg: fmt::Arguments, pos: IVec2, size: u32, color: rgb::RGB8) {
+        let mut buf = [0u8; 128];
+        self.draw_string(format_no_std::show(&mut buf, arg).unwrap(), pos, size, color);
     }
 }
 

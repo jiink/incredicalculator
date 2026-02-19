@@ -10,3 +10,6 @@ embedded-graphics = "0.8.1"
 embedded-graphics-framebuf = "0.5.0"
 rgb = "0.8.52"
 glam = { version = "0.30.9", default-features = false, features = ["libm", "scalar-math"] }
+embedded-ttf = "0.2.2"
+rusttype = "0.9.3"
+format_no_std = "1.2.0"
