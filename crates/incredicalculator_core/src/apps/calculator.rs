@@ -817,6 +817,36 @@ impl Calculator {
                 .unwrap_or("Invalid UTF-8");
             let base_y: u32 = 108;
             let y = base_y + margin - draw_row * row_height;
+            let line_height: u32 = 20;
+            let y2 = base_y + line_height + margin - draw_row * row_height;
+            if let Some(selection) = self.history_selection {
+                let y_pos = match selection.part {
+                    EqEntryPart::Equation => y,
+                    EqEntryPart::Result => y2,
+                };
+                let logical_idx = self.eq_history_len - 1 - i as usize;
+                if logical_idx == selection.idx {
+                    platform.draw_rectangle(
+                        IVec2::new(0, y_pos as i32 - margin as i32),
+                        IVec2::new(WIDTH as i32, y_pos as i32 + line_height as i32 - 5),
+                        Rgb::new(0, 0, 0),
+                        0,
+                        Some(Rgb::new(0, 0, 255)),
+                    );
+                    draw_text(
+                        platform,
+                        "\x03",
+                        (WIDTH - margin - 9) as f32,
+                        y_pos as f32,
+                        font_size,
+                        Rgb {
+                            r: 0xff,
+                            g: 0,
+                            b: 0,
+                        },
+                    );
+                }
+            }
             draw_text(
                 platform,
                 eq_disp,
@@ -831,8 +861,6 @@ impl Calculator {
             );
             let ans_disp =
                 core::str::from_utf8(&entry.result[..entry.result_len]).unwrap_or("Invalid UTF-8");
-            let line_height: u32 = 20;
-            let y2 = base_y + line_height + margin - draw_row * row_height;
             draw_text(
                 platform,
                 "=",
@@ -857,27 +885,7 @@ impl Calculator {
                     b: 0x00,
                 },
             );
-            if let Some(selection) = self.history_selection {
-                let y_pos = match selection.part {
-                    EqEntryPart::Equation => y,
-                    EqEntryPart::Result => y2,
-                };
-                let logical_idx = self.eq_history_len - 1 - i as usize;
-                if logical_idx == selection.idx {
-                    draw_text(
-                        platform,
-                        "\x03",
-                        (WIDTH - margin - 9) as f32,
-                        y_pos as f32,
-                        font_size,
-                        Rgb {
-                            r: 0xff,
-                            g: 0,
-                            b: 0,
-                        },
-                    );
-                }
-            }
+
             platform.draw_line(
                 IVec2::new(margin as i32, y2 as i32 + 16),
                 IVec2::new((WIDTH - margin) as i32, y2 as i32 + 16),
@@ -913,24 +921,22 @@ impl Calculator {
                 b: 0xff,
             },
         );
-        let cursor_x_pos = text_to_pos(
-            &equation_disp,
-            margin as f32,
-            eq_scale,
-            self.current_eq.cursor,
-        );
-        if self.focused_ui == FocusUi::Equation {
-            draw_text(
-                platform,
-                "|",
-                cursor_x_pos as f32 - 3.0,
-                eq_y,
+        if self.focused_ui == FocusUi::Equation && self.history_selection.is_none() {
+            let mut cursor_x_pos = text_to_pos(
+                &equation_disp,
+                margin as f32,
                 eq_scale,
-                Rgb {
-                    r: 0xff,
-                    g: 0xff,
-                    b: 0x44,
-                },
+                self.current_eq.cursor,
+            );
+            cursor_x_pos -= 2.0;
+            if cursor_x_pos < 2.0 {
+                cursor_x_pos = 2.0;
+            }
+            platform.draw_line(
+                IVec2::new(cursor_x_pos as i32 - 3, eq_y as i32 - 5),
+                IVec2::new(cursor_x_pos as i32 - 3, eq_y as i32 + 30),
+                Rgb::new(0xff, 0xff, 0x44),
+                2,
             );
         }
 
@@ -971,7 +977,9 @@ impl Calculator {
 
 impl IcApp for Calculator {
     fn on_key(&mut self, key: IcKey, ctx: &InputContext) {
-        let action = self.engine.get_action(key, ctx.is_shifted(), ctx.is_super());
+        let action = self
+            .engine
+            .get_action(key, ctx.is_shifted(), ctx.is_super());
         if let Some(mut act) = action {
             if self.focused_ui == FocusUi::Widget {
                 let current_result_str =
@@ -995,25 +1003,25 @@ impl IcApp for Calculator {
                 KeyAction::InsertChar2(c1, c2) => {
                     self.current_eq.insert_char(c1);
                     self.current_eq.insert_char(c2);
-                },
+                }
                 KeyAction::InsertChar3(c1, c2, c3) => {
                     self.current_eq.insert_char(c1);
                     self.current_eq.insert_char(c2);
                     self.current_eq.insert_char(c3);
-                },
+                }
                 KeyAction::InsertChar4(c1, c2, c3, c4) => {
                     self.current_eq.insert_char(c1);
                     self.current_eq.insert_char(c2);
                     self.current_eq.insert_char(c3);
                     self.current_eq.insert_char(c4);
-                },
+                }
                 KeyAction::InsertChar5(c1, c2, c3, c4, c5) => {
                     self.current_eq.insert_char(c1);
                     self.current_eq.insert_char(c2);
                     self.current_eq.insert_char(c3);
                     self.current_eq.insert_char(c4);
                     self.current_eq.insert_char(c5);
-                },
+                }
                 KeyAction::Backspace => {
                     if self.history_selection.is_none() {
                         self.current_eq.backspace()
