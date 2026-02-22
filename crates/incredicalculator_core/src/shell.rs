@@ -1,5 +1,6 @@
 use crate::app::IcApp;
 use crate::app::InputContext;
+use crate::apps::AspectRatioCalculator;
 use crate::apps::Calculator;
 use crate::input::IcKey;
 use crate::input::KeyState;
@@ -12,7 +13,7 @@ use rgb::Rgb;
 use rgb::*;
 
 pub struct IcShell {
-    apps: [Box<dyn IcApp>; 1], // INCREASE THIS SIZE WHEN ADDING NEW APPS
+    apps: [Box<dyn IcApp>; 2], // INCREASE THIS SIZE WHEN ADDING NEW APPS
     active_app_idx: usize,
     key_states: [KeyState; IcKey::COUNT],
 }
@@ -20,7 +21,7 @@ pub struct IcShell {
 impl IcShell {
     pub fn new() -> Self {
         Self {
-            apps: [Box::new(Calculator::new())],
+            apps: [Box::new(Calculator::new()), Box::new(AspectRatioCalculator::new())],
             active_app_idx: 0,
             key_states: [KeyState::default(); IcKey::COUNT],
         }
