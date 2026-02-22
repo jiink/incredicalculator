@@ -187,6 +187,7 @@ trait CalcEngine {
     ) -> bool;
     fn has_widget(&self) -> bool;
     fn get_action(&self, key: IcKey, is_shifted: bool, is_super: bool) -> Option<KeyAction>;
+    fn get_color(&self) -> RGB8;
 }
 
 pub struct ScientificEngine {}
@@ -301,6 +302,10 @@ impl CalcEngine for ScientificEngine {
                 IcKey::_Max => None,
             }
         }
+    }
+    
+    fn get_color(&self) -> RGB8 {
+        RGB8::new(0x20, 0, 0)
     }
 }
 
@@ -580,6 +585,10 @@ impl CalcEngine for ProgrammerEngine {
                 IcKey::_Max => None,
             }
         }
+    }
+
+    fn get_color(&self) -> RGB8 {
+        RGB8::new(0, 0x20, 0x20)
     }
 }
 
@@ -1063,6 +1072,7 @@ impl IcApp for Calculator {
     }
 
     fn update(&mut self, platform: &mut dyn IcPlatform, _ctx: &InputContext) {
+        platform.clear(self.engine.get_color());
         self.draw_history(platform);
         self.draw_editor(platform);
         let result_str =

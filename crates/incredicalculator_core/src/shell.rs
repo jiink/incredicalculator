@@ -69,7 +69,6 @@ impl IcShell {
     }
 
     pub fn update(&mut self, platform: &mut dyn IcPlatform) {
-        platform.clear(RGB8::new(0, 0, 0));
         for s in self.key_states.iter_mut() {
             s.just_pressed = s.is_down && !s.was_down;
             s.just_released = !s.is_down && s.was_down;
