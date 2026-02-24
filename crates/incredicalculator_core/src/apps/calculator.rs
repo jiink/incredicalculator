@@ -1082,6 +1082,6 @@ impl IcApp for Calculator {
     }
 
     fn on_enter(&mut self) {
-        todo!()
+        ()
     }
 }
