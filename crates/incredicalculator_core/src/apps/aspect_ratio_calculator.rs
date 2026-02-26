@@ -179,10 +179,10 @@ impl AspectRatioCalculator {
     }
 
     fn has_any_zeroes(&self) -> bool {
-        self.input_box_width1.value <= 0 || 
-        self.input_box_height1.value <= 0 ||
-        self.input_box_width2.value <= 0 ||
-        self.input_box_height2.value <= 0
+        self.input_box_width1.value <= 0
+            || self.input_box_height1.value <= 0
+            || self.input_box_width2.value <= 0
+            || self.input_box_height2.value <= 0
     }
 
     fn update_math(&mut self) {
@@ -209,6 +209,27 @@ impl AspectRatioCalculator {
             }
         }
     }
+
+    fn draw_ratio_visualizer(&self, platform: &mut dyn crate::platform::IcPlatform) {
+        if self.has_any_zeroes() {
+            return;
+        }
+        let height: i32 = 60;
+        let top_y = 159;
+        let width_to_height =
+            self.input_box_width1.value as f32 / self.input_box_height1.value as f32;
+        let width = (height as f32 * width_to_height) as i32;
+        let center_x = 320 / 2;
+        let top_left = IVec2::new(center_x - width / 2, top_y);
+        let bottom_right = IVec2::new(center_x + width / 2, top_y + height);
+        platform.draw_rectangle(
+            top_left,
+            bottom_right,
+            RGB8::new(0, 0, 0),
+            0,
+            Some(RGB8::new(0x51, 0x9A, 0x66)),
+        );
+    }
 }
 
 impl IcApp for AspectRatioCalculator {
@@ -219,8 +240,7 @@ impl IcApp for AspectRatioCalculator {
     fn on_key(&mut self, key: crate::input::IcKey, ctx: &crate::app::InputContext) {
         let action = self.get_action(key, ctx.is_shifted(), ctx.is_super());
         match action {
-            Some(KeyAction::InsertDigit(d)) => 
-            {
+            Some(KeyAction::InsertDigit(d)) => {
                 self.get_focused_input_box().append_digit(d as u32);
                 self.update_math();
             }
@@ -295,5 +315,30 @@ impl IcApp for AspectRatioCalculator {
         self.input_box_width2.draw(platform);
         self.input_box_height2.draw(platform);
         self.get_focused_input_box().draw_highlight(platform);
+        platform.draw_line(
+            IVec2::new(152, 83),
+            IVec2::new(152 + 17, 83),
+            RGB8::new(0, 0, 0),
+            3,
+        );
+        platform.draw_line(
+            IVec2::new(152, 93),
+            IVec2::new(152 + 17, 93),
+            RGB8::new(0, 0, 0),
+            3,
+        );
+        platform.draw_line(
+            IVec2::new(17, 89),
+            IVec2::new(17 + 129, 89),
+            RGB8::new(0, 0, 0),
+            3,
+        );
+        platform.draw_line(
+            IVec2::new(175, 89),
+            IVec2::new(175 + 129, 89),
+            RGB8::new(0, 0, 0),
+            3,
+        );
+        self.draw_ratio_visualizer(platform);
     }
 }
