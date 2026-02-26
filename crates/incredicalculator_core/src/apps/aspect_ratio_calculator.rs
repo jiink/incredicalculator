@@ -1,7 +1,7 @@
+use crate::input::{IcKey, KeyState};
 use glam::IVec2;
 use num_traits::clamp_max;
 use rgb::{RGB8, Rgb};
-use crate::input::{IcKey, KeyState};
 
 use crate::{
     app::IcApp,
@@ -93,8 +93,8 @@ impl AspectRatioCalculator {
         AspectRatioCalculator {
             focused_ui: FocusUi::Width1,
             input_box_width1: NumInputBox::new(IVec2::new(17, 39), IVec2::new(129, 33)),
-            input_box_height1: NumInputBox::new(IVec2::new(174, 39), IVec2::new(129, 33)),
-            input_box_width2: NumInputBox::new(IVec2::new(17, 107), IVec2::new(129, 33)),
+            input_box_width2: NumInputBox::new(IVec2::new(174, 39), IVec2::new(129, 33)),
+            input_box_height1: NumInputBox::new(IVec2::new(17, 107), IVec2::new(129, 33)),
             input_box_height2: NumInputBox::new(IVec2::new(174, 107), IVec2::new(129, 33)),
         }
     }
@@ -177,6 +177,38 @@ impl AspectRatioCalculator {
             FocusUi::Height2 => &mut self.input_box_height2,
         }
     }
+
+    fn has_any_zeroes(&self) -> bool {
+        self.input_box_width1.value <= 0 || 
+        self.input_box_height1.value <= 0 ||
+        self.input_box_width2.value <= 0 ||
+        self.input_box_height2.value <= 0
+    }
+
+    fn update_math(&mut self) {
+        // w1/h1 side is called ratio and w2/h2 side is called result
+        let w1 = self.input_box_width1.value as f32;
+        let h1 = self.input_box_height1.value as f32;
+        let w2 = self.input_box_width2.value as f32;
+        let h2 = self.input_box_height2.value as f32;
+        if w1 == 0.0 || h1 == 0.0 {
+            return;
+        }
+        match self.focused_ui {
+            FocusUi::Width1 => {
+                self.input_box_width2.value = ((w1 / h1) * h2).round() as i32;
+            }
+            FocusUi::Height1 => {
+                self.input_box_height2.value = ((h1 / w1) * w2).round() as i32;
+            }
+            FocusUi::Width2 => {
+                self.input_box_height2.value = ((h1 / w1) * w2).round() as i32;
+            }
+            FocusUi::Height2 => {
+                self.input_box_width2.value = ((w1 / h1) * h2).round() as i32;
+            }
+        }
+    }
 }
 
 impl IcApp for AspectRatioCalculator {
@@ -187,7 +219,11 @@ impl IcApp for AspectRatioCalculator {
     fn on_key(&mut self, key: crate::input::IcKey, ctx: &crate::app::InputContext) {
         let action = self.get_action(key, ctx.is_shifted(), ctx.is_super());
         match action {
-            Some(KeyAction::InsertDigit(d)) => self.get_focused_input_box().append_digit(d as u32),
+            Some(KeyAction::InsertDigit(d)) => 
+            {
+                self.get_focused_input_box().append_digit(d as u32);
+                self.update_math();
+            }
             Some(KeyAction::MoveUp) => {
                 self.focused_ui = match self.focused_ui {
                     FocusUi::Width1 => FocusUi::Width1,
@@ -222,10 +258,12 @@ impl IcApp for AspectRatioCalculator {
             }
             Some(KeyAction::Backspace) => {
                 self.get_focused_input_box().backspace();
+                self.update_math();
             }
             Some(KeyAction::Clear) => {
                 self.get_focused_input_box().clear();
-            },
+                self.update_math();
+            }
             Some(KeyAction::Enter) => {
                 self.focused_ui = match self.focused_ui {
                     FocusUi::Width1 => FocusUi::Height1,
@@ -234,7 +272,7 @@ impl IcApp for AspectRatioCalculator {
                     FocusUi::Height2 => FocusUi::Width1,
                 }
             }
-            None => ()
+            None => (),
         }
     }
 
