@@ -224,7 +224,7 @@ pub fn draw_text(platform: &mut dyn crate::platform::IcPlatform, text: &str, x: 
                     platform.draw_line(IVec2::new( last_sx as i32, last_sy as i32 ),
                         IVec2::new( sx as i32,  sy as i32 ),
                         color,
-                        2
+                        scale.round() as u32
                     );
                 } else {
                      // This is the first point after a LIFT or the start of the character data.

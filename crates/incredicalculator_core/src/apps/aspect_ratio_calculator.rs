@@ -1,6 +1,6 @@
 use crate::input::{IcKey, KeyState};
 use glam::IVec2;
-use num_traits::clamp_max;
+use num_traits::{abs, clamp_max};
 use rgb::{RGB8, Rgb};
 
 use crate::{
@@ -210,6 +210,96 @@ impl AspectRatioCalculator {
         }
     }
 
+    fn draw_tv_frame(
+        &self,
+        platform: &mut dyn crate::platform::IcPlatform,
+        top_left: IVec2,
+        bottom_right: IVec2,
+    ) {
+        // first the decorations around the rectangle is drawn and then the acutal screen rectangle you want
+        let base_col = RGB8::new(0, 0, 0);
+        let bezel_w = 3;
+        platform.draw_rectangle(
+            top_left - IVec2::new(bezel_w, bezel_w),
+            bottom_right + IVec2::new(bezel_w, bezel_w),
+            base_col,
+            0,
+            Some(base_col),
+        );
+        let center_x = (top_left.x + bottom_right.x) / 2;
+        let screen_w = abs(top_left.x - bottom_right.x);
+        let max_mount_w = 24;
+        let mount_w = clamp_max(screen_w, max_mount_w);
+        platform.draw_rectangle(
+            IVec2::new(center_x - mount_w / 2, bottom_right.y + bezel_w + 1),
+            IVec2::new(center_x + mount_w / 2, bottom_right.y + bezel_w + 2),
+            base_col,
+            0,
+            Some(base_col),
+        );
+        let stem_w = 6;
+        platform.draw_rectangle(
+            IVec2::new(center_x - stem_w / 2, bottom_right.y + bezel_w + 3),
+            IVec2::new(center_x + stem_w / 2, bottom_right.y + bezel_w + 6),
+            base_col,
+            0,
+            Some(base_col),
+        );
+        let base_w = 36;
+        platform.draw_rectangle(
+            IVec2::new(center_x - base_w / 2, bottom_right.y + bezel_w + 7),
+            IVec2::new(center_x + base_w / 2, bottom_right.y + bezel_w + 10),
+            base_col,
+            0,
+            Some(base_col),
+        );
+        let max_antenna_base_w = 18;
+        let antenna_base_w = clamp_max(screen_w, max_antenna_base_w);
+        let antenna_l_pos = IVec2::new(center_x - 4, top_left.y - 15);
+        let antenna_r_pos = IVec2::new(center_x + 10, top_left.y - 10);
+        platform.draw_rectangle(
+            IVec2::new(center_x - antenna_base_w / 2, top_left.y - bezel_w - 1),
+            IVec2::new(center_x + antenna_base_w / 2, top_left.y - bezel_w - 2),
+            base_col,
+            0,
+            Some(base_col),
+        );
+        platform.draw_line(
+            IVec2::new(center_x - 1, top_left.y - 5),
+            antenna_l_pos,
+            base_col,
+            2,
+        );
+        platform.draw_line(
+            IVec2::new(center_x + 1, top_left.y - 5),
+            antenna_r_pos,
+            base_col,
+            2,
+        );
+        let antenna_ball_size = 2;
+        platform.draw_rectangle(
+            antenna_l_pos - IVec2::new(antenna_ball_size, antenna_ball_size),
+            antenna_l_pos + IVec2::new(antenna_ball_size, antenna_ball_size),
+            base_col,
+            0,
+            Some(base_col),
+        );
+        platform.draw_rectangle(
+            antenna_r_pos - IVec2::new(antenna_ball_size, antenna_ball_size),
+            antenna_r_pos + IVec2::new(antenna_ball_size, antenna_ball_size),
+            base_col,
+            0,
+            Some(base_col),
+        );
+        platform.draw_rectangle(
+            top_left,
+            bottom_right,
+            base_col,
+            0,
+            Some(RGB8::new(0x51, 0x9A, 0x66)),
+        );
+    }
+
     fn draw_ratio_visualizer(&self, platform: &mut dyn crate::platform::IcPlatform) {
         if self.has_any_zeroes() {
             return;
@@ -218,17 +308,11 @@ impl AspectRatioCalculator {
         let top_y = 159;
         let width_to_height =
             self.input_box_width1.value as f32 / self.input_box_height1.value as f32;
-        let width = (height as f32 * width_to_height) as i32;
+        let width = clamp_max((height as f32 * width_to_height) as i32, 320);
         let center_x = 320 / 2;
         let top_left = IVec2::new(center_x - width / 2, top_y);
         let bottom_right = IVec2::new(center_x + width / 2, top_y + height);
-        platform.draw_rectangle(
-            top_left,
-            bottom_right,
-            RGB8::new(0, 0, 0),
-            0,
-            Some(RGB8::new(0x51, 0x9A, 0x66)),
-        );
+        self.draw_tv_frame(platform, top_left, bottom_right);
     }
 }
 
@@ -304,7 +388,7 @@ impl IcApp for AspectRatioCalculator {
         platform.clear(RGB8::new(0xff, 0xb3, 0x3f));
         draw_text(
             platform,
-            "aspect ratio calculator",
+            "ASPECT RATIO CALCULATOR",
             10.0,
             10.0,
             2.0,

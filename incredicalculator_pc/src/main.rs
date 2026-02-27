@@ -48,7 +48,7 @@ impl IcPlatform for IcRaylibPlatform {
             embedded_graphics::prelude::Point::new(start.x, start.y),
             embedded_graphics::prelude::Point::new(end.x, end.y)
         )
-        .into_styled(PrimitiveStyle::with_stroke(rgbu8_to_rgb565(color), 2))
+        .into_styled(PrimitiveStyle::with_stroke(rgbu8_to_rgb565(color), width))
         .draw(&mut fbuf)
         .unwrap();
     }
