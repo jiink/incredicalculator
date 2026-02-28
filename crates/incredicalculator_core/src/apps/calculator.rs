@@ -28,7 +28,7 @@ enum EqEntryPart {
 }
 
 impl EqEntry {
-    pub const EQUATION_MAX_SIZE: usize = 24;
+    pub const EQUATION_MAX_SIZE: usize = 48;
     pub fn default() -> EqEntry {
         EqEntry {
             equation: [0; Self::EQUATION_MAX_SIZE],
@@ -322,7 +322,7 @@ impl ProgrammerEngine {
     fn binary_widget_set_bit(
         &self,
         bit_idx: u8,
-        buffer: &mut LineBuffer<24>,
+        buffer: &mut LineBuffer<{EqEntry::EQUATION_MAX_SIZE}>,
         current_result: &str,
     ) {
         let current_val = match current_result.parse::<i32>() {
