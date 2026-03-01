@@ -1,7 +1,8 @@
 use crate::input::{IcKey, KeyState};
+use crate::text::text_to_pos;
 use crate::{
     app::IcApp,
-    platform::{self, IcPlatform},
+    platform::{self, IcPlatform, rgb8_hex},
     text::{draw_text, draw_text_f},
 };
 use glam::IVec2;
@@ -118,35 +119,38 @@ impl ExpressionInputBox {
             size,
         }
     }
-    fn draw(&mut self, platform: &mut dyn crate::platform::IcPlatform) {
+    fn draw(&mut self, platform: &mut dyn crate::platform::IcPlatform, has_focus: bool) {
+        let fill_color = rgb8_hex(if has_focus { 0xF1FF5E } else { 0x3A9AFF });
         platform.draw_rectangle(
             self.pos,
             self.pos + self.size,
-            RGB8::new(0xAD, 0x4B, 0x27),
-            2,
-            Some(RGB8::new(0xff, 0xff, 0xff)),
+            rgb8_hex(0xAD4B27),
+            0,
+            Some(fill_color),
         );
         let margin = 4;
         let display_text = core::str::from_utf8(&self.expression.data[..self.expression.len])
             .unwrap_or("Invalid UTF-8");
         let text_scale = if self.expression.len > 5 { 2.0 } else { 4.0 };
+        let text_x = (self.pos.x + margin) as f32;
+        let text_y = (self.pos.y + margin) as f32;
         draw_text(
             platform,
             &display_text,
-            (self.pos.x + margin) as f32,
-            (self.pos.y + margin) as f32,
+            text_x,
+            text_y,
             text_scale,
-            RGB8::new(0, 0, 0),
+            rgb8_hex(if has_focus { 0x000000 } else { 0xffffff }),
         );
-    }
-    fn draw_highlight(&mut self, platform: &mut dyn crate::platform::IcPlatform) {
-        platform.draw_rectangle(
-            self.pos,
-            self.pos + self.size,
-            RGB8::new(0, 0, 0xff),
-            3,
-            None,
-        );
+        let cursor_x = text_to_pos(&display_text, text_x, text_scale, self.expression.cursor);
+        if has_focus {
+            platform.draw_line(
+                IVec2::new(cursor_x as i32 - 3, text_y as i32 - 5),
+                IVec2::new(cursor_x as i32 - 3, (text_y + 8.0 * text_scale) as i32),
+                Rgb::new(0xff, 0x00, 0x44),
+                2,
+            );
+        }
     }
 }
 
@@ -179,6 +183,8 @@ enum KeyAction {
     Backspace,
     Enter,
     Clear,
+    Home,
+    End,
 }
 
 impl RangeMapperCalculator {
@@ -190,7 +196,7 @@ impl RangeMapperCalculator {
             input_box_in_max: ExpressionInputBox::new(IVec2::new(188, 56), IVec2::new(122, 36)),
             input_box_out_min: ExpressionInputBox::new(IVec2::new(50, 105), IVec2::new(122, 36)),
             input_box_out_max: ExpressionInputBox::new(IVec2::new(188, 105), IVec2::new(122, 36)),
-            answer: 0.0
+            answer: 0.0,
         }
     }
 
@@ -204,15 +210,15 @@ impl RangeMapperCalculator {
                 IcKey::Num4 => None,
                 IcKey::Num5 => None,
                 IcKey::Num6 => Some(KeyAction::InsertChar(b'.')),
-                IcKey::Num7 => None,
-                IcKey::Num8 => None,
+                IcKey::Num7 => Some(KeyAction::InsertChar(b'(')),
+                IcKey::Num8 => Some(KeyAction::InsertChar(b')')),
                 IcKey::Num9 => None,
                 IcKey::Func1 => None,
                 IcKey::Func2 => None,
                 IcKey::Func3 => None,
                 IcKey::Func4 => None,
                 IcKey::Func5 => None,
-                IcKey::Func6 => None,
+                IcKey::Func6 => Some(KeyAction::InsertChar(b'^')),
                 IcKey::Shift => None,
                 IcKey::Super => None,
                 IcKey::_Max => None,
@@ -220,13 +226,13 @@ impl RangeMapperCalculator {
         } else if is_super {
             match key {
                 IcKey::Num0 => None,
-                IcKey::Num1 => Some(KeyAction::MoveDown),
+                IcKey::Num1 => Some(KeyAction::End),
                 IcKey::Num2 => Some(KeyAction::MoveDown),
                 IcKey::Num3 => None,
                 IcKey::Num4 => Some(KeyAction::MoveLeft),
                 IcKey::Num5 => None,
                 IcKey::Num6 => Some(KeyAction::MoveRight),
-                IcKey::Num7 => Some(KeyAction::MoveUp),
+                IcKey::Num7 => Some(KeyAction::Home),
                 IcKey::Num8 => Some(KeyAction::MoveUp),
                 IcKey::Num9 => Some(KeyAction::Clear),
                 IcKey::Func1 => None,
@@ -252,10 +258,10 @@ impl RangeMapperCalculator {
                 IcKey::Num8 => Some(KeyAction::InsertChar(b'8')),
                 IcKey::Num9 => Some(KeyAction::InsertChar(b'9')),
                 IcKey::Func1 => Some(KeyAction::Backspace),
-                IcKey::Func2 => None,
-                IcKey::Func3 => None,
-                IcKey::Func4 => None,
-                IcKey::Func5 => None,
+                IcKey::Func2 => Some(KeyAction::InsertChar(b'/')),
+                IcKey::Func3 => Some(KeyAction::InsertChar(b'*')),
+                IcKey::Func4 => Some(KeyAction::InsertChar(b'-')),
+                IcKey::Func5 => Some(KeyAction::InsertChar(b'+')),
                 IcKey::Func6 => Some(KeyAction::Enter),
                 IcKey::Shift => None,
                 IcKey::Super => None,
@@ -328,25 +334,47 @@ impl IcApp for RangeMapperCalculator {
                     FocusUi::OutMax => FocusUi::InValue,
                 }
             }
+            Some(KeyAction::Home) => {
+                self.get_focused_input_box().expression.move_cursor_home();
+            }
+            Some(KeyAction::End) => {
+                self.get_focused_input_box().expression.move_cursor_end();
+            }
             None => (),
         }
     }
 
     fn update(&mut self, platform: &mut dyn IcPlatform, ctx: &crate::app::InputContext) {
-        platform.clear(RGB8::new(0x1C, 0x07, 0x70));
-        self.input_box_in_val.draw(platform);
-        self.input_box_in_min.draw(platform);
-        self.input_box_in_max.draw(platform);
-        self.input_box_out_min.draw(platform);
-        self.input_box_out_max.draw(platform);
-        self.get_focused_input_box().draw_highlight(platform);
+        platform.clear(rgb8_hex(0x1C0770));
+        self.input_box_in_val
+            .draw(platform, self.focused_ui == FocusUi::InValue);
+        self.input_box_in_min
+            .draw(platform, self.focused_ui == FocusUi::InMin);
+        self.input_box_in_max
+            .draw(platform, self.focused_ui == FocusUi::InMax);
+        self.input_box_out_min
+            .draw(platform, self.focused_ui == FocusUi::OutMin);
+        self.input_box_out_max
+            .draw(platform, self.focused_ui == FocusUi::OutMax);
         draw_text_f(
             platform,
             format_args!("{}", self.answer),
             49.0,
             155.0,
             4.0,
-            RGB8::new(0xff, 0xff, 0xff),
+            rgb8_hex(0xffffff),
         );
+        draw_text(platform, "Map", 7.0, 19.0, 2.0, rgb8_hex(0xffffff));
+        draw_text(platform, "from", 6.0, 68.0, 2.0, rgb8_hex(0xffffff));
+        draw_text(platform, "to", 28.0, 114.0, 2.0, rgb8_hex(0xffffff));
+        draw_text(platform, "=", 32.0, 162.0, 2.0, rgb8_hex(0xffffff));
+        draw_text(
+            platform,
+            "X = C + ((X-A)*(D-C) / B-A)",
+            36.0,
+            207.0,
+            2.0,
+            rgb8_hex(0x3A9AFF),
+        )
     }
 }

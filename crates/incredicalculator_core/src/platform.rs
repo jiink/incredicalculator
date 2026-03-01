@@ -19,3 +19,10 @@ macro_rules! _platform_debug_log {
     };
 }
 pub use _platform_debug_log as debug_log;
+
+pub const fn rgb8_hex(c: u32) -> RGB8 {
+    let r = ((c >> 16) & 0xFF) as u8;
+    let g = ((c >> 8) & 0xFF) as u8;
+    let b = (c & 0xFF) as u8;
+    RGB8::new(r, g, b)
+}
