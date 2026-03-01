@@ -6,10 +6,21 @@ use core::fmt;
 pub trait IcPlatform {
     fn draw_line(&mut self, start: IVec2, end: IVec2, color: RGB8, width: u32);
     fn draw_rectangle(&mut self, start: IVec2, end: IVec2, stroke_color: RGB8, stroke_width: u32, fill_color: Option<RGB8>);
+    fn draw_rectangle_rounded(
+        &mut self,
+        start: IVec2,
+        end: IVec2,
+        stroke_color: rgb::RGB8,
+        stroke_width: u32,
+        fill_color: Option<rgb::RGB8>,
+        corner_radius: u32,
+    );
+    fn draw_triangle(&mut self, vertex1: IVec2, vertex2: IVec2, vertex3: IVec2, stroke_color: RGB8, stroke_width: u32, fill_color: Option<RGB8>);
     fn draw_string(&mut self, text: &str, pos: IVec2, size: u32, color: RGB8);
     fn draw_string_f(&mut self, arg: fmt::Arguments, pos: IVec2, size: u32, color: RGB8);
     fn clear(&mut self, color: RGB8);
     fn log(&mut self, arg: fmt::Arguments);
+    fn millis(&self) -> u64;
 }
 
 #[macro_export]

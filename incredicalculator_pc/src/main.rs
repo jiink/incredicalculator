@@ -1,5 +1,5 @@
 use ::core::fmt;
-use std::{collections::HashMap};
+use std::{collections::HashMap, time::Instant};
 
 use embedded_graphics::{Drawable, pixelcolor::{BinaryColor, Rgb565}, prelude::{Primitive, RgbColor}, primitives::{PrimitiveStyle, PrimitiveStyleBuilder}};
 use embedded_graphics_framebuf::FrameBuf;
@@ -26,13 +26,15 @@ const RENDER_W: u32 = 320;
 const RENDER_H: u32 = 240;
 
 pub struct IcRaylibPlatform {
-    pub canvas_data: [Rgb565; (RENDER_W * RENDER_H) as usize]
+    pub canvas_data: [Rgb565; (RENDER_W * RENDER_H) as usize],
+    start_time: Instant
 }
 
 impl IcRaylibPlatform {
     pub fn new() -> IcRaylibPlatform {
         IcRaylibPlatform {
-            canvas_data: [Rgb565::BLACK; (RENDER_W * RENDER_H) as usize]
+            canvas_data: [Rgb565::BLACK; (RENDER_W * RENDER_H) as usize],
+            start_time: Instant::now()
         }
     }
 }
@@ -46,29 +48,89 @@ impl IcPlatform for IcRaylibPlatform {
         let mut fbuf = FrameBuf::new(&mut self.canvas_data, RENDER_W as usize, RENDER_H as usize);
         embedded_graphics::primitives::Line::new(
             embedded_graphics::prelude::Point::new(start.x, start.y),
-            embedded_graphics::prelude::Point::new(end.x, end.y)
+            embedded_graphics::prelude::Point::new(end.x, end.y),
         )
         .into_styled(PrimitiveStyle::with_stroke(rgbu8_to_rgb565(color), width))
         .draw(&mut fbuf)
         .unwrap();
     }
-    
+
     fn log(&mut self, arg: fmt::Arguments) {
         println!("{}", arg);
     }
-    
-    fn draw_rectangle(&mut self, start: IVec2, end: IVec2, stroke_color: rgb::RGB8, stroke_width: u32, fill_color: Option<rgb::RGB8>) {
+
+    fn draw_rectangle(
+        &mut self,
+        start: IVec2,
+        end: IVec2,
+        stroke_color: rgb::RGB8,
+        stroke_width: u32,
+        fill_color: Option<rgb::RGB8>,
+    ) {
         let mut fbuf = FrameBuf::new(&mut self.canvas_data, RENDER_W as usize, RENDER_H as usize);
         let mut style_builder = PrimitiveStyleBuilder::new()
-        .stroke_color(rgbu8_to_rgb565(stroke_color))
-        .stroke_width(stroke_width)
-        .stroke_alignment(embedded_graphics::primitives::StrokeAlignment::Center);
+            .stroke_color(rgbu8_to_rgb565(stroke_color))
+            .stroke_width(stroke_width)
+            .stroke_alignment(embedded_graphics::primitives::StrokeAlignment::Center);
         if let Some(c) = fill_color {
             style_builder = style_builder.fill_color(rgbu8_to_rgb565(c));
         }
         let style = style_builder.build();
-        embedded_graphics::primitives::Rectangle::with_corners(embedded_graphics::prelude::Point::new(start.x, start.y),
-            embedded_graphics::prelude::Point::new(end.x, end.y)).into_styled(style).draw(&mut fbuf).unwrap();
+        embedded_graphics::primitives::Rectangle::with_corners(
+            embedded_graphics::prelude::Point::new(start.x, start.y),
+            embedded_graphics::prelude::Point::new(end.x, end.y),
+        )
+        .into_styled(style)
+        .draw(&mut fbuf)
+        .unwrap();
+    }
+
+    fn draw_rectangle_rounded(
+        &mut self,
+        start: IVec2,
+        end: IVec2,
+        stroke_color: rgb::RGB8,
+        stroke_width: u32,
+        fill_color: Option<rgb::RGB8>,
+        corner_radius: u32,
+    ) {
+        let mut fbuf = FrameBuf::new(&mut self.canvas_data, RENDER_W as usize, RENDER_H as usize);
+        let mut style_builder = PrimitiveStyleBuilder::new()
+            .stroke_color(rgbu8_to_rgb565(stroke_color))
+            .stroke_width(stroke_width)
+            .stroke_alignment(embedded_graphics::primitives::StrokeAlignment::Center);
+        if let Some(c) = fill_color {
+            style_builder = style_builder.fill_color(rgbu8_to_rgb565(c));
+        }
+        let style = style_builder.build();
+        embedded_graphics::primitives::RoundedRectangle::with_equal_corners(
+            embedded_graphics::primitives::Rectangle::with_corners(
+                embedded_graphics::prelude::Point::new(start.x, start.y),
+                embedded_graphics::prelude::Point::new(end.x, end.y),
+            ),
+            embedded_graphics::prelude::Size::new(corner_radius, corner_radius),
+        )
+        .into_styled(style)
+        .draw(&mut fbuf)
+        .unwrap();
+    }
+
+    fn draw_triangle(&mut self, vertex1: IVec2, vertex2: IVec2, vertex3: IVec2, stroke_color: rgb::RGB8, stroke_width: u32, fill_color: Option<rgb::RGB8>) {
+        let mut fbuf = FrameBuf::new(&mut self.canvas_data, RENDER_W as usize, RENDER_H as usize);
+        let mut style_builder = PrimitiveStyleBuilder::new()
+            .stroke_color(rgbu8_to_rgb565(stroke_color))
+            .stroke_width(stroke_width)
+            .stroke_alignment(embedded_graphics::primitives::StrokeAlignment::Center);
+        if let Some(c) = fill_color {
+            style_builder = style_builder.fill_color(rgbu8_to_rgb565(c));
+        }
+        let style = style_builder.build();
+        embedded_graphics::primitives::Triangle::new(
+            embedded_graphics::prelude::Point::new(vertex1.x, vertex1.y),
+            embedded_graphics::prelude::Point::new(vertex2.x, vertex2.y),
+            embedded_graphics::prelude::Point::new(vertex3.x, vertex3.y),
+        )
+        .into_styled(style).draw(&mut fbuf).unwrap();
     }
     
     fn draw_string(&mut self, text: &str, pos: IVec2, size: u32, color: rgb::RGB8) {
@@ -112,6 +174,10 @@ impl IcPlatform for IcRaylibPlatform {
     fn draw_string_f(&mut self, arg: fmt::Arguments, pos: IVec2, size: u32, color: rgb::RGB8) {
         let mut buf = [0u8; 128];
         self.draw_string(format_no_std::show(&mut buf, arg).unwrap(), pos, size, color);
+    }
+
+    fn millis(&self) -> u64 {
+        self.start_time.elapsed().as_millis() as u64
     }
 }
 
