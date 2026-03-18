@@ -293,7 +293,7 @@ impl RangeMapperCalculator {
         let b = self.input_box_in_max.expression.evaluate();
         let c = self.input_box_out_min.expression.evaluate();
         let d = self.input_box_out_max.expression.evaluate();
-        self.answer = c + ((x - a) * (d - c) / b - a);
+        self.answer = c + ((x - a) * (d - c) / (b - a));
     }
 }
 

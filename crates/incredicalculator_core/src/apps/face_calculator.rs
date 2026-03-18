@@ -146,7 +146,7 @@ impl RoboEyes {
         Self {
             screen_size: IVec2::new(width, height),
             bg_color: rgb8_hex(0x000000),
-            main_color: rgb8_hex(0xFFFFFF),
+            main_color: rgb8_hex(0xFFDA02),
             
             last_frame_time: 0,
             frame_interval: 20,
