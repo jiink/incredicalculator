@@ -9,7 +9,7 @@ itoa = "1.0"
 format_no_std = "1.2.0"
 glam = { version = "0.30.9", default-features = false, features = ["libm", "scalar-math"] }
 rgb = "0.8.52"
-exp-rs = "0.2.0"
+exp-rs = { version = "0.2.0", default-features = false, features = ["libm", "custom_cbindgen_alloc"] }
 num-derive = "0.4.2"
 
 [dependencies.num-traits]

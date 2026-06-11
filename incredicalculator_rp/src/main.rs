@@ -3,7 +3,7 @@
 
 extern crate alloc;
 
-use core::cell::RefCell;
+use core::{cell::RefCell, fmt};
 
 use defmt::*;
 use display_interface_spi::SPIInterface;
@@ -11,13 +11,11 @@ use embassy_embedded_hal::shared_bus::blocking::spi::SpiDeviceWithConfig;
 use embassy_executor::Spawner;
 use embassy_futures::select::select_array;
 use embassy_rp::gpio::{Input, Level, Output};
-use embassy_rp::rom_data;
 use embassy_rp::spi;
 use embassy_rp::spi::Spi;
 use embassy_sync::blocking_mutex::Mutex;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_time::Delay;
-use embassy_time::Timer;
 use embedded_alloc::LlffHeap as Heap;
 use embedded_graphics::image::{Image, ImageRawLE};
 use embedded_graphics::mono_font::MonoTextStyle;
@@ -26,10 +24,11 @@ use embedded_graphics::pixelcolor::Rgb565;
 use embedded_graphics::primitives::{PrimitiveStyle, PrimitiveStyleBuilder, Rectangle};
 use embedded_graphics::text::Text;
 use embedded_graphics::{prelude::*, primitives};
-use embedded_graphics_framebuf::FrameBuf;
 use incredicalculator_core::input::IcKey;
-use incredicalculator_core::platform::{IcPlatform, Shape};
+use incredicalculator_core::platform::IcPlatform;
 use incredicalculator_core::shell::IcShell;
+use glam::IVec2;
+use rgb::RGB8;
 use mipidsi::Builder;
 use mipidsi::models::ST7789;
 use mipidsi::options::{Orientation, Rotation};
@@ -76,20 +75,62 @@ impl IcRpPlatform {
     }
 }
 
-impl IcPlatform for IcRpPlatform {
-    fn draw_shape(&mut self, shape: Shape) {
-        self.line_list[self.line_idx] = Line {
-            x1: shape.start.x as f32,
-            y1: shape.start.y as f32,
-            x2: shape.end.x as f32,
-            y2: shape.end.y as f32,
-        };
+impl IcRpPlatform {
+    fn push_line(&mut self, line: Line) {
+        self.line_list[self.line_idx] = line;
         if self.line_idx + 1 < self.line_list.len() {
             self.line_idx += 1;
         }
     }
-    fn clear_lines(&mut self) {
+}
+
+impl IcPlatform for IcRpPlatform {
+    fn draw_line(&mut self, start: IVec2, end: IVec2, _color: RGB8, _width: u32) {
+        self.push_line(Line {
+            x1: start.x as f32,
+            y1: start.y as f32,
+            x2: end.x as f32,
+            y2: end.y as f32,
+        });
+    }
+
+    fn draw_rectangle(&mut self, start: IVec2, end: IVec2, _stroke_color: RGB8, _stroke_width: u32, _fill_color: Option<RGB8>) {
+        self.draw_line(start, IVec2::new(end.x, start.y), RGB8::new(0,0,0), 1);
+        self.draw_line(IVec2::new(end.x, start.y), end, RGB8::new(0,0,0), 1);
+        self.draw_line(end, IVec2::new(start.x, end.y), RGB8::new(0,0,0), 1);
+        self.draw_line(IVec2::new(start.x, end.y), start, RGB8::new(0,0,0), 1);
+    }
+
+    fn draw_rectangle_rounded(
+        &mut self,
+        start: IVec2,
+        end: IVec2,
+        stroke_color: RGB8,
+        stroke_width: u32,
+        fill_color: Option<RGB8>,
+        _corner_radius: u32,
+    ) {
+        self.draw_rectangle(start, end, stroke_color, stroke_width, fill_color);
+    }
+
+    fn draw_triangle(&mut self, vertex1: IVec2, vertex2: IVec2, vertex3: IVec2, _stroke_color: RGB8, _stroke_width: u32, _fill_color: Option<RGB8>) {
+        self.draw_line(vertex1, vertex2, RGB8::new(0,0,0), 1);
+        self.draw_line(vertex2, vertex3, RGB8::new(0,0,0), 1);
+        self.draw_line(vertex3, vertex1, RGB8::new(0,0,0), 1);
+    }
+
+    fn draw_string(&mut self, _text: &str, _pos: IVec2, _size: u32, _color: RGB8) {}
+
+    fn draw_string_f(&mut self, _arg: fmt::Arguments, _pos: IVec2, _size: u32, _color: RGB8) {}
+
+    fn clear(&mut self, _color: RGB8) {
         self.line_idx = 0;
+    }
+
+    fn log(&mut self, _arg: fmt::Arguments) {}
+
+    fn millis(&self) -> u64 {
+        0
     }
 }
 
@@ -118,19 +159,38 @@ async fn main(_spawner: Spawner) {
         test_str.len(),
         test_str.as_str()
     );
-    let mut btn0 = Input::new(p.PIN_26, embassy_rp::gpio::Pull::Up);
-    let mut btn1 = Input::new(p.PIN_12, embassy_rp::gpio::Pull::Up);
-    let mut btn2 = Input::new(p.PIN_11, embassy_rp::gpio::Pull::Up);
-    let mut btn3 = Input::new(p.PIN_2, embassy_rp::gpio::Pull::Up);
-    let mut btn4 = Input::new(p.PIN_1, embassy_rp::gpio::Pull::Up);
-    let mut btnl = Input::new(p.PIN_27, embassy_rp::gpio::Pull::Up);
-    let mut btnr = Input::new(p.PIN_0, embassy_rp::gpio::Pull::Up);
-    let mut led = Output::new(p.PIN_25, Level::Low);
-    let rst = p.PIN_4;
-    let display_cs = p.PIN_5;
-    let dcx = p.PIN_8;
-    let mosi = p.PIN_7;
-    let clk = p.PIN_6;
+
+    // for pico 2
+    // let mut btn0 = Input::new(p.PIN_26, embassy_rp::gpio::Pull::Up);
+    // let mut btn1 = Input::new(p.PIN_12, embassy_rp::gpio::Pull::Up);
+    // let mut btn2 = Input::new(p.PIN_11, embassy_rp::gpio::Pull::Up);
+    // let mut btn3 = Input::new(p.PIN_2, embassy_rp::gpio::Pull::Up);
+    // let mut btn4 = Input::new(p.PIN_1, embassy_rp::gpio::Pull::Up);
+    // let mut btnl = Input::new(p.PIN_27, embassy_rp::gpio::Pull::Up);
+    // let mut btnr = Input::new(p.PIN_0, embassy_rp::gpio::Pull::Up);
+    // let mut led = Output::new(p.PIN_25, Level::Low);
+    // let rst = p.PIN_4;
+    // let display_cs = p.PIN_5;
+    // let dcx = p.PIN_8;
+    // let mosi = p.PIN_7;
+    // let clk = p.PIN_6;
+    // let lcd_spi_bus = p.SPI0;
+
+    // for incredicalculator board
+    let mut btn0 = Input::new(p.PIN_13, embassy_rp::gpio::Pull::Up);
+    let mut btn1 = Input::new(p.PIN_14, embassy_rp::gpio::Pull::Up);
+    let mut btn2 = Input::new(p.PIN_15, embassy_rp::gpio::Pull::Up);
+    let mut btn3 = Input::new(p.PIN_16, embassy_rp::gpio::Pull::Up);
+    let mut btn4 = Input::new(p.PIN_17, embassy_rp::gpio::Pull::Up);
+    let mut btnl = Input::new(p.PIN_18, embassy_rp::gpio::Pull::Up);
+    let mut btnr = Input::new(p.PIN_19, embassy_rp::gpio::Pull::Up);
+    let mut led = Output::new(p.PIN_22, Level::Low);
+    let rst = p.PIN_47;
+    let display_cs = p.PIN_45;
+    let dcx = p.PIN_42;
+    let mosi = p.PIN_43;
+    let clk = p.PIN_46;
+    let lcd_spi_bus = p.SPI1;
 
     // create SPI
     let mut display_config = spi::Config::default();
@@ -138,7 +198,7 @@ async fn main(_spawner: Spawner) {
     display_config.phase = spi::Phase::CaptureOnSecondTransition;
     display_config.polarity = spi::Polarity::IdleHigh;
 
-    let spi = Spi::new_blocking_txonly(p.SPI0, clk, mosi, display_config.clone());
+    let spi = Spi::new_blocking_txonly(lcd_spi_bus, clk, mosi, display_config.clone());
     let spi_bus: Mutex<NoopRawMutex, _> = Mutex::new(RefCell::new(spi));
 
     let display_spi = SpiDeviceWithConfig::new(
@@ -233,7 +293,7 @@ async fn main(_spawner: Spawner) {
             .unwrap();
         }
         if btnr.is_low() {
-            rom_data::reset_to_usb_boot(0, 0);
+            // USB boot reset is only available on RP2040; ignore on RP235x.
         }
     }
 }

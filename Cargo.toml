@@ -2,5 +2,9 @@
 resolver = "2"
 members = [
     "crates/bitwise_expr", "crates/incredicalculator_core",
+    "crates/exp-rs-patched",
     "incredicalculator_pc"
 , "incredicalculator_rp"]
+
+[patch.crates-io]
+exp-rs = { path = "crates/exp-rs-patched" }

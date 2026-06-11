@@ -9,7 +9,7 @@ embassy-embedded-hal = { version = "0.5.0", features = ["defmt"] }
 embassy-sync = { version = "0.7.2", features = ["defmt"] }
 embassy-executor = { version = "0.9.0", features = ["arch-cortex-m", "executor-thread", "executor-interrupt", "defmt"] }
 embassy-time = { version = "0.5.0", features = ["defmt", "defmt-timestamp-uptime"] }
-embassy-rp = { version = "0.8.0", features = ["defmt", "unstable-pac", "time-driver", "critical-section-impl", "rp2040"] }
+embassy-rp = { version = "0.8.0", features = ["defmt", "unstable-pac", "time-driver", "critical-section-impl", "rp235xb"] } # use rp235xa for pico 2 and rp235xb for incredicalculator board
 embassy-usb = { version = "0.5.1", features = ["defmt"] }
 embassy-net = { version = "0.7.1", features = ["defmt", "icmp", "tcp", "udp", "raw", "dhcpv4", "medium-ethernet", "dns", "proto-ipv4", "proto-ipv6", "multicast"] }
 embassy-net-wiznet = { version = "0.2.1", features = ["defmt"] }
@@ -18,6 +18,7 @@ embassy-usb-logger = { version = "0.5.1" }
 cyw43 = { version = "0.5.0", features = ["defmt", "firmware-logs"] }
 cyw43-pio = { version = "0.8.0", features = ["defmt"] }
 embedded-graphics = "0.8.1"
+rgb = "0.8.52"
 mipidsi = "0.8.0"
 display-interface = "0.5.0"
 display-interface-spi = "0.5.0"
@@ -30,6 +31,7 @@ cortex-m = { version = "0.7.6", features = ["inline-asm"] }
 incredicalculator_core = { path = "../crates/incredicalculator_core" }
 embedded-alloc = { version = "0.6.0", features = ["llff"] }
 embedded-graphics-framebuf = "0.5.0"
+glam = { version = "0.30.9", default-features = false, features = ["libm", "scalar-math"] }
 
 [profile.release]
 debug = true

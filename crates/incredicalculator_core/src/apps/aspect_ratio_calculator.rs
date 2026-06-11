@@ -1,6 +1,7 @@
 use crate::input::{IcKey, KeyState};
 use glam::IVec2;
 use num_traits::{abs, clamp_max};
+use num_traits::float::FloatCore;
 use rgb::{RGB8, Rgb};
 
 use crate::{

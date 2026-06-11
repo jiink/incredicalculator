@@ -4,7 +4,10 @@
 runner = "picotool load -u -v -x -t elf"
 
 [build]
-target = "thumbv6m-none-eabi" # if you change this, ALSO change rust-toolchain.toml
+# for RP2040 use target = "thumbv6m-none-eabi" 
+# for RP2350 use target = "thumbv8m.main-none-eabihf"
+# if you change this, ALSO change rust-toolchain.toml
+target = "thumbv8m.main-none-eabihf"
 
 [env]
 DEFMT_LOG = "debug"

@@ -1,6 +1,7 @@
 #![no_std]
 
 use core::{cmp, fmt};
+use num_traits::float::FloatCore;
 use rgb::*;
 use glam::IVec2;
 

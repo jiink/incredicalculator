@@ -21,3 +21,26 @@ target
 #.idea/
 .direnv/flake-profile
 .direnv/flake-profile-10-link
+# Additional local ignores
+# Build directories
+target/
+**/target/
+debug
+
+# IDE / editor
+.vscode/
+.idea/
+.vscode-server/
+
+# Editor temporary files
+*.swp
+*~
+*.orig
+.DS_Store
+
+# Logs and build artifacts
+CACHEDIR.TAG
+**/bench_results/
+**/*.out
+**/*.log
+**/*.txt

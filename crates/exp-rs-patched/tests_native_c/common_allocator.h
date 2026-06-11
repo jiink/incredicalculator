@@ -1,0 +1,51 @@
+#ifndef COMMON_ALLOCATOR_H
+#define COMMON_ALLOCATOR_H
+
+#include <stddef.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include "exp_rs.h"  // Need this for EXP_RS_CUSTOM_ALLOC definition
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+// Custom allocator functions required by exp-rs when built with custom_cbindgen_alloc feature
+void* exp_rs_malloc(size_t size);
+void exp_rs_free(void* ptr);
+
+// Memory tracking functionality (optional - only used by memory management tests)
+void init_memory_tracking(void);
+void enable_allocation_tracking(void);
+void disable_allocation_tracking(void);
+void reset_memory_stats(void);
+
+typedef struct {
+    size_t total_allocs;
+    size_t total_deallocs;
+    size_t current_bytes;
+    size_t peak_bytes;
+    size_t total_allocated_bytes;
+    size_t total_deallocated_bytes;
+    size_t leaked_allocs;
+} memory_stats_t;
+
+memory_stats_t get_memory_stats(void);
+void print_memory_stats(const char* phase);
+
+// Dual-mode allocator support
+void mark_rust_allocation_start(void);
+void mark_rust_allocation_end(void);
+bool using_custom_allocator(void);
+
+// Heap initialization (only available when custom allocator is enabled)
+#ifdef EXP_RS_CUSTOM_ALLOC
+int32_t exp_rs_heap_init(uint8_t* heap_ptr, uintptr_t heap_size);
+uintptr_t exp_rs_get_heap_size(void);
+#endif
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif // COMMON_ALLOCATOR_H
