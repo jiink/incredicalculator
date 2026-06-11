@@ -13,6 +13,7 @@ use embassy_futures::select::select_array;
 use embassy_rp::gpio::{Input, Level, Output};
 use embassy_rp::spi;
 use embassy_rp::spi::Spi;
+use embassy_rp::pwm::{Config as PwmConfig, Pwm}; 
 use embassy_sync::blocking_mutex::Mutex;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_time::Delay;
@@ -190,7 +191,14 @@ async fn main(_spawner: Spawner) {
     let dcx = p.PIN_42;
     let mosi = p.PIN_43;
     let clk = p.PIN_46;
+    let bl = p.PIN_31;
     let lcd_spi_bus = p.SPI1;
+
+    // PWM backlight
+    let mut pwm_config = PwmConfig::default();
+    pwm_config.top = 0xFFFF;
+    pwm_config.compare_b = 58981;
+    let _backlight = Pwm::new_output_b(p.PWM_SLICE7, bl, pwm_config);
 
     // create SPI
     let mut display_config = spi::Config::default();
