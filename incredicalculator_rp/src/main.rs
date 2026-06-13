@@ -62,14 +62,14 @@ impl Line {
 }
 
 pub struct IcRpPlatform {
-    line_list: [Line; 100],
+    line_list: [Line; 600],
     line_idx: usize,
 }
 
 impl IcRpPlatform {
     pub fn new() -> IcRpPlatform {
         IcRpPlatform {
-            line_list: [Line::new(); 100],
+            line_list: [Line::new(); 600],
             line_idx: 0,
         }
     }
@@ -363,7 +363,7 @@ async fn main(_spawner: Spawner) {
     let mut display = Builder::new(ST7789, di)
         .display_size(240, 320)
         .reset_pin(rst)
-        .orientation(Orientation::new().rotate(Rotation::Deg90))
+        .orientation(Orientation::new().rotate(Rotation::Deg270))
         .invert_colors(mipidsi::options::ColorInversion::Inverted)
         .init(&mut Delay)
         .unwrap();
