@@ -1,6 +1,14 @@
 [target.'cfg(all(target_arch = "arm", target_os = "none"))']
+# You have three choices:
+# A) Use this if you want to flash the target using a debugger (e.g. a Pi Pico)
 #runner = "probe-rs run --chip RP235x"
+
+# B) Use this if you want to produce a .uf2 file you can
+# drag and drop onto the chip's bootloader's storage device
 #runner = "elf2uf2-rs -d"
+
+# C) Use this if you want to program the chip over USB
+# while it's in bootloader mode
 runner = "picotool load -u -v -x -t elf"
 
 [build]

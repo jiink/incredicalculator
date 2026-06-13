@@ -9,8 +9,7 @@ use defmt::*;
 use display_interface_spi::SPIInterface;
 use embassy_embedded_hal::shared_bus::blocking::spi::SpiDeviceWithConfig;
 use embassy_executor::Spawner;
-use embassy_futures::select::select_array;
-use embassy_rp::gpio::{Input, Level, Output};
+use embassy_rp::gpio::{Input, Level, Output, Pull};
 use embassy_rp::spi;
 use embassy_rp::spi::Spi;
 use embassy_rp::pwm::{Config as PwmConfig, Pwm}; 
@@ -22,7 +21,7 @@ use embedded_graphics::image::{Image, ImageRawLE};
 use embedded_graphics::mono_font::MonoTextStyle;
 use embedded_graphics::mono_font::ascii::FONT_10X20;
 use embedded_graphics::pixelcolor::Rgb565;
-use embedded_graphics::primitives::{PrimitiveStyle, PrimitiveStyleBuilder, Rectangle};
+use embedded_graphics::primitives::PrimitiveStyle;
 use embedded_graphics::text::Text;
 use embedded_graphics::{prelude::*, primitives};
 use incredicalculator_core::input::IcKey;
@@ -35,7 +34,7 @@ use mipidsi::models::ST7789;
 use mipidsi::options::{Orientation, Rotation};
 use {defmt_rtt as _, panic_probe as _};
 
-const DISPLAY_FREQ: u32 = 2_000_000;
+const DISPLAY_FREQ: u32 = 80_000_000;
 
 #[global_allocator]
 static HEAP: Heap = Heap::empty();
@@ -135,6 +134,106 @@ impl IcPlatform for IcRpPlatform {
     }
 }
 
+const MATRIX_ROWS: usize = 5;
+const MATRIX_COLS: usize = 4;
+
+struct KeyMatrix<'d> {
+    rows: [Output<'d>; MATRIX_ROWS],
+    cols: [Input<'d>; MATRIX_COLS],
+    prev_pressed: [bool; IcKey::COUNT],
+}
+
+impl<'d> KeyMatrix<'d> {
+    const MAP: [[Option<IcKey>; MATRIX_COLS]; MATRIX_ROWS] = [
+        [None, None, Some(IcKey::Func1), Some(IcKey::Func2)],
+        [Some(IcKey::Num7), Some(IcKey::Num8), Some(IcKey::Num9), Some(IcKey::Func3)],
+        [Some(IcKey::Num4), Some(IcKey::Num5), Some(IcKey::Num6), Some(IcKey::Func4)],
+        [Some(IcKey::Num1), Some(IcKey::Num2), Some(IcKey::Num3), Some(IcKey::Func5)],
+        [Some(IcKey::Num0), Some(IcKey::Shift), Some(IcKey::Super), Some(IcKey::Func6)],
+    ];
+
+    pub fn new(rows: [Output<'d>; MATRIX_ROWS], cols: [Input<'d>; MATRIX_COLS]) -> Self {
+        let mut matrix = KeyMatrix {
+            rows,
+            cols,
+            prev_pressed: [false; IcKey::COUNT],
+        };
+        matrix.all_rows_high();
+        matrix
+    }
+
+    fn all_rows_high(&mut self) {
+        for row in self.rows.iter_mut() {
+            row.set_high();
+        }
+    }
+
+    fn select_row(&mut self, idx: usize) {
+        self.all_rows_high();
+        self.rows[idx].set_low();
+    }
+
+    fn scan(&mut self) -> [bool; IcKey::COUNT] {
+        let mut pressed = [false; IcKey::COUNT];
+
+        for row in 0..MATRIX_ROWS {
+            self.select_row(row);
+            for col in 0..MATRIX_COLS {
+                if self.cols[col].is_low() {
+                    if let Some(key) = Self::MAP[row][col] {
+                        pressed[key as usize] = true;
+                    }
+                }
+            }
+        }
+
+        self.all_rows_high();
+        pressed
+    }
+
+    fn update_shell(&mut self, shell: &mut IcShell) {
+        let current_pressed = self.scan();
+
+        for idx in 0..IcKey::COUNT {
+            if current_pressed[idx] != self.prev_pressed[idx] {
+                if let Some(key) = Self::key_from_index(idx) {
+                    if current_pressed[idx] {
+                        shell.key_down(key);
+                    } else {
+                        shell.key_up(key);
+                    }
+                }
+            }
+        }
+
+        self.prev_pressed = current_pressed;
+    }
+
+    fn key_from_index(idx: usize) -> Option<IcKey> {
+        match idx {
+            0 => Some(IcKey::Num0),
+            1 => Some(IcKey::Num1),
+            2 => Some(IcKey::Num2),
+            3 => Some(IcKey::Num3),
+            4 => Some(IcKey::Num4),
+            5 => Some(IcKey::Num5),
+            6 => Some(IcKey::Num6),
+            7 => Some(IcKey::Num7),
+            8 => Some(IcKey::Num8),
+            9 => Some(IcKey::Num9),
+            10 => Some(IcKey::Func1),
+            11 => Some(IcKey::Func2),
+            12 => Some(IcKey::Func3),
+            13 => Some(IcKey::Func4),
+            14 => Some(IcKey::Func5),
+            15 => Some(IcKey::Func6),
+            16 => Some(IcKey::Shift),
+            17 => Some(IcKey::Super),
+            _ => None,
+        }
+    }
+}
+
 //static mut DATA: [Rgb565; 320 * 240] = [Rgb565::GREEN; 320 * 240];
 
 #[embassy_executor::main]
@@ -178,13 +277,51 @@ async fn main(_spawner: Spawner) {
     // let lcd_spi_bus = p.SPI0;
 
     // for incredicalculator board
-    let mut btn0 = Input::new(p.PIN_13, embassy_rp::gpio::Pull::Up);
-    let mut btn1 = Input::new(p.PIN_14, embassy_rp::gpio::Pull::Up);
-    let mut btn2 = Input::new(p.PIN_15, embassy_rp::gpio::Pull::Up);
-    let mut btn3 = Input::new(p.PIN_16, embassy_rp::gpio::Pull::Up);
-    let mut btn4 = Input::new(p.PIN_17, embassy_rp::gpio::Pull::Up);
-    let mut btnl = Input::new(p.PIN_18, embassy_rp::gpio::Pull::Up);
-    let mut btnr = Input::new(p.PIN_19, embassy_rp::gpio::Pull::Up);
+    // row0: gpio13
+    // row1: gpio14
+    // row2: gpio15
+    // row3: gpio16
+    // row4: gpio17
+    // col0: gpio21
+    // col1: gpio20
+    // col2: gpio19
+    // col3: gpio18
+    // row0, col0: no button present
+    // row0, col1: no button present
+    // row0, col2: switch 1 - Func1
+    // row0, col3: switch 2 - Func2
+    // row1, col0: switch 3 - Num7
+    // row1, col1: switch 4 - Num8
+    // row1, col2: switch 5 - Num9
+    // row1, col3: switch 6 - Func3
+    // row2, col0: switch 7 - Num4
+    // row2, col1: switch 8 - Num5
+    // row2, col2: switch 9 - Num6
+    // row2, col3: switch 10 - Func4
+    // row3, col0: switch 11 - Num1
+    // row3, col1: switch 12 - Num2
+    // row3, col2: switch 13 - Num3
+    // row3, col3: switch 14 - Func5
+    // row4, col0: switch 15 - Num0
+    // row4, col1: switch 16 - Shift
+    // row4, col2: switch 17 - Super
+    // row4, col3: switch 18 - Func6
+    let matrix_rows = [
+        Output::new(p.PIN_13, Level::High),
+        Output::new(p.PIN_14, Level::High),
+        Output::new(p.PIN_15, Level::High),
+        Output::new(p.PIN_16, Level::High),
+        Output::new(p.PIN_17, Level::High),
+    ];
+
+    let matrix_cols = [
+        Input::new(p.PIN_21, Pull::Up),
+        Input::new(p.PIN_20, Pull::Up),
+        Input::new(p.PIN_19, Pull::Up),
+        Input::new(p.PIN_18, Pull::Up),
+    ];
+
+    let mut key_matrix = KeyMatrix::new(matrix_rows, matrix_cols);
     let mut led = Output::new(p.PIN_22, Level::Low);
     let rst = p.PIN_47;
     let display_cs = p.PIN_45;
@@ -254,41 +391,14 @@ async fn main(_spawner: Spawner) {
     display.clear(Rgb565::CYAN).unwrap();
 
     loop {
-        let futures_array = [
-            btn0.wait_for_falling_edge(),
-            btn1.wait_for_falling_edge(),
-            btn2.wait_for_falling_edge(),
-            btn3.wait_for_falling_edge(),
-            btn4.wait_for_falling_edge(),
-            btnl.wait_for_falling_edge(),
-            btnr.wait_for_falling_edge(),
-        ];
-        let (_, idx) = select_array(futures_array).await;
-        match idx {
-            0 => icalc.key_down(IcKey::Num0),
-            1 => icalc.key_down(IcKey::Num1),
-            2 => icalc.key_down(IcKey::Num2),
-            3 => icalc.key_down(IcKey::Num3),
-            4 => icalc.key_down(IcKey::Num4),
-            5 => icalc.key_down(IcKey::Func6),
-            6 => icalc.key_down(IcKey::Func5),
-            _ => (),
-        }
+        key_matrix.update_shell(&mut icalc);
+
         led.set_high();
         info!("Pre-update");
         icalc.update(&mut ic_rp_platform);
         led.set_low();
         info!("Post-update");
-        match idx {
-            0 => icalc.key_up(IcKey::Num0),
-            1 => icalc.key_up(IcKey::Num1),
-            2 => icalc.key_up(IcKey::Num2),
-            3 => icalc.key_up(IcKey::Num3),
-            4 => icalc.key_up(IcKey::Num4),
-            5 => icalc.key_up(IcKey::Func6),
-            6 => icalc.key_up(IcKey::Func2),
-            _ => (),
-        }
+
         display.clear(Rgb565::BLUE).unwrap();
         for i in 0..ic_rp_platform.line_idx {
             let line = ic_rp_platform.line_list[i];
@@ -299,9 +409,6 @@ async fn main(_spawner: Spawner) {
             .into_styled(PrimitiveStyle::with_stroke(Rgb565::WHITE, 3))
             .draw(&mut display)
             .unwrap();
-        }
-        if btnr.is_low() {
-            // USB boot reset is only available on RP2040; ignore on RP235x.
         }
     }
 }
