@@ -28,6 +28,8 @@ panic-probe = { version = "0.3.2", features = ["print-defmt"] }
 cortex-m-rt = "0.7.0"
 critical-section = "1.1"
 cortex-m = { version = "0.7.6", features = ["inline-asm"] }
+embedded-hal = "1.0.0"
+embedded-hal-async = "1.0.0"
 incredicalculator_core = { path = "../crates/incredicalculator_core" }
 embedded-alloc = { version = "0.6.0", features = ["llff"] }
 embedded-graphics-framebuf = "0.5.0"

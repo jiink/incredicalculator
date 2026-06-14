@@ -3,19 +3,18 @@
 
 extern crate alloc;
 
-use core::{cell::RefCell, fmt};
+use core::fmt;
 
 use defmt::*;
 use display_interface_spi::SPIInterface;
-use embassy_embedded_hal::shared_bus::blocking::spi::SpiDeviceWithConfig;
 use embassy_executor::Spawner;
 use embassy_rp::gpio::{Input, Level, Output, Pull};
 use embassy_rp::spi;
 use embassy_rp::spi::Spi;
 use embassy_rp::pwm::{Config as PwmConfig, Pwm}; 
-use embassy_sync::blocking_mutex::Mutex;
-use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_time::Delay;
+use embedded_hal::spi::{ErrorType, Operation, SpiDevice};
+use embedded_hal_async::spi::SpiBus as _;
 use embedded_alloc::LlffHeap as Heap;
 use embedded_graphics::image::{Image, ImageRawLE};
 use embedded_graphics::mono_font::MonoTextStyle;
@@ -33,9 +32,69 @@ use rgb::RGB8;
 use mipidsi::Builder;
 use mipidsi::models::ST7789;
 use mipidsi::options::{Orientation, Rotation};
+//use mipidsi::interface::{Generic8BitBus, ParallelInterface};
 use {defmt_rtt as _, panic_probe as _};
 
-const DISPLAY_FREQ: u32 = 60_000_000;
+const DISPLAY_FREQ: u32 = 40_000_000;
+
+// A lightweight block_on utility to poll DMA futures to completion synchronously
+fn block_on<F: core::future::Future>(mut future: F) -> F::Output {
+    use core::pin::pin;
+    use core::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
+
+    let mut future = pin!(future);
+
+    unsafe fn clone(_: *const ()) -> RawWaker {
+        RawWaker::new(core::ptr::null(), &VTABLE)
+    }
+    unsafe fn wake(_: *const ()) {}
+    unsafe fn wake_by_ref(_: *const ()) {}
+    unsafe fn drop(_: *const ()) {}
+    static VTABLE: RawWakerVTable = RawWakerVTable::new(clone, wake, wake_by_ref, drop);
+    let raw_waker = RawWaker::new(core::ptr::null(), &VTABLE);
+    let waker = unsafe { Waker::from_raw(raw_waker) };
+    let mut cx = Context::from_waker(&waker);
+
+    loop {
+        match future.as_mut().poll(&mut cx) {
+            Poll::Ready(val) => return val,
+            Poll::Pending => {}
+        }
+    }
+}
+
+struct DmaSpiDevice<'d> {
+    spi: Spi<'d, embassy_rp::peripherals::SPI1, embassy_rp::spi::Async>,
+    cs: Output<'d>,
+}
+
+impl<'d> ErrorType for DmaSpiDevice<'d> {
+    type Error = embassy_rp::spi::Error;
+}
+
+impl<'d> SpiDevice for DmaSpiDevice<'d> {
+    fn transaction(&mut self, operations: &mut [Operation<'_, u8>]) -> Result<(), Self::Error> {
+        self.cs.set_low();
+        let mut result = Ok(());
+        for op in operations {
+            result = match op {
+                Operation::Read(words) => block_on(embedded_hal_async::spi::SpiBus::read(&mut self.spi, words)),
+                Operation::Write(words) => block_on(embedded_hal_async::spi::SpiBus::write(&mut self.spi, words)),
+                Operation::Transfer(read, write) => block_on(embedded_hal_async::spi::SpiBus::transfer(&mut self.spi, read, write)),
+                Operation::TransferInPlace(words) => block_on(embedded_hal_async::spi::SpiBus::transfer_in_place(&mut self.spi, words)),
+                Operation::DelayNs(_) => {
+                    // No-op; display-interface does not use delay operations.
+                    Ok(())
+                }
+            };
+            if result.is_err() {
+                break;
+            }
+        }
+        self.cs.set_high();
+        result
+    }
+}
 
 #[global_allocator]
 static HEAP: Heap = Heap::empty();
@@ -408,14 +467,11 @@ async fn main(_spawner: Spawner) {
     display_config.phase = spi::Phase::CaptureOnSecondTransition;
     display_config.polarity = spi::Polarity::IdleHigh;
 
-    let spi = Spi::new_blocking_txonly(lcd_spi_bus, clk, mosi, display_config.clone());
-    let spi_bus: Mutex<NoopRawMutex, _> = Mutex::new(RefCell::new(spi));
-
-    let display_spi = SpiDeviceWithConfig::new(
-        &spi_bus,
-        Output::new(display_cs, Level::High),
-        display_config,
-    );
+    let spi = Spi::new_txonly(lcd_spi_bus, clk, mosi, p.DMA_CH0, display_config);
+    let display_spi = DmaSpiDevice {
+        spi,
+        cs: Output::new(display_cs, Level::High),
+    };
 
     let dcx = Output::new(dcx, Level::Low);
     let rst = Output::new(rst, Level::Low);
