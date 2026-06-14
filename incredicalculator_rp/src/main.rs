@@ -436,7 +436,6 @@ async fn main(_spawner: Spawner) {
     let mut icalc: IcShell = IcShell::new();
     let mut ic_rp_platform = IcRpPlatform::new();
     display.clear(Rgb565::CYAN).unwrap();
-    let digits: [&str; 10] = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"];
     let mut force_draw = true;
     let mut frame_counter: usize = 0;
     loop {
@@ -448,11 +447,11 @@ async fn main(_spawner: Spawner) {
             icalc.update(&mut ic_rp_platform);
             led.set_low();
             info!("Post-update");
-            ic_rp_platform.draw_string(
-                digits[frame_counter % 10],
+            ic_rp_platform.draw_string_f(
+                format_args!("{}...", frame_counter % 10),
                 glam::IVec2::new(0, 0),
                 1,
-                RGB8::new(255, 255, 255)
+                RGB8::new(0, 255, 0)
             );
             frame_counter = frame_counter.wrapping_add(1);
             display.fill_contiguous(
