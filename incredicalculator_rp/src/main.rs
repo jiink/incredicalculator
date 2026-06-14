@@ -278,10 +278,27 @@ impl<'d> KeyMatrix<'d> {
             _ => None,
         }
     }
+
+    pub fn is_pressed(&self, key: IcKey) -> bool {
+        self.prev_pressed[key as usize]
+    }
 }
 
 fn rgbu8_to_rgb565(rgbu8_col: rgb::Rgb<u8>) -> Rgb565 {
     Rgb565::new(rgbu8_col.r >> 3, rgbu8_col.g >> 2, rgbu8_col.b >> 3)
+}
+
+fn reboot_into_bootloader() {
+    const MS_BEFORE_BOOT: u32 = 500;
+    info!("REBOOTING INTO BOOTSEL MODE IN {} MS!", &MS_BEFORE_BOOT);
+    // see rp2350 datasheet section 5.4.8.24
+    let reboot_type_bootsel: u32 = 0x0002; // "reboot into BOOTSEL mode."
+    let no_return_on_success: u32 = 0x0100; // "the watchdog hardware is asynchronous. Setting this bit forces this method not to return if the reboot is successfully initiated."
+    let gpio_pin_enabled: u32 = 0x20; // "Enable the activity indicator on the specified GPIO"
+    let led_gpio_num = 22;
+    embassy_rp::rom_data::reboot(
+        reboot_type_bootsel | no_return_on_success,
+        MS_BEFORE_BOOT, gpio_pin_enabled, led_gpio_num);
 }
 
 #[embassy_executor::main]
@@ -464,5 +481,8 @@ async fn main(_spawner: Spawner) {
         }
         // try putting this in an "else" block
         embassy_time::Timer::after(embassy_time::Duration::from_millis(10)).await;
+        if key_matrix.is_pressed(IcKey::Super) && key_matrix.is_pressed(IcKey::Num3) {
+            reboot_into_bootloader();
+        }
     }
 }
