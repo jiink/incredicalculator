@@ -20,10 +20,11 @@ use embedded_alloc::LlffHeap as Heap;
 use embedded_graphics::image::{Image, ImageRawLE};
 use embedded_graphics::mono_font::MonoTextStyle;
 use embedded_graphics::mono_font::ascii::FONT_10X20;
-use embedded_graphics::pixelcolor::Rgb565;
-use embedded_graphics::primitives::PrimitiveStyle;
+use embedded_graphics::pixelcolor::{Rgb565, Rgb888};
+use embedded_graphics::primitives::{PrimitiveStyle, PrimitiveStyleBuilder};
 use embedded_graphics::text::Text;
 use embedded_graphics::{prelude::*, primitives};
+use embedded_graphics_framebuf::FrameBuf;
 use incredicalculator_core::input::IcKey;
 use incredicalculator_core::platform::IcPlatform;
 use incredicalculator_core::shell::IcShell;
@@ -34,7 +35,7 @@ use mipidsi::models::ST7789;
 use mipidsi::options::{Orientation, Rotation};
 use {defmt_rtt as _, panic_probe as _};
 
-const DISPLAY_FREQ: u32 = 80_000_000;
+const DISPLAY_FREQ: u32 = 60_000_000;
 
 #[global_allocator]
 static HEAP: Heap = Heap::empty();
@@ -61,44 +62,54 @@ impl Line {
     }
 }
 
+const RENDER_W: u32 = 320;
+const RENDER_H: u32 = 240;
+const PIXEL_COUNT: usize = (RENDER_W * RENDER_H) as usize;
+
+static mut CANVAS_DATA: [Rgb565; PIXEL_COUNT] = [Rgb565::new(0, 0, 0); PIXEL_COUNT];
+
 pub struct IcRpPlatform {
-    line_list: [Line; 600],
-    line_idx: usize,
+    //pub canvas_data: [Rgb565; (RENDER_W * RENDER_H) as usize]
+    pub canvas_data: &'static mut [Rgb565; PIXEL_COUNT],
 }
 
 impl IcRpPlatform {
     pub fn new() -> IcRpPlatform {
         IcRpPlatform {
-            line_list: [Line::new(); 600],
-            line_idx: 0,
-        }
-    }
-}
-
-impl IcRpPlatform {
-    fn push_line(&mut self, line: Line) {
-        self.line_list[self.line_idx] = line;
-        if self.line_idx + 1 < self.line_list.len() {
-            self.line_idx += 1;
+            canvas_data: unsafe { &mut *core::ptr::addr_of_mut!(CANVAS_DATA) }
         }
     }
 }
 
 impl IcPlatform for IcRpPlatform {
-    fn draw_line(&mut self, start: IVec2, end: IVec2, _color: RGB8, _width: u32) {
-        self.push_line(Line {
-            x1: start.x as f32,
-            y1: start.y as f32,
-            x2: end.x as f32,
-            y2: end.y as f32,
-        });
+    fn draw_line(&mut self, start: IVec2, end: IVec2, color: RGB8, width: u32) {
+        let mut fbuf = FrameBuf::new(&mut *self.canvas_data, RENDER_W as usize, RENDER_H as usize);
+        embedded_graphics::primitives::Line::new(
+            embedded_graphics::prelude::Point::new(start.x, start.y),
+            embedded_graphics::prelude::Point::new(end.x, end.y),
+        )   
+        .into_styled(PrimitiveStyle::with_stroke(rgbu8_to_rgb565(color), width))
+        .draw(&mut fbuf)
+        .unwrap();
     }
 
-    fn draw_rectangle(&mut self, start: IVec2, end: IVec2, _stroke_color: RGB8, _stroke_width: u32, _fill_color: Option<RGB8>) {
-        self.draw_line(start, IVec2::new(end.x, start.y), RGB8::new(0,0,0), 1);
-        self.draw_line(IVec2::new(end.x, start.y), end, RGB8::new(0,0,0), 1);
-        self.draw_line(end, IVec2::new(start.x, end.y), RGB8::new(0,0,0), 1);
-        self.draw_line(IVec2::new(start.x, end.y), start, RGB8::new(0,0,0), 1);
+    fn draw_rectangle(&mut self, start: IVec2, end: IVec2, stroke_color: RGB8, stroke_width: u32, fill_color: Option<RGB8>) {
+        let mut fbuf = FrameBuf::new(&mut *self.canvas_data, RENDER_W as usize, RENDER_H as usize);
+        let mut style_builder = PrimitiveStyleBuilder::new()
+            .stroke_color(rgbu8_to_rgb565(stroke_color))
+            .stroke_width(stroke_width)
+            .stroke_alignment(embedded_graphics::primitives::StrokeAlignment::Center);
+        if let Some(c) = fill_color {
+            style_builder = style_builder.fill_color(rgbu8_to_rgb565(c));
+        }
+        let style = style_builder.build();
+        embedded_graphics::primitives::Rectangle::with_corners(
+            embedded_graphics::prelude::Point::new(start.x, start.y),
+            embedded_graphics::prelude::Point::new(end.x, end.y),
+        )
+        .into_styled(style)
+        .draw(&mut fbuf)
+        .unwrap();
     }
 
     fn draw_rectangle_rounded(
@@ -108,23 +119,76 @@ impl IcPlatform for IcRpPlatform {
         stroke_color: RGB8,
         stroke_width: u32,
         fill_color: Option<RGB8>,
-        _corner_radius: u32,
+        corner_radius: u32,
     ) {
-        self.draw_rectangle(start, end, stroke_color, stroke_width, fill_color);
+        let mut fbuf = FrameBuf::new(&mut *self.canvas_data, RENDER_W as usize, RENDER_H as usize);
+        let mut style_builder = PrimitiveStyleBuilder::new()
+            .stroke_color(rgbu8_to_rgb565(stroke_color))
+            .stroke_width(stroke_width)
+            .stroke_alignment(embedded_graphics::primitives::StrokeAlignment::Center);
+        if let Some(c) = fill_color {
+            style_builder = style_builder.fill_color(rgbu8_to_rgb565(c));
+        }
+        let style = style_builder.build();
+        embedded_graphics::primitives::RoundedRectangle::with_equal_corners(
+            embedded_graphics::primitives::Rectangle::with_corners(
+                embedded_graphics::prelude::Point::new(start.x, start.y),
+                embedded_graphics::prelude::Point::new(end.x, end.y),
+            ),
+            embedded_graphics::prelude::Size::new(corner_radius, corner_radius),
+        )
+        .into_styled(style)
+        .draw(&mut fbuf)
+        .unwrap();
     }
 
-    fn draw_triangle(&mut self, vertex1: IVec2, vertex2: IVec2, vertex3: IVec2, _stroke_color: RGB8, _stroke_width: u32, _fill_color: Option<RGB8>) {
-        self.draw_line(vertex1, vertex2, RGB8::new(0,0,0), 1);
-        self.draw_line(vertex2, vertex3, RGB8::new(0,0,0), 1);
-        self.draw_line(vertex3, vertex1, RGB8::new(0,0,0), 1);
+    fn draw_triangle(&mut self, vertex1: IVec2, vertex2: IVec2, vertex3: IVec2, stroke_color: RGB8, stroke_width: u32, fill_color: Option<RGB8>) {
+        let mut fbuf = FrameBuf::new(&mut *self.canvas_data, RENDER_W as usize, RENDER_H as usize);
+        let mut style_builder = PrimitiveStyleBuilder::new()
+            .stroke_color(rgbu8_to_rgb565(stroke_color))
+            .stroke_width(stroke_width)
+            .stroke_alignment(embedded_graphics::primitives::StrokeAlignment::Center);
+        if let Some(c) = fill_color {
+            style_builder = style_builder.fill_color(rgbu8_to_rgb565(c));
+        }
+        let style = style_builder.build();
+        embedded_graphics::primitives::Triangle::new(
+            embedded_graphics::prelude::Point::new(vertex1.x, vertex1.y),
+            embedded_graphics::prelude::Point::new(vertex2.x, vertex2.y),
+            embedded_graphics::prelude::Point::new(vertex3.x, vertex3.y),
+        )
+        .into_styled(style).draw(&mut fbuf).unwrap();
     }
 
-    fn draw_string(&mut self, _text: &str, _pos: IVec2, _size: u32, _color: RGB8) {}
+    fn draw_string(&mut self, text: &str, pos: IVec2, size: u32, color: RGB8) {
+        let mut fbuf = FrameBuf::new(&mut *self.canvas_data, RENDER_W as usize, RENDER_H as usize);
+        
+        // using a BUILT-IN FONT!
+        let char_style = embedded_graphics::mono_font::MonoTextStyle::new(
+            &embedded_graphics::mono_font::ascii::FONT_10X20,
+            rgbu8_to_rgb565(color)
+        );
+        let text_style = embedded_graphics::text::TextStyleBuilder::new()
+        .alignment(embedded_graphics::text::Alignment::Left)
+        .baseline(embedded_graphics::text::Baseline::Top)
+        .build();
+        embedded_graphics::text::Text::with_text_style(
+            text,
+            embedded_graphics::prelude::Point::new(pos.x, pos.y),
+            char_style,
+            text_style,
+        )
+        .draw(&mut fbuf)
+        .unwrap();
+    }
 
-    fn draw_string_f(&mut self, _arg: fmt::Arguments, _pos: IVec2, _size: u32, _color: RGB8) {}
+    fn draw_string_f(&mut self, arg: fmt::Arguments, pos: IVec2, size: u32, color: RGB8) {
+        //let mut buf = [0u8; 128];
+        //self.draw_string(format_no_std::show(&mut buf, arg).unwrap(), pos, size, color);
+    }
 
-    fn clear(&mut self, _color: RGB8) {
-        self.line_idx = 0;
+    fn clear(&mut self, color: RGB8) {
+        self.canvas_data.fill(rgbu8_to_rgb565(color));
     }
 
     fn log(&mut self, _arg: fmt::Arguments) {}
@@ -191,11 +255,12 @@ impl<'d> KeyMatrix<'d> {
         pressed
     }
 
-    fn update_shell(&mut self, shell: &mut IcShell) {
+    fn update_shell(&mut self, shell: &mut IcShell) -> bool {
         let current_pressed = self.scan();
-
+        let mut changed = false;
         for idx in 0..IcKey::COUNT {
             if current_pressed[idx] != self.prev_pressed[idx] {
+                changed = true;
                 if let Some(key) = Self::key_from_index(idx) {
                     if current_pressed[idx] {
                         shell.key_down(key);
@@ -205,8 +270,8 @@ impl<'d> KeyMatrix<'d> {
                 }
             }
         }
-
         self.prev_pressed = current_pressed;
+        changed
     }
 
     fn key_from_index(idx: usize) -> Option<IcKey> {
@@ -234,7 +299,9 @@ impl<'d> KeyMatrix<'d> {
     }
 }
 
-//static mut DATA: [Rgb565; 320 * 240] = [Rgb565::GREEN; 320 * 240];
+fn rgbu8_to_rgb565(rgbu8_col: rgb::Rgb<u8>) -> Rgb565 {
+    Rgb565::new(rgbu8_col.r >> 3, rgbu8_col.g >> 2, rgbu8_col.b >> 3)
+}
 
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
@@ -386,29 +453,36 @@ async fn main(_spawner: Spawner) {
     .draw(&mut display)
     .unwrap();
     let mut icalc: IcShell = IcShell::new();
-    //let mut b_states = [false; 7];
     let mut ic_rp_platform = IcRpPlatform::new();
     display.clear(Rgb565::CYAN).unwrap();
-
+    let digits: [&str; 10] = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"];
+    let mut force_draw = true;
+    let mut frame_counter: usize = 0;
     loop {
-        key_matrix.update_shell(&mut icalc);
-
-        led.set_high();
-        info!("Pre-update");
-        icalc.update(&mut ic_rp_platform);
-        led.set_low();
-        info!("Post-update");
-
-        display.clear(Rgb565::BLUE).unwrap();
-        for i in 0..ic_rp_platform.line_idx {
-            let line = ic_rp_platform.line_list[i];
-            primitives::Line::new(
-                Point::new(line.x1 as i32, line.y1 as i32),
-                Point::new(line.x2 as i32, line.y2 as i32),
-            )
-            .into_styled(PrimitiveStyle::with_stroke(Rgb565::WHITE, 3))
-            .draw(&mut display)
-            .unwrap();
+        let keys_changed = key_matrix.update_shell(&mut icalc);
+        if keys_changed || force_draw {
+            force_draw = false;
+            led.set_high();
+            info!("Pre-update");
+            icalc.update(&mut ic_rp_platform);
+            led.set_low();
+            info!("Post-update");
+            ic_rp_platform.draw_string(
+                digits[frame_counter % 10],
+                glam::IVec2::new(0, 0),
+                1,
+                RGB8::new(255, 255, 255)
+            );
+            frame_counter = frame_counter.wrapping_add(1);
+            display.fill_contiguous(
+                &embedded_graphics::primitives::Rectangle::new(
+                    embedded_graphics::prelude::Point::new(0, 0),
+                    embedded_graphics::prelude::Size::new(RENDER_W, RENDER_H)
+                ),
+                ic_rp_platform.canvas_data.iter().copied()
+            ).unwrap();
         }
+        // try putting this in an "else" block
+        embassy_time::Timer::after(embassy_time::Duration::from_millis(10)).await;
     }
 }
