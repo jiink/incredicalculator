@@ -527,12 +527,25 @@ async fn main(_spawner: Spawner) {
                 RGB8::new(0, 255, 0)
             );
             frame_counter = frame_counter.wrapping_add(1);
+            let half_height = (RENDER_H / 2) as i32;
+            let bottom_size = embedded_graphics::prelude::Size::new(RENDER_W, RENDER_H / 2);
+            let top_size = embedded_graphics::prelude::Size::new(RENDER_W, RENDER_H / 2);
+            let bottom_start = (RENDER_W * (RENDER_H / 2)) as usize;
+
+            // Send the bottom half first, then the top half.
+            display.fill_contiguous(
+                &embedded_graphics::primitives::Rectangle::new(
+                    embedded_graphics::prelude::Point::new(0, half_height),
+                    bottom_size,
+                ),
+                ic_rp_platform.canvas_data[bottom_start..].iter().copied(),
+            ).unwrap();
             display.fill_contiguous(
                 &embedded_graphics::primitives::Rectangle::new(
                     embedded_graphics::prelude::Point::new(0, 0),
-                    embedded_graphics::prelude::Size::new(RENDER_W, RENDER_H)
+                    top_size,
                 ),
-                ic_rp_platform.canvas_data.iter().copied()
+                ic_rp_platform.canvas_data[..bottom_start].iter().copied(),
             ).unwrap();
         }
         // try putting this in an "else" block
