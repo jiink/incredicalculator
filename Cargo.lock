@@ -1462,6 +1462,7 @@ dependencies = [
  "embedded-alloc",
  "embedded-graphics",
  "embedded-graphics-framebuf",
+ "format_no_std",
  "glam",
  "incredicalculator_core",
  "mipidsi",

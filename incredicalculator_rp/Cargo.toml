@@ -32,6 +32,7 @@ incredicalculator_core = { path = "../crates/incredicalculator_core" }
 embedded-alloc = { version = "0.6.0", features = ["llff"] }
 embedded-graphics-framebuf = "0.5.0"
 glam = { version = "0.30.9", default-features = false, features = ["libm", "scalar-math"] }
+format_no_std = "1.2.0"
 
 [profile.release]
 debug = true

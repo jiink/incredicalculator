@@ -43,25 +43,6 @@ static HEAP: Heap = Heap::empty();
 #[unsafe(link_section = ".uninit.HEAP_MEM")]
 static mut HEAP_MEM: [u8; 64_000] = [0; 64_000];
 
-#[derive(Copy, Clone)]
-struct Line {
-    x1: f32,
-    y1: f32,
-    x2: f32,
-    y2: f32,
-}
-
-impl Line {
-    pub fn new() -> Line {
-        Line {
-            x1: 0.0,
-            y1: 0.0,
-            x2: 0.0,
-            y2: 0.0,
-        }
-    }
-}
-
 const RENDER_W: u32 = 320;
 const RENDER_H: u32 = 240;
 const PIXEL_COUNT: usize = (RENDER_W * RENDER_H) as usize;
@@ -183,8 +164,8 @@ impl IcPlatform for IcRpPlatform {
     }
 
     fn draw_string_f(&mut self, arg: fmt::Arguments, pos: IVec2, size: u32, color: RGB8) {
-        //let mut buf = [0u8; 128];
-        //self.draw_string(format_no_std::show(&mut buf, arg).unwrap(), pos, size, color);
+        let mut buf = [0u8; 128];
+        self.draw_string(format_no_std::show(&mut buf, arg).unwrap(), pos, size, color);
     }
 
     fn clear(&mut self, color: RGB8) {
