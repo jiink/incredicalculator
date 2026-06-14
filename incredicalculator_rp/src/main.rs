@@ -12,7 +12,7 @@ use embassy_rp::gpio::{Input, Level, Output, Pull};
 use embassy_rp::spi;
 use embassy_rp::spi::Spi;
 use embassy_rp::pwm::{Config as PwmConfig, Pwm}; 
-use embassy_time::Delay;
+use embassy_time::{Delay, Duration, Timer};
 use embedded_hal::spi::{ErrorType, Operation, SpiDevice};
 use embedded_hal_async::spi::SpiBus as _;
 use embedded_alloc::LlffHeap as Heap;
@@ -277,11 +277,12 @@ impl<'d> KeyMatrix<'d> {
         self.rows[idx].set_low();
     }
 
-    fn scan(&mut self) -> [bool; IcKey::COUNT] {
+    async fn scan(&mut self) -> [bool; IcKey::COUNT] {
         let mut pressed = [false; IcKey::COUNT];
 
         for row in 0..MATRIX_ROWS {
             self.select_row(row);
+            Timer::after(Duration::from_micros(80)).await;
             for col in 0..MATRIX_COLS {
                 if self.cols[col].is_low() {
                     if let Some(key) = Self::MAP[row][col] {
@@ -295,8 +296,8 @@ impl<'d> KeyMatrix<'d> {
         pressed
     }
 
-    fn update_shell(&mut self, shell: &mut IcShell) -> bool {
-        let current_pressed = self.scan();
+    async fn update_shell(&mut self, shell: &mut IcShell) -> bool {
+        let current_pressed = self.scan().await;
         let mut changed = false;
         for idx in 0..IcKey::COUNT {
             if current_pressed[idx] != self.prev_pressed[idx] {
@@ -512,7 +513,7 @@ async fn main(_spawner: Spawner) {
     let mut force_draw = true;
     let mut frame_counter: usize = 0;
     loop {
-        let keys_changed = key_matrix.update_shell(&mut icalc);
+        let keys_changed = key_matrix.update_shell(&mut icalc).await;
         if keys_changed || force_draw {
             force_draw = false;
             led.set_high();
@@ -547,9 +548,9 @@ async fn main(_spawner: Spawner) {
                 ),
                 ic_rp_platform.canvas_data[..bottom_start].iter().copied(),
             ).unwrap();
+        } else {        
+            embassy_time::Timer::after(embassy_time::Duration::from_millis(10)).await;
         }
-        // try putting this in an "else" block
-        embassy_time::Timer::after(embassy_time::Duration::from_millis(10)).await;
         if key_matrix.is_pressed(IcKey::Super) && key_matrix.is_pressed(IcKey::Num3) {
             reboot_into_bootloader();
         }
