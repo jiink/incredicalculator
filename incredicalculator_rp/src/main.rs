@@ -6,7 +6,6 @@ extern crate alloc;
 use core::{cell::RefCell, fmt};
 
 use defmt::*;
-use display_interface_spi::SPIInterface;
 use embassy_embedded_hal::shared_bus::blocking::spi::SpiDeviceWithConfig;
 use embassy_executor::Spawner;
 use embassy_rp::gpio::{Input, Level, Output, Pull};
@@ -29,6 +28,7 @@ use incredicalculator_core::input::IcKey;
 use incredicalculator_core::platform::IcPlatform;
 use incredicalculator_core::shell::IcShell;
 use glam::IVec2;
+use mipidsi::interface::SpiInterface;
 use rgb::RGB8;
 use mipidsi::Builder;
 use mipidsi::models::ST7789;
@@ -398,21 +398,24 @@ async fn main(_spawner: Spawner) {
     let lcd_spi_bus = p.SPI1;
 
     // ST7789 datasheet: "If not used, please fix this pin at VDDI or DGND."
-    let tft_unused_d0 = Output::new(p.PIN_33, Level::Low);
-    let tft_unused_d1 = Output::new(p.PIN_34, Level::Low);
-    let tft_unused_d2 = Output::new(p.PIN_35, Level::Low);
-    let tft_unused_d3 = Output::new(p.PIN_36, Level::Low);
-    let tft_unused_d4 = Output::new(p.PIN_37, Level::Low);
-    let tft_unused_d5 = Output::new(p.PIN_38, Level::Low);
-    let tft_unused_d6 = Output::new(p.PIN_39, Level::Low);
-    let tft_unused_d7 = Output::new(p.PIN_40, Level::Low);
+    let _tft_unused_d0 = Output::new(p.PIN_33, Level::Low);
+    let _tft_unused_d1 = Output::new(p.PIN_34, Level::Low);
+    let _tft_unused_d2 = Output::new(p.PIN_35, Level::Low);
+    let _tft_unused_d3 = Output::new(p.PIN_36, Level::Low);
+    let _tft_unused_d4 = Output::new(p.PIN_37, Level::Low);
+    let _tft_unused_d5 = Output::new(p.PIN_38, Level::Low);
+    let _tft_unused_d6 = Output::new(p.PIN_39, Level::Low);
+    let _tft_unused_d7 = Output::new(p.PIN_40, Level::Low);
 
     // PWM backlight
     let mut pwm_config = PwmConfig::default();
     pwm_config.top = 0xFFFF;
     pwm_config.compare_b = 0xFFFF/2;
-    let _backlight = Pwm::new_output_b(p.PWM_SLICE7, bl, pwm_config);
-    let _backlight2 = Pwm::new_output_b(p.PWM_SLICE8, module_bl, pwm_config);
+    let _backlight = Pwm::new_output_b(p.PWM_SLICE7, module_bl, pwm_config);
+    let mut pwm_config2 = PwmConfig::default();
+    pwm_config2.top = 0xFFFF;
+    pwm_config2.compare_b = 0xFFFF/2;
+    let _backlight2 = Pwm::new_output_b(p.PWM_SLICE8, bare_display_bl, pwm_config2);
 
     // create SPI
     let mut display_config = spi::Config::default();
@@ -434,7 +437,9 @@ async fn main(_spawner: Spawner) {
     // dcx: 0 = command, 1 = data
 
     // display interface abstraction from SPI and DC
-    let di = SPIInterface::new(display_spi, dcx);
+    //let di = SPIInterface::new(display_spi, dcx);
+    let mut spi_buf = [0_u8; 512];
+    let di = SpiInterface::new(display_spi, dcx, &mut spi_buf);
 
     // Define the display from the display interface and initialize it
     let mut display = Builder::new(ST7789, di)
@@ -448,11 +453,11 @@ async fn main(_spawner: Spawner) {
 
     //let mut fbuff = unsafe { FrameBuf::new(&mut DATA, 320, 240); };
 
-    let raw_image_data = ImageRawLE::new(include_bytes!("../assets/ferris.raw"), 86);
-    let ferris = Image::new(&raw_image_data, Point::new(34, 68));
+    //let raw_image_data = ImageRawLE::new(include_bytes!("../assets/ferris.raw"), 86);
+    // let ferris = Image::new(&raw_image_data, Point::new(34, 68));
 
     // Display the image
-    ferris.draw(&mut display).unwrap();
+    // ferris.draw(&mut display).unwrap();
 
     let style = MonoTextStyle::new(&FONT_10X20, Rgb565::GREEN);
     Text::new(
