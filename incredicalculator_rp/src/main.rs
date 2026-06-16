@@ -393,14 +393,26 @@ async fn main(_spawner: Spawner) {
     let dcx = p.PIN_42;
     let mosi = p.PIN_43;
     let clk = p.PIN_46;
-    let bl = p.PIN_31;
+    let module_bl = p.PIN_31;
+    let bare_display_bl = p.PIN_41;
     let lcd_spi_bus = p.SPI1;
+
+    // ST7789 datasheet: "If not used, please fix this pin at VDDI or DGND."
+    let tft_unused_d0 = Output::new(p.PIN_33, Level::Low);
+    let tft_unused_d1 = Output::new(p.PIN_34, Level::Low);
+    let tft_unused_d2 = Output::new(p.PIN_35, Level::Low);
+    let tft_unused_d3 = Output::new(p.PIN_36, Level::Low);
+    let tft_unused_d4 = Output::new(p.PIN_37, Level::Low);
+    let tft_unused_d5 = Output::new(p.PIN_38, Level::Low);
+    let tft_unused_d6 = Output::new(p.PIN_39, Level::Low);
+    let tft_unused_d7 = Output::new(p.PIN_40, Level::Low);
 
     // PWM backlight
     let mut pwm_config = PwmConfig::default();
     pwm_config.top = 0xFFFF;
-    pwm_config.compare_b = 58981;
+    pwm_config.compare_b = 0xFFFF/2;
     let _backlight = Pwm::new_output_b(p.PWM_SLICE7, bl, pwm_config);
+    let _backlight2 = Pwm::new_output_b(p.PWM_SLICE8, module_bl, pwm_config);
 
     // create SPI
     let mut display_config = spi::Config::default();
