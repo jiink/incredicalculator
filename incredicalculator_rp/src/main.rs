@@ -391,12 +391,12 @@ async fn main(_spawner: Spawner) {
     let mut led = Output::new(p.PIN_22, Level::Low);
     let rst = p.PIN_47;
     let display_cs = p.PIN_45;
-    let dcx = p.PIN_42;
-    let mosi = p.PIN_43;
-    let clk = p.PIN_46;
     let module_bl = p.PIN_31;
     let bare_display_bl = p.PIN_41;
     let lcd_spi_bus = p.SPI1;
+    // unused in parallel, so need to not leave it floating
+    let _unused_module_din = Output::new(p.PIN_43, Level::Low);
+    // (GPIO45 is also unused in parallel but it already has external pull-up resistor)
 
     // ST7789 datasheet: "If not used, please fix this pin at VDDI or DGND."
     
@@ -429,10 +429,11 @@ async fn main(_spawner: Spawner) {
         tft_d6,
         tft_d7,
     ));
-    let dcx = Output::new(dcx, Level::Low);
+    let parallel_dc = Output::new(p.PIN_46, Level::Low);
+    let parallel_wr  = Output::new(p.PIN_42, Level::High);
     let rst = Output::new(rst, Level::Low);
     // dcx: 0 = command, 1 = data
-    let di = ParallelInterface::new(bus, )
+    let di = ParallelInterface::new(bus, parallel_dc, parallel_wr);
     // Define the display from the display interface and initialize it
     let mut display = Builder::new(ST7789, di)
         .display_size(240, 320)
