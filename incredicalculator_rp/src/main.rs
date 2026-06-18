@@ -33,6 +33,7 @@ use rgb::RGB8;
 use mipidsi::Builder;
 use mipidsi::models::ST7789;
 use mipidsi::options::{Orientation, Rotation};
+use mipidsi::interface::{Generic8BitBus, ParallelInterface};
 use {defmt_rtt as _, panic_probe as _};
 
 const DISPLAY_FREQ: u32 = 60_000_000;
@@ -398,14 +399,15 @@ async fn main(_spawner: Spawner) {
     let lcd_spi_bus = p.SPI1;
 
     // ST7789 datasheet: "If not used, please fix this pin at VDDI or DGND."
-    let _tft_unused_d0 = Output::new(p.PIN_33, Level::Low);
-    let _tft_unused_d1 = Output::new(p.PIN_34, Level::Low);
-    let _tft_unused_d2 = Output::new(p.PIN_35, Level::Low);
-    let _tft_unused_d3 = Output::new(p.PIN_36, Level::Low);
-    let _tft_unused_d4 = Output::new(p.PIN_37, Level::Low);
-    let _tft_unused_d5 = Output::new(p.PIN_38, Level::Low);
-    let _tft_unused_d6 = Output::new(p.PIN_39, Level::Low);
-    let _tft_unused_d7 = Output::new(p.PIN_40, Level::Low);
+    
+    let tft_d0 = Output::new(p.PIN_33, Level::Low);
+    let tft_d1 = Output::new(p.PIN_34, Level::Low);
+    let tft_d2 = Output::new(p.PIN_35, Level::Low);
+    let tft_d3 = Output::new(p.PIN_36, Level::Low);
+    let tft_d4 = Output::new(p.PIN_37, Level::Low);
+    let tft_d5 = Output::new(p.PIN_38, Level::Low);
+    let tft_d6 = Output::new(p.PIN_39, Level::Low);
+    let tft_d7 = Output::new(p.PIN_40, Level::Low);
 
     // PWM backlight
     let mut pwm_config = PwmConfig::default();
@@ -417,30 +419,20 @@ async fn main(_spawner: Spawner) {
     pwm_config2.compare_b = 0xFFFF/2;
     let _backlight2 = Pwm::new_output_b(p.PWM_SLICE8, bare_display_bl, pwm_config2);
 
-    // create SPI
-    let mut display_config = spi::Config::default();
-    display_config.frequency = DISPLAY_FREQ;
-    display_config.phase = spi::Phase::CaptureOnSecondTransition;
-    display_config.polarity = spi::Polarity::IdleHigh;
-
-    let spi = Spi::new_blocking_txonly(lcd_spi_bus, clk, mosi, display_config.clone());
-    let spi_bus: Mutex<NoopRawMutex, _> = Mutex::new(RefCell::new(spi));
-
-    let display_spi = SpiDeviceWithConfig::new(
-        &spi_bus,
-        Output::new(display_cs, Level::High),
-        display_config,
-    );
-
+    let bus = Generic8BitBus::new((
+        tft_d0,
+        tft_d1,
+        tft_d2,
+        tft_d3,
+        tft_d4,
+        tft_d5,
+        tft_d6,
+        tft_d7,
+    ));
     let dcx = Output::new(dcx, Level::Low);
     let rst = Output::new(rst, Level::Low);
     // dcx: 0 = command, 1 = data
-
-    // display interface abstraction from SPI and DC
-    //let di = SPIInterface::new(display_spi, dcx);
-    let mut spi_buf = [0_u8; 512];
-    let di = SpiInterface::new(display_spi, dcx, &mut spi_buf);
-
+    let di = ParallelInterface::new(bus, )
     // Define the display from the display interface and initialize it
     let mut display = Builder::new(ST7789, di)
         .display_size(240, 320)
