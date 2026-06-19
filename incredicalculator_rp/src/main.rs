@@ -13,16 +13,15 @@ use embassy_rp::spi;
 use embassy_rp::spi::Spi;
 use embassy_rp::pwm::{Config as PwmConfig, Pwm}; 
 use embassy_sync::blocking_mutex::Mutex;
-use embassy_sync::blocking_mutex::raw::NoopRawMutex;
+use embassy_sync::blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex};
 use embassy_time::Delay;
 use embedded_alloc::LlffHeap as Heap;
-use embedded_graphics::image::{Image, ImageRawLE};
 use embedded_graphics::mono_font::MonoTextStyle;
 use embedded_graphics::mono_font::ascii::FONT_10X20;
-use embedded_graphics::pixelcolor::{Rgb565, Rgb888};
+use embedded_graphics::pixelcolor::{Rgb565};
 use embedded_graphics::primitives::{PrimitiveStyle, PrimitiveStyleBuilder};
 use embedded_graphics::text::Text;
-use embedded_graphics::{prelude::*, primitives};
+use embedded_graphics::{prelude::*};
 use embedded_graphics_framebuf::FrameBuf;
 use incredicalculator_core::input::IcKey;
 use incredicalculator_core::platform::IcPlatform;
@@ -33,6 +32,8 @@ use rgb::RGB8;
 use mipidsi::Builder;
 use mipidsi::models::ST7789;
 use mipidsi::options::{Orientation, Rotation};
+use static_cell::StaticCell;
+
 use {defmt_rtt as _, panic_probe as _};
 
 const DISPLAY_FREQ: u32 = 60_000_000;
@@ -48,6 +49,18 @@ const RENDER_H: u32 = 240;
 const PIXEL_COUNT: usize = (RENDER_W * RENDER_H) as usize;
 
 static mut CANVAS_DATA: [Rgb565; PIXEL_COUNT] = [Rgb565::new(0, 0, 0); PIXEL_COUNT];
+
+static INPUT_BUFFER: Channel<CriticalSectionRawMutex, InputBufferEvent, 32> = Channel::new();
+
+enum KeyMovement {
+    Up,
+    Down
+}
+
+struct InputBufferEvent {
+    key: IcKey,
+    up: KeyMovement
+}
 
 pub struct IcRpPlatform {
     //pub canvas_data: [Rgb565; (RENDER_W * RENDER_H) as usize]
@@ -141,7 +154,7 @@ impl IcPlatform for IcRpPlatform {
         .into_styled(style).draw(&mut fbuf).unwrap();
     }
 
-    fn draw_string(&mut self, text: &str, pos: IVec2, size: u32, color: RGB8) {
+    fn draw_string(&mut self, text: &str, pos: IVec2, _size: u32, color: RGB8) {
         let mut fbuf = FrameBuf::new(&mut *self.canvas_data, RENDER_W as usize, RENDER_H as usize);
         
         // using a BUILT-IN FONT!
@@ -242,13 +255,14 @@ impl<'d> KeyMatrix<'d> {
         for idx in 0..IcKey::COUNT {
             if current_pressed[idx] != self.prev_pressed[idx] {
                 changed = true;
-                if let Some(key) = Self::key_from_index(idx) {
-                    if current_pressed[idx] {
-                        shell.key_down(key);
-                    } else {
-                        shell.key_up(key);
-                    }
-                }
+                // if let Some(key) = Self::key_from_index(idx) {
+                //     if current_pressed[idx] {
+                //         shell.key_down(key);
+                //     } else {
+                //         shell.key_up(key);
+                //     }
+                // }
+                
             }
         }
         self.prev_pressed = current_pressed;
@@ -318,7 +332,7 @@ async fn main(_spawner: Spawner) {
     }
     let p = embassy_rp::init(Default::default());
     info!("Hello World!");
-    let mut test_str = alloc::string::String::from("test");
+    let test_str = alloc::string::String::from("test");
     info!(
         "alloc works: (len {}) - \"{}\"",
         test_str.len(),
@@ -432,12 +446,11 @@ async fn main(_spawner: Spawner) {
         display_config,
     );
 
+    // dcx: 0 = command, 1 = data
     let dcx = Output::new(dcx, Level::Low);
     let rst = Output::new(rst, Level::Low);
-    // dcx: 0 = command, 1 = data
 
     // display interface abstraction from SPI and DC
-    //let di = SPIInterface::new(display_spi, dcx);
     let mut spi_buf = [0_u8; 512];
     let di = SpiInterface::new(display_spi, dcx, &mut spi_buf);
 
@@ -451,14 +464,6 @@ async fn main(_spawner: Spawner) {
         .unwrap();
     display.clear(Rgb565::RED).unwrap();
 
-    //let mut fbuff = unsafe { FrameBuf::new(&mut DATA, 320, 240); };
-
-    //let raw_image_data = ImageRawLE::new(include_bytes!("../assets/ferris.raw"), 86);
-    // let ferris = Image::new(&raw_image_data, Point::new(34, 68));
-
-    // Display the image
-    // ferris.draw(&mut display).unwrap();
-
     let style = MonoTextStyle::new(&FONT_10X20, Rgb565::GREEN);
     Text::new(
         "Hello embedded_graphics \n + incredicalculator",
@@ -470,11 +475,10 @@ async fn main(_spawner: Spawner) {
     let mut icalc: IcShell = IcShell::new();
     let mut ic_rp_platform = IcRpPlatform::new();
     display.clear(Rgb565::CYAN).unwrap();
-    let mut force_draw = true;
     let mut frame_counter: usize = 0;
     loop {
         let keys_changed = key_matrix.update_shell(&mut icalc);
-        if keys_changed || force_draw {
+        if keys_changed {
             force_draw = false;
             led.set_high();
             info!("Pre-update");
@@ -501,5 +505,13 @@ async fn main(_spawner: Spawner) {
         if key_matrix.is_pressed(IcKey::Super) && key_matrix.is_pressed(IcKey::Num3) {
             reboot_into_bootloader();
         }
+    }
+}
+
+#[embassy_executor::task]
+async fn inputs_core1_task() {
+    info!("Hello from the \"inputs core\"");
+    loop {
+
     }
 }
