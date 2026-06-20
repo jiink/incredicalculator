@@ -7,13 +7,15 @@ use core::{cell::RefCell, fmt};
 
 use defmt::*;
 use embassy_embedded_hal::shared_bus::blocking::spi::SpiDeviceWithConfig;
-use embassy_executor::Spawner;
+use embassy_executor::{Executor, Spawner};
 use embassy_rp::gpio::{Input, Level, Output, Pull};
+use embassy_rp::multicore::{Stack, spawn_core1};
 use embassy_rp::spi;
 use embassy_rp::spi::Spi;
 use embassy_rp::pwm::{Config as PwmConfig, Pwm}; 
 use embassy_sync::blocking_mutex::Mutex;
 use embassy_sync::blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex};
+use embassy_sync::channel::Channel;
 use embassy_time::Delay;
 use embedded_alloc::LlffHeap as Heap;
 use embedded_graphics::mono_font::MonoTextStyle;
@@ -50,6 +52,8 @@ const PIXEL_COUNT: usize = (RENDER_W * RENDER_H) as usize;
 
 static mut CANVAS_DATA: [Rgb565; PIXEL_COUNT] = [Rgb565::new(0, 0, 0); PIXEL_COUNT];
 
+static mut CORE1_STACK: Stack<4096> = Stack::new();
+static EXECUTOR1: StaticCell<Executor> = StaticCell::new();
 static INPUT_BUFFER: Channel<CriticalSectionRawMutex, InputBufferEvent, 32> = Channel::new();
 
 enum KeyMovement {
@@ -59,11 +63,10 @@ enum KeyMovement {
 
 struct InputBufferEvent {
     key: IcKey,
-    up: KeyMovement
+    movement: KeyMovement
 }
 
 pub struct IcRpPlatform {
-    //pub canvas_data: [Rgb565; (RENDER_W * RENDER_H) as usize]
     pub canvas_data: &'static mut [Rgb565; PIXEL_COUNT],
 }
 
@@ -255,13 +258,13 @@ impl<'d> KeyMatrix<'d> {
         for idx in 0..IcKey::COUNT {
             if current_pressed[idx] != self.prev_pressed[idx] {
                 changed = true;
-                // if let Some(key) = Self::key_from_index(idx) {
-                //     if current_pressed[idx] {
-                //         shell.key_down(key);
-                //     } else {
-                //         shell.key_up(key);
-                //     }
-                // }
+                if let Some(key) = Self::key_from_index(idx) {
+                    if current_pressed[idx] {
+                        shell.key_down(key);
+                    } else {
+                        shell.key_up(key);
+                    }
+                }
                 
             }
         }
@@ -462,7 +465,24 @@ async fn main(_spawner: Spawner) {
         .invert_colors(mipidsi::options::ColorInversion::Inverted)
         .init(&mut Delay)
         .unwrap();
-    display.clear(Rgb565::RED).unwrap();
+    display.clear(Rgb565::CSS_PURPLE).unwrap();
+
+    spawn_core1(
+        p.CORE1,
+        unsafe {
+            // consider changing to new syntax: `&mut *&raw mut CORE1_STACK`
+            &mut *core::ptr::addr_of_mut!(CORE1_STACK)
+        },
+        move || {
+            let exec1 = EXECUTOR1.init(Executor::new());
+            exec1.run(
+                |spawner|
+                {
+                    unwrap!(spawner.spawn(inputs_core1_task(led)));
+                }
+            );
+        }
+    );
 
     let style = MonoTextStyle::new(&FONT_10X20, Rgb565::GREEN);
     Text::new(
@@ -479,11 +499,17 @@ async fn main(_spawner: Spawner) {
     loop {
         let keys_changed = key_matrix.update_shell(&mut icalc);
         if keys_changed {
-            force_draw = false;
-            led.set_high();
+            //force_draw = false;
+            //led.set_high();
+            INPUT_BUFFER.send(InputBufferEvent {
+                key: IcKey::Num1, movement: KeyMovement::Down
+            });
             info!("Pre-update");
             icalc.update(&mut ic_rp_platform);
-            led.set_low();
+            //led.set_low();
+            INPUT_BUFFER.send(InputBufferEvent {
+                key: IcKey::Num1, movement: KeyMovement::Up
+            });
             info!("Post-update");
             ic_rp_platform.draw_string_f(
                 format_args!("{}...", frame_counter % 10),
@@ -509,9 +535,12 @@ async fn main(_spawner: Spawner) {
 }
 
 #[embassy_executor::task]
-async fn inputs_core1_task() {
+async fn inputs_core1_task(mut led: Output<'static>) {
     info!("Hello from the \"inputs core\"");
     loop {
-
+        match INPUT_BUFFER.receive().await.movement {
+            KeyMovement::Up => led.set_high(),
+            KeyMovement::Down => led.set_low()
+        }
     }
 }
