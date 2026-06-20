@@ -30,6 +30,7 @@ use incredicalculator_core::input::{self, IcKey};
 use incredicalculator_core::platform::IcPlatform;
 use incredicalculator_core::shell::IcShell;
 use glam::IVec2;
+use max170xx::Max17048;
 use mipidsi::interface::SpiInterface;
 use rgb::RGB8;
 use mipidsi::Builder;
@@ -478,6 +479,14 @@ async fn main(_spawner: Spawner) {
         .unwrap();
     display.clear(Rgb565::CSS_PURPLE).unwrap();
 
+    // set up i2c
+    // Default I2C config enables internal pull-up resistors.
+    let i2c_cfg = embassy_rp::i2c::Config::default();
+    let mut board_i2c = embassy_rp::i2c::I2c::new_blocking(p.I2C0, p.PIN_25, p.PIN_24, i2c_cfg);
+
+    // This board uses a MAX17048 battery fuel gauge
+    let mut fuel_gauge = Max17048::new(board_i2c);
+
     spawn_core1(
         p.CORE1,
         unsafe {
@@ -535,6 +544,21 @@ async fn main(_spawner: Spawner) {
         //     1,
         //     RGB8::new(0, 255, 0)
         // );
+        if let (Ok(v), Ok(soc)) = (fuel_gauge.voltage(), fuel_gauge.soc()) {
+            ic_rp_platform.draw_string_f(
+                format_args!("{:.1}% ({:.2} V)", soc, v),
+                glam::IVec2::new(0, 0),
+                1,
+                RGB8::new(0, 255, 0)
+            );
+        } else {
+            ic_rp_platform.draw_string_f(
+                format_args!("fuel guage err!"),
+                glam::IVec2::new(0, 0),
+                1,
+                RGB8::new(255, 0, 0)
+            );
+        }
         frame_counter = frame_counter.wrapping_add(1);
         display.fill_contiguous(
             &embedded_graphics::primitives::Rectangle::new(
@@ -552,6 +576,9 @@ async fn inputs_core1_task(matrix_rows: [Output<'static>; 5], matrix_cols: [Inpu
     let mut key_matrix = KeyMatrix::new(matrix_rows, matrix_cols);
     let input_buf_sender = INPUT_BUFFER.dyn_sender();
     loop {
+        // todo: wait here for interrupt of one of the column lines (input gpios) changing states
+        // so that this core can sleep while youre not pressing anything. 
+        // then reducing the after_millis can be a good idea
         key_matrix.scan_and_send(input_buf_sender);
         if key_matrix.is_pressed(IcKey::Super) && key_matrix.is_pressed(IcKey::Shift) {
             reboot_into_bootloader();

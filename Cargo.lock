@@ -1465,6 +1465,7 @@ dependencies = [
  "format_no_std",
  "glam",
  "incredicalculator_core",
+ "max170xx",
  "mipidsi",
  "panic-probe",
  "rgb",
@@ -1643,6 +1644,15 @@ name = "managed"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ca88d725a0a943b096803bd34e73a4437208b6077654cc4ecb2947a5f91618d"
+
+[[package]]
+name = "max170xx"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e36315dcf3785ab2b2806a1654e0b23c63e937b8c57a1a610098f2683da89366"
+dependencies = [
+ "embedded-hal 1.0.0",
+]
 
 [[package]]
 name = "memchr"
