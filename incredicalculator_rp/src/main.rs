@@ -502,15 +502,21 @@ async fn main(_spawner: Spawner) {
         if keys_changed {
             //force_draw = false;
             //led.set_high();
-            INPUT_BUFFER.send(InputBufferEvent {
-                key: IcKey::Num1, movement: KeyMovement::Down
-            }).await;
+            if let Err(_) = INPUT_BUFFER.try_send(InputBufferEvent {
+                key: IcKey::Num1,
+                movement: KeyMovement::Down
+            }) {
+                warn!("Input buffer overflowed");
+            };
             info!("Pre-update");
             icalc.update(&mut ic_rp_platform);
             //led.set_low();
-            INPUT_BUFFER.send(InputBufferEvent {
-                key: IcKey::Num1, movement: KeyMovement::Up
-            }).await;
+            if let Err(_) = INPUT_BUFFER.try_send(InputBufferEvent {
+                key: IcKey::Num1,
+                movement: KeyMovement::Up
+            }) {
+                warn!("Input buffer overflowed");
+            };
             info!("Post-update");
             ic_rp_platform.draw_string_f(
                 format_args!("{}...", frame_counter % 10),
@@ -543,6 +549,5 @@ async fn inputs_core1_task(mut led: Output<'static>) {
             KeyMovement::Up => led.set_high(),
             KeyMovement::Down => led.set_low()
         }
-        Timer::after_millis(100).await;
     }
 }
