@@ -510,12 +510,6 @@ async fn main(_spawner: Spawner) {
             KeyMovement::Up => icalc.key_up(first_key_event.key),
             KeyMovement::Down => icalc.key_down(first_key_event.key),
         }
-        while let Ok(event) = INPUT_BUFFER.try_receive() {
-            match event.movement {
-                KeyMovement::Up => icalc.key_up(event.key),
-                KeyMovement::Down => icalc.key_down(event.key),
-            }
-        }
         led.set_high();
         info!("Pre-update");
         icalc.update(&mut ic_rp_platform);
