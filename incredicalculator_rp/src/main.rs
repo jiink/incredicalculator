@@ -15,7 +15,7 @@ use embassy_rp::spi::Spi;
 use embassy_rp::pwm::{Config as PwmConfig, Pwm}; 
 use embassy_sync::blocking_mutex::Mutex;
 use embassy_sync::blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex};
-use embassy_sync::channel::Channel;
+use embassy_sync::channel::{Channel, DynamicSender};
 use embassy_time::Delay;
 use embassy_time::Timer;
 use embedded_alloc::LlffHeap as Heap;
@@ -26,7 +26,7 @@ use embedded_graphics::primitives::{PrimitiveStyle, PrimitiveStyleBuilder};
 use embedded_graphics::text::Text;
 use embedded_graphics::{prelude::*};
 use embedded_graphics_framebuf::FrameBuf;
-use incredicalculator_core::input::IcKey;
+use incredicalculator_core::input::{self, IcKey};
 use incredicalculator_core::platform::IcPlatform;
 use incredicalculator_core::shell::IcShell;
 use glam::IVec2;
@@ -253,20 +253,24 @@ impl<'d> KeyMatrix<'d> {
         pressed
     }
 
-    fn update_shell(&mut self, shell: &mut IcShell) -> bool {
+    fn scan_and_send(&mut self, channel_sender: DynamicSender<'_, InputBufferEvent>) -> bool {
         let current_pressed = self.scan();
         let mut changed = false;
         for idx in 0..IcKey::COUNT {
             if current_pressed[idx] != self.prev_pressed[idx] {
                 changed = true;
                 if let Some(key) = Self::key_from_index(idx) {
-                    if current_pressed[idx] {
-                        shell.key_down(key);
-                    } else {
-                        shell.key_up(key);
-                    }
+                    if let Err(_) = channel_sender.try_send(InputBufferEvent {
+                        key: key,
+                        movement: if current_pressed[idx] {
+                            KeyMovement::Down
+                        } else {
+                            KeyMovement::Up
+                        }
+                    }) {
+                        warn!("Input buffer overflowed");
+                    };
                 }
-                
             }
         }
         self.prev_pressed = current_pressed;
@@ -404,7 +408,10 @@ async fn main(_spawner: Spawner) {
         Input::new(p.PIN_18, Pull::Up),
     ];
 
-    let mut key_matrix = KeyMatrix::new(matrix_rows, matrix_cols);
+    if matrix_cols[0].is_low() {
+        reboot_into_bootloader();
+    }
+
     let mut led = Output::new(p.PIN_22, Level::Low);
     let rst = p.PIN_47;
     let display_cs = p.PIN_45;
@@ -479,7 +486,7 @@ async fn main(_spawner: Spawner) {
             exec1.run(
                 |spawner|
                 {
-                    unwrap!(spawner.spawn(inputs_core1_task(led)));
+                    unwrap!(spawner.spawn(inputs_core1_task(matrix_rows, matrix_cols)));
                 }
             );
         }
@@ -498,56 +505,49 @@ async fn main(_spawner: Spawner) {
     display.clear(Rgb565::CYAN).unwrap();
     let mut frame_counter: usize = 0;
     loop {
-        let keys_changed = key_matrix.update_shell(&mut icalc);
-        if keys_changed {
-            //force_draw = false;
-            //led.set_high();
-            if let Err(_) = INPUT_BUFFER.try_send(InputBufferEvent {
-                key: IcKey::Num1,
-                movement: KeyMovement::Down
-            }) {
-                warn!("Input buffer overflowed");
-            };
-            info!("Pre-update");
-            icalc.update(&mut ic_rp_platform);
-            //led.set_low();
-            if let Err(_) = INPUT_BUFFER.try_send(InputBufferEvent {
-                key: IcKey::Num1,
-                movement: KeyMovement::Up
-            }) {
-                warn!("Input buffer overflowed");
-            };
-            info!("Post-update");
-            ic_rp_platform.draw_string_f(
-                format_args!("{}...", frame_counter % 10),
-                glam::IVec2::new(0, 0),
-                1,
-                RGB8::new(0, 255, 0)
-            );
-            frame_counter = frame_counter.wrapping_add(1);
-            display.fill_contiguous(
-                &embedded_graphics::primitives::Rectangle::new(
-                    embedded_graphics::prelude::Point::new(0, 0),
-                    embedded_graphics::prelude::Size::new(RENDER_W, RENDER_H)
-                ),
-                ic_rp_platform.canvas_data.iter().copied()
-            ).unwrap();
+        let first_key_event = INPUT_BUFFER.receive().await;
+        match first_key_event.movement {
+            KeyMovement::Up => icalc.key_up(first_key_event.key),
+            KeyMovement::Down => icalc.key_down(first_key_event.key),
         }
-        // try putting this in an "else" block
-        embassy_time::Timer::after(embassy_time::Duration::from_millis(10)).await;
-        if key_matrix.is_pressed(IcKey::Super) && key_matrix.is_pressed(IcKey::Num3) {
-            reboot_into_bootloader();
+        while let Ok(event) = INPUT_BUFFER.try_receive() {
+            match event.movement {
+                KeyMovement::Up => icalc.key_up(event.key),
+                KeyMovement::Down => icalc.key_down(event.key),
+            }
         }
+        led.set_high();
+        info!("Pre-update");
+        icalc.update(&mut ic_rp_platform);
+        led.set_low();
+        info!("Post-update");
+        ic_rp_platform.draw_string_f(
+            format_args!("{}...", frame_counter % 10),
+            glam::IVec2::new(0, 0),
+            1,
+            RGB8::new(0, 255, 0)
+        );
+        frame_counter = frame_counter.wrapping_add(1);
+        display.fill_contiguous(
+            &embedded_graphics::primitives::Rectangle::new(
+                embedded_graphics::prelude::Point::new(0, 0),
+                embedded_graphics::prelude::Size::new(RENDER_W, RENDER_H)
+            ),
+            ic_rp_platform.canvas_data.iter().copied()
+        ).unwrap();
     }
 }
 
 #[embassy_executor::task]
-async fn inputs_core1_task(mut led: Output<'static>) {
+async fn inputs_core1_task(matrix_rows: [Output<'static>; 5], matrix_cols: [Input<'static>; 4]) {
     info!("Hello from the \"inputs core\"");
+    let mut key_matrix = KeyMatrix::new(matrix_rows, matrix_cols);
+    let input_buf_sender = INPUT_BUFFER.dyn_sender();
     loop {
-        match INPUT_BUFFER.receive().await.movement {
-            KeyMovement::Up => led.set_high(),
-            KeyMovement::Down => led.set_low()
+        key_matrix.scan_and_send(input_buf_sender);
+        if key_matrix.is_pressed(IcKey::Super) && key_matrix.is_pressed(IcKey::Num3) {
+            reboot_into_bootloader();
         }
+        Timer::after_millis(2).await;
     }
 }
