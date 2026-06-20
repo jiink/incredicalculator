@@ -240,6 +240,9 @@ impl<'d> KeyMatrix<'d> {
 
         for row in 0..MATRIX_ROWS {
             self.select_row(row);
+            // if this delay isn't here, theres lots of weird inputs that 
+            // happen with the key on the next row
+            cortex_m::asm::delay(1000); 
             for col in 0..MATRIX_COLS {
                 if self.cols[col].is_low() {
                     if let Some(key) = Self::MAP[row][col] {
@@ -408,7 +411,7 @@ async fn main(_spawner: Spawner) {
         Input::new(p.PIN_18, Pull::Up),
     ];
 
-    if matrix_cols[0].is_low() {
+    if matrix_cols[2].is_low() {
         reboot_into_bootloader();
     }
 
@@ -550,9 +553,9 @@ async fn inputs_core1_task(matrix_rows: [Output<'static>; 5], matrix_cols: [Inpu
     let input_buf_sender = INPUT_BUFFER.dyn_sender();
     loop {
         key_matrix.scan_and_send(input_buf_sender);
-        if key_matrix.is_pressed(IcKey::Super) && key_matrix.is_pressed(IcKey::Num3) {
+        if key_matrix.is_pressed(IcKey::Super) && key_matrix.is_pressed(IcKey::Shift) {
             reboot_into_bootloader();
         }
-        Timer::after_millis(2).await;
+        Timer::after_millis(20).await;
     }
 }
