@@ -17,6 +17,7 @@ use embassy_sync::blocking_mutex::Mutex;
 use embassy_sync::blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex};
 use embassy_sync::channel::Channel;
 use embassy_time::Delay;
+use embassy_time::Timer;
 use embedded_alloc::LlffHeap as Heap;
 use embedded_graphics::mono_font::MonoTextStyle;
 use embedded_graphics::mono_font::ascii::FONT_10X20;
@@ -503,13 +504,13 @@ async fn main(_spawner: Spawner) {
             //led.set_high();
             INPUT_BUFFER.send(InputBufferEvent {
                 key: IcKey::Num1, movement: KeyMovement::Down
-            });
+            }).await;
             info!("Pre-update");
             icalc.update(&mut ic_rp_platform);
             //led.set_low();
             INPUT_BUFFER.send(InputBufferEvent {
                 key: IcKey::Num1, movement: KeyMovement::Up
-            });
+            }).await;
             info!("Post-update");
             ic_rp_platform.draw_string_f(
                 format_args!("{}...", frame_counter % 10),
@@ -542,5 +543,6 @@ async fn inputs_core1_task(mut led: Output<'static>) {
             KeyMovement::Up => led.set_high(),
             KeyMovement::Down => led.set_low()
         }
+        Timer::after_millis(100).await;
     }
 }
