@@ -242,7 +242,7 @@ impl<'d> KeyMatrix<'d> {
             self.select_row(row);
             // if this delay isn't here, theres lots of weird inputs that 
             // happen with the key on the next row
-            cortex_m::asm::delay(1000); 
+            cortex_m::asm::delay(100);
             for col in 0..MATRIX_COLS {
                 if self.cols[col].is_low() {
                     if let Some(key) = Self::MAP[row][col] {
@@ -529,12 +529,12 @@ async fn main(_spawner: Spawner) {
             led.set_low();
             info!("Post-update");
         }
-        ic_rp_platform.draw_string_f(
-            format_args!("{}...", frame_counter % 10),
-            glam::IVec2::new(0, 0),
-            1,
-            RGB8::new(0, 255, 0)
-        );
+        // ic_rp_platform.draw_string_f(
+        //     format_args!("{}...", frame_counter % 10),
+        //     glam::IVec2::new(0, 0),
+        //     1,
+        //     RGB8::new(0, 255, 0)
+        // );
         frame_counter = frame_counter.wrapping_add(1);
         display.fill_contiguous(
             &embedded_graphics::primitives::Rectangle::new(
@@ -556,6 +556,6 @@ async fn inputs_core1_task(matrix_rows: [Output<'static>; 5], matrix_cols: [Inpu
         if key_matrix.is_pressed(IcKey::Super) && key_matrix.is_pressed(IcKey::Shift) {
             reboot_into_bootloader();
         }
-        Timer::after_millis(20).await;
+        Timer::after_millis(16).await;
     }
 }
