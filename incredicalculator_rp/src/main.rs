@@ -515,6 +515,17 @@ async fn main(_spawner: Spawner) {
         icalc.update(&mut ic_rp_platform);
         led.set_low();
         info!("Post-update");
+        while let Ok(event) = INPUT_BUFFER.try_receive() {
+            match event.movement {
+                KeyMovement::Up => icalc.key_up(event.key),
+                KeyMovement::Down => icalc.key_down(event.key),
+            }
+            led.set_high();
+            info!("Pre-update");
+            icalc.update(&mut ic_rp_platform);
+            led.set_low();
+            info!("Post-update");
+        }
         ic_rp_platform.draw_string_f(
             format_args!("{}...", frame_counter % 10),
             glam::IVec2::new(0, 0),
