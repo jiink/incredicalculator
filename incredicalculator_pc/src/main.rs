@@ -179,6 +179,10 @@ impl IcPlatform for IcRaylibPlatform {
     fn millis(&self) -> u64 {
         self.start_time.elapsed().as_millis() as u64
     }
+
+    fn get_battery_soc(&self) -> i32 {
+        77
+    }
 }
 
 fn rgb565_to_rl_color(rgb565_col: Rgb565) -> Color {

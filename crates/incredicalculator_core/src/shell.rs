@@ -47,7 +47,7 @@ impl IcShell {
     }
 
     fn draw_battery(&mut self, platform: &mut dyn IcPlatform) {
-        let batt_percentage: i32 = 70;
+        let batt_percentage: i32 = platform.get_battery_soc();
         let batt_icon_pos = IVec2::new(282, 3);
         let batt_icon_w = 34;
         let batt_icon_h = 17;

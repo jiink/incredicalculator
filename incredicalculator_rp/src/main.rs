@@ -3,6 +3,7 @@
 
 extern crate alloc;
 
+use core::sync::atomic::AtomicI32;
 use core::{cell::RefCell, fmt};
 
 use defmt::*;
@@ -16,7 +17,7 @@ use embassy_rp::pwm::{Config as PwmConfig, Pwm};
 use embassy_sync::blocking_mutex::Mutex;
 use embassy_sync::blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex};
 use embassy_sync::channel::{Channel, DynamicSender};
-use embassy_time::Delay;
+use embassy_time::{Delay, Instant};
 use embassy_time::Timer;
 use embedded_alloc::LlffHeap as Heap;
 use embedded_graphics::mono_font::MonoTextStyle;
@@ -58,6 +59,9 @@ static mut CORE1_STACK: Stack<4096> = Stack::new();
 static EXECUTOR1: StaticCell<Executor> = StaticCell::new();
 static INPUT_BUFFER: Channel<CriticalSectionRawMutex, InputBufferEvent, 32> = Channel::new();
 
+type BoardI2c = embassy_rp::i2c::I2c<'static, embassy_rp::peripherals::I2C0, embassy_rp::i2c::Blocking>;
+static BATTERY_SOC: AtomicI32 = AtomicI32::new(-1);
+
 enum KeyMovement {
     Up,
     Down
@@ -69,7 +73,7 @@ struct InputBufferEvent {
 }
 
 pub struct IcRpPlatform {
-    pub canvas_data: &'static mut [Rgb565; PIXEL_COUNT],
+    pub canvas_data: &'static mut [Rgb565; PIXEL_COUNT]
 }
 
 impl IcRpPlatform {
@@ -193,7 +197,11 @@ impl IcPlatform for IcRpPlatform {
     fn log(&mut self, _arg: fmt::Arguments) {}
 
     fn millis(&self) -> u64 {
-        0
+        Instant::now().as_millis()
+    }
+    
+    fn get_battery_soc(&self) -> i32 {
+        BATTERY_SOC.load(core::sync::atomic::Ordering::Relaxed)
     }
 }
 
@@ -328,7 +336,7 @@ fn reboot_into_bootloader() {
 }
 
 #[embassy_executor::main]
-async fn main(_spawner: Spawner) {
+async fn main(spawner: Spawner) {
     unsafe {
         // Get the raw address of the mutable static without creating a shared reference
         let base = core::ptr::addr_of_mut!(HEAP_MEM) as usize;
@@ -485,7 +493,8 @@ async fn main(_spawner: Spawner) {
     let mut board_i2c = embassy_rp::i2c::I2c::new_blocking(p.I2C0, p.PIN_25, p.PIN_24, i2c_cfg);
 
     // This board uses a MAX17048 battery fuel gauge
-    let mut fuel_gauge = Max17048::new(board_i2c);
+    let mut fuel_gauge: Max17048<BoardI2c> = Max17048::new(board_i2c);
+    unwrap!(spawner.spawn(battery_task(fuel_gauge)));
 
     spawn_core1(
         p.CORE1,
@@ -544,21 +553,21 @@ async fn main(_spawner: Spawner) {
         //     1,
         //     RGB8::new(0, 255, 0)
         // );
-        if let (Ok(v), Ok(soc)) = (fuel_gauge.voltage(), fuel_gauge.soc()) {
-            ic_rp_platform.draw_string_f(
-                format_args!("{:.1}% ({:.2} V)", soc, v),
-                glam::IVec2::new(0, 0),
-                1,
-                RGB8::new(0, 255, 0)
-            );
-        } else {
-            ic_rp_platform.draw_string_f(
-                format_args!("fuel guage err!"),
-                glam::IVec2::new(0, 0),
-                1,
-                RGB8::new(255, 0, 0)
-            );
-        }
+        // if let (Ok(v), Ok(soc)) = (fuel_gauge.voltage(), fuel_gauge.soc()) {
+        //     ic_rp_platform.draw_string_f(
+        //         format_args!("{:.1}% ({:.2} V)", soc, v),
+        //         glam::IVec2::new(0, 0),
+        //         1,
+        //         RGB8::new(0, 255, 0)
+        //     );
+        // } else {
+        //     ic_rp_platform.draw_string_f(
+        //         format_args!("fuel guage err!"),
+        //         glam::IVec2::new(0, 0),
+        //         1,
+        //         RGB8::new(255, 0, 0)
+        //     );
+        // }
         frame_counter = frame_counter.wrapping_add(1);
         display.fill_contiguous(
             &embedded_graphics::primitives::Rectangle::new(
@@ -567,6 +576,21 @@ async fn main(_spawner: Spawner) {
             ),
             ic_rp_platform.canvas_data.iter().copied()
         ).unwrap();
+    }
+}
+
+#[embassy_executor::task]
+async fn battery_task(mut fuel_gauge: Max17048<BoardI2c>) {
+    loop {
+        if let Ok(soc) = fuel_gauge.soc() {
+            BATTERY_SOC.store(
+                soc as i32,
+                core::sync::atomic::Ordering::Relaxed
+            );
+        } else {
+            warn!("Error getting battery soc from fuel gauge");
+        }
+        Timer::after_secs(10).await;
     }
 }
 

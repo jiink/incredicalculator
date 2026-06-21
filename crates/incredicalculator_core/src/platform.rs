@@ -21,6 +21,7 @@ pub trait IcPlatform {
     fn clear(&mut self, color: RGB8);
     fn log(&mut self, arg: fmt::Arguments);
     fn millis(&self) -> u64;
+    fn get_battery_soc(&self) -> i32;
 }
 
 #[macro_export]
