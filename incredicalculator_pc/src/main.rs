@@ -9,6 +9,10 @@ use incredicalculator_core::input::IcKey;
 use incredicalculator_core::platform::{IcPlatform};
 use incredicalculator_core::shell::IcShell;
 use glam::IVec2;
+use culsynth::{
+    voice::{Voice, VoiceParams, VoiceInput, VoiceChannelInput},
+    context::Context,
+};
 
 struct VirtualKey {
     key: IcKey,
@@ -185,6 +189,27 @@ impl IcPlatform for IcRaylibPlatform {
     }
 }
 
+// Simple synth state shared by the main loop and audio update code
+struct GlobalSynth {
+    voice: Voice<f32>,
+    input: VoiceInput<f32>,
+    params: VoiceParams<f32>,
+    ctx: Context<f32>,
+}
+
+fn audio_callback(synth: &mut GlobalSynth, out_buffer: &mut [f32]) {
+    let ch_input = VoiceChannelInput::<f32>::default();
+    for sample in out_buffer.iter_mut() {
+        *sample = synth.voice.next(
+            &synth.ctx,
+            None,
+            &synth.input,
+            &ch_input,
+            synth.params.clone(),
+        );
+    }
+}
+
 fn rgb565_to_rl_color(rgb565_col: Rgb565) -> Color {
     Color { r: rgb565_col.r() << 3, g: rgb565_col.g() << 2, b: rgb565_col.b() << 3, a: 255 }
 }
@@ -196,6 +221,18 @@ fn rgbu8_to_rgb565(rgbu8_col: rgb::Rgb<u8>) -> Rgb565 {
 fn main() {
     let mut icalc: IcShell = IcShell::new();
     let mut ic_rl_platform = Box::new(IcRaylibPlatform::new());
+    // --- CULSYNTH INITIALIZATION ---
+    let mut synth = GlobalSynth {
+        voice: Voice::<f32>::new(),
+        input: VoiceInput::<f32>::default(),
+        params: VoiceParams::<f32>::default(),
+        ctx: Context::<f32>::new(44100.0),
+    };
+    // sensible defaults
+    synth.params.oscs_p.primary.saw = 1.0;
+    synth.params.amp_env_p.attack = 0.01;
+    synth.params.amp_env_p.release = 0.1;
+    synth.params.filt_p.cutoff = 100.0;
     let key_map: HashMap<KeyboardKey, IcKey> = {
         let mut m: HashMap<KeyboardKey, IcKey> = HashMap::new();
         m.insert(KeyboardKey::KEY_E, IcKey::Func6);
@@ -241,6 +278,7 @@ fn main() {
     ];
     
     println!("Hello, world!");
+    println!("culsynth integration: compiled IN");
     let (mut rl_handle, rl_thread) = raylib::init()
         .size(800, 600).title("Incredicalculator PC").vsync().build();
     rl_handle.set_target_fps(30);
@@ -254,6 +292,23 @@ fn main() {
     unsafe {
         SetTextureFilter(target_tex.texture, RL_TEXTURE_FILTER_LINEAR as i32);
     }    
+    // --- RAYLIB AUDIO SETUP ---
+    let mut audio_opt = match raylib::core::audio::RaylibAudio::init_audio_device() {
+        Ok(a) => Some(a),
+        Err(_) => {
+            eprintln!("Warning: audio device init failed; continuing without audio");
+            None
+        }
+    };
+    let mut stream_opt: Option<raylib::core::audio::AudioStream> = audio_opt.as_mut().map(|a| a.new_audio_stream(44100, 32, 1));
+    if let Some(ref stream) = stream_opt {
+        stream.play();
+        println!("Audio stream started");
+    }
+
+    let mut prev_gate: bool = false;
+    let mut prev_note: f32 = 0.0;
+    let mut audio_debug_counter: usize = 0;
     while !rl_handle.window_should_close() {
         while let Some(rl_key) = rl_handle.get_key_pressed() {
             if let Some(ic_key) = key_map.get(&rl_key) {
@@ -296,6 +351,50 @@ fn main() {
                     vk.pressed = false;
                     icalc.key_up(vk.key);
                 }
+            }
+        }
+
+        // --- SYNTH INPUT UPDATE ---
+        {
+            let num_keys = [
+                (KeyboardKey::KEY_ZERO, 60.0), (KeyboardKey::KEY_ONE, 61.0),
+                (KeyboardKey::KEY_TWO, 62.0),  (KeyboardKey::KEY_THREE, 63.0),
+                (KeyboardKey::KEY_FOUR, 64.0), (KeyboardKey::KEY_FIVE, 65.0),
+                (KeyboardKey::KEY_SIX, 66.0),  (KeyboardKey::KEY_SEVEN, 67.0),
+                (KeyboardKey::KEY_EIGHT, 68.0),(KeyboardKey::KEY_NINE, 69.0),
+            ];
+            let mut any_num_pressed = false;
+            let mut target_note = 60.0;
+            for (k, note) in num_keys {
+                if rl_handle.is_key_down(k) {
+                    target_note = note;
+                    any_num_pressed = true;
+                    break;
+                }
+            }
+            synth.input.gate = any_num_pressed;
+            synth.input.note = target_note;
+            synth.input.velocity = 0.8;
+
+            // --- AUDIO BUFFER UPDATE ---
+            if let Some(ref mut stream) = stream_opt {
+                if stream.is_processed() {
+                    let mut samples = vec![0.0f32; 1024];
+                    audio_callback(&mut synth, &mut samples);
+                    // compute peak for debug
+                    let peak = samples.iter().fold(0.0f32, |m, &s| m.max(s.abs()));
+                    audio_debug_counter = audio_debug_counter.wrapping_add(1);
+                    if audio_debug_counter % 100 == 0 {
+                        println!("audio buffer updated (peak={})", peak);
+                    }
+                    stream.update(&samples);
+                }
+            }
+            // debug gate/note changes
+            if synth.input.gate != prev_gate || (synth.input.gate && (synth.input.note != prev_note)) {
+                println!("synth input: gate={} note={} vel={}", synth.input.gate, synth.input.note, synth.input.velocity);
+                prev_gate = synth.input.gate;
+                prev_note = synth.input.note;
             }
         }
 
