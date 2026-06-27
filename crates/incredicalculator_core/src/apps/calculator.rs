@@ -259,7 +259,7 @@ impl CalcEngine for ScientificEngine {
             }
         } else if is_super {
             match key {
-                IcKey::Num0 => None,
+                IcKey::Num0 => Some(KeyAction::InsertChar(b'.')),
                 IcKey::Num1 => Some(KeyAction::End),
                 IcKey::Num2 => Some(KeyAction::MoveDown),
                 IcKey::Num3 => None,
@@ -526,7 +526,7 @@ impl CalcEngine for ProgrammerEngine {
                 IcKey::Num3 => Some(KeyAction::InsertChar(b'D')),
                 IcKey::Num4 => Some(KeyAction::InsertChar(b'E')),
                 IcKey::Num5 => Some(KeyAction::InsertChar(b'F')),
-                IcKey::Num6 => Some(KeyAction::InsertChar(b'.')),
+                IcKey::Num6 => Some(KeyAction::InsertChar(b'~')),
                 IcKey::Num7 => Some(KeyAction::InsertChar(b'(')),
                 IcKey::Num8 => Some(KeyAction::InsertChar(b')')),
                 IcKey::Num9 => Some(KeyAction::InsertChar2(b'0', b'x')),
@@ -542,7 +542,7 @@ impl CalcEngine for ProgrammerEngine {
             }
         } else if is_super {
             match key {
-                IcKey::Num0 => None,
+                IcKey::Num0 => Some(KeyAction::InsertChar(b'.')),
                 IcKey::Num1 => Some(KeyAction::End),
                 IcKey::Num2 => Some(KeyAction::MoveDown),
                 IcKey::Num3 => None,
