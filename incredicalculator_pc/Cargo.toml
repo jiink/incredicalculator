@@ -15,6 +15,7 @@ rusttype = "0.9.3"
 format_no_std = "1.2.0"
 culsynth = "0.2.0"
 critical-section = { version = "1.2.0", features = ["std"] }
+rodio = "0.22.2"
 
 [features]
 culsynth = []
