@@ -1425,6 +1425,7 @@ dependencies = [
 name = "incredicalculator_pc"
 version = "0.1.0"
 dependencies = [
+ "critical-section",
  "embedded-graphics",
  "embedded-graphics-framebuf",
  "embedded-ttf",
