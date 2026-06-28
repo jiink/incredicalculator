@@ -195,19 +195,34 @@ struct GlobalSynth {
     input: VoiceInput<f32>,
     params: VoiceParams<f32>,
     ctx: Context<f32>,
+    test_phase: f32, 
 }
 
 fn audio_callback(synth: &mut GlobalSynth, out_buffer: &mut [f32]) {
-    let ch_input = VoiceChannelInput::<f32>::default();
+    // let ch_input = VoiceChannelInput::<f32>::default();
+    // for sample in out_buffer.iter_mut() {
+    //     *sample = synth.voice.next(
+    //         &synth.ctx,
+    //         None,
+    //         &synth.input,
+    //         &ch_input,
+    //         synth.params.clone(),
+    //     );
+    // }
+    let frequency = 440.0;   // 440 Hz (Middle A)
+    let sample_rate = 48000.0; // Must match your stream sample rate
+    
     for sample in out_buffer.iter_mut() {
-        *sample = synth.voice.next(
-            &synth.ctx,
-            None,
-            &synth.input,
-            &ch_input,
-            synth.params.clone(),
-        );
+        // Generate a standard sine wave
+        *sample = (synth.test_phase * 2.0 * std::f32::consts::PI).sin() * 0.1; 
+        
+        // Advance the wave phase
+        synth.test_phase += frequency / sample_rate;
+        if synth.test_phase >= 1.0 {
+            synth.test_phase -= 1.0;
+        }
     }
+
 }
 
 fn rgb565_to_rl_color(rgb565_col: Rgb565) -> Color {
@@ -226,7 +241,8 @@ fn main() {
         voice: Voice::<f32>::new(),
         input: VoiceInput::<f32>::default(),
         params: VoiceParams::<f32>::default(),
-        ctx: Context::<f32>::new(44100.0),
+        ctx: Context::<f32>::new(48000.0),
+        test_phase: 0.0,
     };
     // sensible defaults
     synth.params.oscs_p.primary.saw = 1.0;
@@ -300,7 +316,11 @@ fn main() {
             None
         }
     };
-    let mut stream_opt: Option<raylib::core::audio::AudioStream> = audio_opt.as_mut().map(|a| a.new_audio_stream(44100, 32, 1));
+    // Set the default buffer size to match the 1024 samples we write per update
+    if let Some(ref mut audio) = audio_opt {
+        audio.set_audio_stream_buffer_size_default(2048);
+    }
+    let mut stream_opt: Option<raylib::core::audio::AudioStream> = audio_opt.as_mut().map(|a| a.new_audio_stream(48000, 32, 1));
     if let Some(ref stream) = stream_opt {
         stream.play();
         println!("Audio stream started");
@@ -378,8 +398,8 @@ fn main() {
 
             // --- AUDIO BUFFER UPDATE ---
             if let Some(ref mut stream) = stream_opt {
-                if stream.is_processed() {
-                    let mut samples = vec![0.0f32; 1024];
+                while stream.is_processed() {
+                    let mut samples = vec![0.0f32; 512];
                     audio_callback(&mut synth, &mut samples);
                     // compute peak for debug
                     let peak = samples.iter().fold(0.0f32, |m, &s| m.max(s.abs()));
