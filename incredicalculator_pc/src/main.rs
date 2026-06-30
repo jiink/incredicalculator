@@ -47,7 +47,8 @@ struct CulSynthSource {
 impl CulSynthSource {
     fn new(control: Arc<Mutex<SynthControl>>) -> Self {
         let mut params = VoiceParams::<f32>::default();
-        params.oscs_p.primary.saw = 1.0;
+        params.oscs_p.primary.saw = 0.1;
+        params.oscs_p.primary.tri = 1.0;
         params.amp_env_p.attack   = 0.01;
         params.amp_env_p.release  = 0.1;
         params.filt_p.cutoff      = 120.0;

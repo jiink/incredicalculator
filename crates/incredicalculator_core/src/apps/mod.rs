@@ -6,3 +6,5 @@ mod range_mapper_calculator;
 pub use range_mapper_calculator::RangeMapperCalculator;
 mod face_calculator;
 pub use face_calculator::FaceCalculator;
+mod sound_test;
+pub use sound_test::SoundTest;

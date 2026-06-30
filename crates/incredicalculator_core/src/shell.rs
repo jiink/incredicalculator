@@ -2,6 +2,7 @@ use crate::app::IcApp;
 use crate::app::InputContext;
 use crate::apps::AspectRatioCalculator;
 use crate::apps::Calculator;
+use crate::apps::SoundTest;
 use crate::apps::{ RangeMapperCalculator, FaceCalculator };
 use crate::input;
 use crate::input::IcKey;
@@ -15,7 +16,7 @@ use rgb::Rgb;
 use rgb::*;
 
 pub struct IcShell {
-    apps: [Box<dyn IcApp>; 4], // INCREASE THIS SIZE WHEN ADDING NEW APPS
+    apps: [Box<dyn IcApp>; 5], // INCREASE THIS SIZE WHEN ADDING NEW APPS
     active_app_idx: usize,
     key_states: [KeyState; IcKey::COUNT],
 }
@@ -26,7 +27,8 @@ impl IcShell {
             apps: [Box::new(Calculator::new()), 
                 Box::new(AspectRatioCalculator::new()),
                 Box::new(RangeMapperCalculator::new()),
-                Box::new(FaceCalculator::new())],
+                Box::new(FaceCalculator::new()),
+                Box::new(SoundTest::new())],
             active_app_idx: 0,
             key_states: [KeyState::default(); IcKey::COUNT],
         }

@@ -22,6 +22,8 @@ pub trait IcPlatform {
     fn log(&mut self, arg: fmt::Arguments);
     fn millis(&self) -> u64;
     fn get_battery_soc(&self) -> i32;
+    fn get_audio_vacancy(&self) -> usize;
+    fn push_audio_samples(&mut self, samples: &[i16]);
 }
 
 #[macro_export]
