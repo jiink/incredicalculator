@@ -985,6 +985,10 @@ impl Calculator {
 }
 
 impl IcApp for Calculator {
+    fn name(&self) -> &str {
+        "Programmer & Scientific"
+    }
+
     fn on_key(&mut self, key: IcKey, ctx: &InputContext) {
         let action = self
             .engine

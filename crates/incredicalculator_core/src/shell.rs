@@ -2,11 +2,12 @@ use crate::app::IcApp;
 use crate::app::InputContext;
 use crate::apps::AspectRatioCalculator;
 use crate::apps::Calculator;
-use crate::apps::{ RangeMapperCalculator, FaceCalculator };
+use crate::apps::{FaceCalculator, RangeMapperCalculator};
 use crate::input;
 use crate::input::IcKey;
 use crate::input::KeyState;
 use crate::platform::IcPlatform;
+use crate::platform::rgb8_hex;
 use crate::text::*;
 use alloc::boxed::Box;
 use glam::IVec2;
@@ -16,18 +17,20 @@ use rgb::*;
 
 pub struct IcShell {
     apps: [Box<dyn IcApp>; 4], // INCREASE THIS SIZE WHEN ADDING NEW APPS
-    active_app_idx: usize,
+    active_app_idx: Option<usize>,
     key_states: [KeyState; IcKey::COUNT],
 }
 
 impl IcShell {
     pub fn new() -> Self {
         Self {
-            apps: [Box::new(Calculator::new()), 
+            apps: [
+                Box::new(Calculator::new()),
                 Box::new(AspectRatioCalculator::new()),
                 Box::new(RangeMapperCalculator::new()),
-                Box::new(FaceCalculator::new())],
-            active_app_idx: 0,
+                Box::new(FaceCalculator::new()),
+            ],
+            active_app_idx: Some(0),
             key_states: [KeyState::default(); IcKey::COUNT],
         }
     }
@@ -86,36 +89,58 @@ impl IcShell {
         for i in 0..IcKey::COUNT {
             if self.key_states[i].just_pressed {
                 if let Some(key) = IcKey::from_usize(i) {
-                    let mut input_consumed_by_shell: bool = false;
-                    if ctx.is_down(IcKey::Super) {
+                    if self.active_app_idx.is_some() {
+                        let mut input_consumed_by_shell: bool = false;
+                        if ctx.is_down(IcKey::Super) {
+                            match key {
+                                IcKey::Func6 => {
+                                    self.active_app_idx = None;
+                                    input_consumed_by_shell = true;
+                                }
+                                _ => {}
+                            }
+                        }
+                        if input_consumed_by_shell {
+                            continue;
+                        }
+                        if let Some(appidx) = self.active_app_idx {
+                            self.apps[appidx].on_key(key, &ctx);
+                        }
+                    } else {
                         match key {
-                            IcKey::Func1 => {
-                                self.active_app_idx = 0;
-                                input_consumed_by_shell = true;
+                            IcKey::Num0 => {
+                                self.active_app_idx = Some(0);
                             }
-                            IcKey::Func2 => {
-                                self.active_app_idx = 1;
-                                input_consumed_by_shell = true;
+                            IcKey::Num1 => {
+                                self.active_app_idx = Some(1);
                             }
-                            IcKey::Func3 => {
-                                self.active_app_idx = 2;
-                                input_consumed_by_shell = true;
+                            IcKey::Num2 => {
+                                self.active_app_idx = Some(2);
                             }
-                            IcKey::Func4 => {
-                                self.active_app_idx = 3;
-                                input_consumed_by_shell = true;
+                            IcKey::Num3 => {
+                                self.active_app_idx = Some(3);
                             }
-                            _ => {}
+                            _ => ()
                         }
                     }
-                    if input_consumed_by_shell {
-                        continue;
-                    }
-                    self.apps[self.active_app_idx].on_key(key, &ctx);
                 }
             }
         }
-        self.apps[self.active_app_idx].update(platform, &ctx);
+        if let Some(appidx) = self.active_app_idx {
+            self.apps[appidx].update(platform, &ctx);
+        } else {
+            platform.clear(rgb8_hex(0x7FFF8E));
+            for i in 0..self.apps.len() {
+                draw_text_f(
+                    platform,
+                    format_args!("#{}: {}", i, self.apps[i].name()),
+                    4.0,
+                    4.0 + (20 * i) as f32,
+                    2.0,
+                    rgb8_hex(0x000000),
+                );
+            }
+        }
         self.draw_battery(platform);
     }
 }

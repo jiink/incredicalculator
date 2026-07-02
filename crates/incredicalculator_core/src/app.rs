@@ -18,6 +18,7 @@ impl<'a> InputContext<'a> {
 }
 
 pub trait IcApp {
+    fn name(&self) -> &str;
     fn on_enter(&mut self);
     fn on_key(&mut self, key: IcKey, ctx: &InputContext);
     fn update(&mut self, platform: &mut dyn IcPlatform, ctx: &InputContext);

@@ -318,6 +318,10 @@ impl AspectRatioCalculator {
 }
 
 impl IcApp for AspectRatioCalculator {
+    fn name(&self) -> &str {
+        "Aspect Ratio"
+    }
+
     fn on_enter(&mut self) {
         ()
     }
