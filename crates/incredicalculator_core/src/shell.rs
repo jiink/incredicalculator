@@ -18,7 +18,9 @@ use rgb::*;
 pub struct IcShell {
     apps: [Box<dyn IcApp>; 4], // INCREASE THIS SIZE WHEN ADDING NEW APPS
     active_app_idx: Option<usize>,
+    last_active_app_idx: Option<usize>,
     key_states: [KeyState; IcKey::COUNT],
+    super_interrupted: bool,
 }
 
 impl IcShell {
@@ -31,7 +33,9 @@ impl IcShell {
                 Box::new(FaceCalculator::new()),
             ],
             active_app_idx: Some(0),
+            last_active_app_idx: None,
             key_states: [KeyState::default(); IcKey::COUNT],
+            super_interrupted: false
         }
     }
 
@@ -86,17 +90,21 @@ impl IcShell {
         let ctx = InputContext {
             key_states: &self.key_states,
         };
+        if self.key_states[IcKey::Super as usize].just_pressed {
+            self.super_interrupted = false;
+        }
         for i in 0..IcKey::COUNT {
             if self.key_states[i].just_pressed {
                 if let Some(key) = IcKey::from_usize(i) {
+                    if self.super_interrupted == false && 
+                        key != IcKey::Super && 
+                        self.key_states[IcKey::Super as usize].is_down {
+                        self.super_interrupted = true;
+                    }
                     if self.active_app_idx.is_some() {
                         let mut input_consumed_by_shell: bool = false;
                         if ctx.is_down(IcKey::Super) {
                             match key {
-                                IcKey::Func6 => {
-                                    self.active_app_idx = None;
-                                    input_consumed_by_shell = true;
-                                }
                                 _ => {}
                             }
                         }
@@ -122,8 +130,20 @@ impl IcShell {
                             }
                             _ => ()
                         }
+                        if let Some(appidx) = self.active_app_idx {
+                            self.apps[appidx].on_enter();
+                        }
                     }
                 }
+            }
+        }
+        if self.key_states[IcKey::Super as usize].just_released && !self.super_interrupted {
+            if self.active_app_idx.is_some() {
+                self.last_active_app_idx = self.active_app_idx;
+                self.active_app_idx = None;
+            } else if let Some(prev) = self.last_active_app_idx {
+                self.active_app_idx = Some(prev);
+                self.apps[prev].on_enter();
             }
         }
         if let Some(appidx) = self.active_app_idx {
