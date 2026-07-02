@@ -15,12 +15,20 @@ use num_traits::FromPrimitive;
 use rgb::Rgb;
 use rgb::*;
 
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq, FromPrimitive, ToPrimitive)]
+#[repr(usize)]
+pub enum Adjustables {
+    Brightness,
+    Volume
+}
+
 pub struct IcShell {
     apps: [Box<dyn IcApp>; 4], // INCREASE THIS SIZE WHEN ADDING NEW APPS
     active_app_idx: Option<usize>,
     last_active_app_idx: Option<usize>,
     key_states: [KeyState; IcKey::COUNT],
     super_interrupted: bool,
+    adjusting_something: Option<Adjustables>
 }
 
 impl IcShell {
@@ -35,20 +43,21 @@ impl IcShell {
             active_app_idx: Some(0),
             last_active_app_idx: None,
             key_states: [KeyState::default(); IcKey::COUNT],
-            super_interrupted: false
+            super_interrupted: false,
+            adjusting_something: None
         }
     }
 
     pub fn key_down(&mut self, key: IcKey) {
         if key == IcKey::_Max {
-            ()
+            return;
         }
         self.key_states[key as usize].is_down = true;
     }
 
     pub fn key_up(&mut self, key: IcKey) {
         if key == IcKey::_Max {
-            ()
+            return;
         }
         self.key_states[key as usize].is_down = false;
     }
@@ -94,46 +103,39 @@ impl IcShell {
             self.super_interrupted = false;
         }
         for i in 0..IcKey::COUNT {
-            if self.key_states[i].just_pressed {
-                if let Some(key) = IcKey::from_usize(i) {
-                    if self.super_interrupted == false && 
-                        key != IcKey::Super && 
-                        self.key_states[IcKey::Super as usize].is_down {
-                        self.super_interrupted = true;
+            if !self.key_states[i].just_pressed {
+                continue;
+            }
+            let Some(key) = IcKey::from_usize(i) else {
+                continue;
+            };
+            if !self.super_interrupted && 
+                key != IcKey::Super && 
+                self.key_states[IcKey::Super as usize].is_down {
+                self.super_interrupted = true;
+            }
+            if let Some(app_idx) = self.active_app_idx {
+                let mut input_consumed_by_shell: bool = false;
+                if ctx.is_down(IcKey::Super) {
+                    match key {
+                        IcKey::Func6 => {}
+                        _ => {}
                     }
-                    if self.active_app_idx.is_some() {
-                        let mut input_consumed_by_shell: bool = false;
-                        if ctx.is_down(IcKey::Super) {
-                            match key {
-                                _ => {}
-                            }
-                        }
-                        if input_consumed_by_shell {
-                            continue;
-                        }
-                        if let Some(appidx) = self.active_app_idx {
-                            self.apps[appidx].on_key(key, &ctx);
-                        }
-                    } else {
-                        match key {
-                            IcKey::Num0 => {
-                                self.active_app_idx = Some(0);
-                            }
-                            IcKey::Num1 => {
-                                self.active_app_idx = Some(1);
-                            }
-                            IcKey::Num2 => {
-                                self.active_app_idx = Some(2);
-                            }
-                            IcKey::Num3 => {
-                                self.active_app_idx = Some(3);
-                            }
-                            _ => ()
-                        }
-                        if let Some(appidx) = self.active_app_idx {
-                            self.apps[appidx].on_enter();
-                        }
-                    }
+                }
+                if !input_consumed_by_shell {
+                    self.apps[app_idx].on_key(key, &ctx);
+                }
+            } else {
+                let selected_app_i = match key {
+                    IcKey::Num0 => Some(0),
+                    IcKey::Num1 => Some(1),
+                    IcKey::Num2 => Some(2),
+                    IcKey::Num3 => Some(3),
+                    _ => None
+                };
+                if let Some(idx) = selected_app_i {
+                    self.active_app_idx = Some(idx);
+                    self.apps[idx].on_enter();
                 }
             }
         }
