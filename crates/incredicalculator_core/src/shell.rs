@@ -6,7 +6,7 @@ use crate::apps::{FaceCalculator, RangeMapperCalculator};
 use crate::input;
 use crate::input::IcKey;
 use crate::input::KeyState;
-use crate::platform::IcPlatform;
+use crate::platform::{IcPlatform, CANVAS_WIDTH, CANVAS_HEIGHT};
 use crate::platform::rgb8_hex;
 use crate::text::*;
 use alloc::boxed::Box;
@@ -17,7 +17,7 @@ use rgb::*;
 
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq, FromPrimitive, ToPrimitive)]
 #[repr(usize)]
-pub enum Adjustables {
+pub enum Adjustable {
     Brightness,
     Volume
 }
@@ -28,7 +28,7 @@ pub struct IcShell {
     last_active_app_idx: Option<usize>,
     key_states: [KeyState; IcKey::COUNT],
     super_interrupted: bool,
-    adjusting_something: Option<Adjustables>
+    adjusting_something: Option<Adjustable>
 }
 
 impl IcShell {
@@ -114,14 +114,24 @@ impl IcShell {
                 self.key_states[IcKey::Super as usize].is_down {
                 self.super_interrupted = true;
             }
-            if let Some(app_idx) = self.active_app_idx {
-                let mut input_consumed_by_shell: bool = false;
-                if ctx.is_down(IcKey::Super) {
-                    match key {
-                        IcKey::Func6 => {}
-                        _ => {}
+            let mut input_consumed_by_shell: bool = false;
+            if ctx.is_down(IcKey::Super) {
+                match key {
+                    IcKey::Func6 => {
+                        self.adjusting_something = Some(Adjustable::Brightness);
+                        input_consumed_by_shell = true;
+                    }
+                    _ => {
+                        //self.adjusting_something = None();
                     }
                 }
+            }
+            if let Some(adjustable) = self.adjusting_something {
+                match key {
+
+                }
+            }
+            if let Some(app_idx) = self.active_app_idx {
                 if !input_consumed_by_shell {
                     self.apps[app_idx].on_key(key, &ctx);
                 }
@@ -162,6 +172,18 @@ impl IcShell {
                     rgb8_hex(0x000000),
                 );
             }
+        }
+        if let Some(adjustable) = self.adjusting_something {
+            const bar_w: i32 = 194;
+            const bar_h: i32 = 22;
+            platform.draw_rectangle_rounded(
+                IVec2::new(CANVAS_WIDTH as i32 / 2 - bar_w / 2, CANVAS_HEIGHT as i32 / 2 - bar_h / 2),
+                IVec2::new(CANVAS_WIDTH as i32 / 2 + bar_w / 2, CANVAS_HEIGHT as i32 / 2 + bar_h / 2),
+                rgb8_hex(0x000000),
+                4,
+                Some(rgb8_hex(0x6ABE30)),
+                6);
+            draw_text_f(platform, format_args!("{}", ), x, y, scale, color);
         }
         self.draw_battery(platform);
     }
