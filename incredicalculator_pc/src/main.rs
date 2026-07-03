@@ -27,14 +27,18 @@ const RENDER_H: u32 = 240;
 
 pub struct IcRaylibPlatform {
     pub canvas_data: [Rgb565; (RENDER_W * RENDER_H) as usize],
-    start_time: Instant
+    start_time: Instant,
+    fake_brightness: u8,
+    fake_volume: u8,
 }
 
 impl IcRaylibPlatform {
     pub fn new() -> IcRaylibPlatform {
         IcRaylibPlatform {
             canvas_data: [Rgb565::BLACK; (RENDER_W * RENDER_H) as usize],
-            start_time: Instant::now()
+            start_time: Instant::now(),
+            fake_brightness: 100,
+            fake_volume: 100,
         }
     }
 }
@@ -182,6 +186,24 @@ impl IcPlatform for IcRaylibPlatform {
 
     fn get_battery_soc(&self) -> i32 {
         77
+    }
+    
+    fn get_brightness(&self) -> u8 {
+        self.fake_brightness
+    }
+    
+    fn set_brightness(&mut self, value: u8) {
+        println!("omg, setting fake brightness to {}", value);
+        self.fake_brightness = value;
+    }
+    
+    fn get_volume(&self) -> u8 {
+        self.fake_volume
+    }
+    
+    fn set_volume(&mut self, value: u8) {
+        println!("omg, setting fake volume to {}", value);
+        self.fake_volume = value;
     }
 }
 

@@ -90,6 +90,81 @@ impl IcShell {
         );
     }
 
+    fn adjust_adjustable(platform: &mut dyn IcPlatform, adjustable: Adjustable, amount: i32) {
+        if amount == 0 {
+            return;
+        }
+        let og_val_32 = Self::get_adjustable(platform, adjustable) as i32;
+        let new_val_32 = og_val_32.saturating_add(amount);
+        let new_val = new_val_32.clamp(0, 255) as u8;
+        match adjustable {
+            Adjustable::Brightness => {
+                platform.set_brightness(new_val);
+            },
+            Adjustable::Volume => {
+                platform.set_volume(new_val);
+            }
+        }
+    }
+
+    fn get_adjustable(platform: &dyn IcPlatform, adjustable: Adjustable) -> u8 {
+        match adjustable {
+            Adjustable::Brightness => platform.get_brightness(),
+            Adjustable::Volume => platform.get_volume(),
+        }
+    }
+
+    fn draw_adjustable_readout(platform: &mut dyn IcPlatform, adjustable: Adjustable, value: u8) {
+        let center_x = CANVAS_WIDTH as i32 / 2;
+        let center_y = CANVAS_HEIGHT as i32 / 2;
+        
+        let bar_w = 194;
+        let bar_h = 24;
+        let stroke_w = 4;
+        
+        let start = IVec2::new(center_x - bar_w / 2, center_y - bar_h / 2);
+        let end = IVec2::new(center_x + bar_w / 2, center_y + bar_h / 2);
+
+        platform.draw_rectangle_rounded(
+            start,
+            end,
+            rgb8_hex(0x000000),       
+            stroke_w as u32,
+            Some(rgb8_hex(0x222222)), 
+            6                         
+        );
+
+        let inner_start_x = start.x + stroke_w;
+        let inner_start_y = start.y + stroke_w;
+        let max_inner_w = bar_w - (stroke_w * 2);
+        let inner_h = bar_h - (stroke_w * 2);
+        
+        let fill_w = (value as i32 * max_inner_w) / 255;
+        
+        if fill_w > 0 {
+            let fill_radius = 2.min(fill_w as u32 / 2); 
+            
+            platform.draw_rectangle_rounded(
+                IVec2::new(inner_start_x, inner_start_y),
+                IVec2::new(inner_start_x + fill_w, inner_start_y + inner_h),
+                rgb8_hex(0x000000),       
+                0,                        
+                Some(rgb8_hex(0x6ABE30)), 
+                fill_radius
+            );
+        }
+
+        let percentage = (value as i32 * 100) / 255;
+        draw_text_f(
+            platform, 
+            format_args!("{:?}", adjustable), 
+            start.x as f32 + 3.0,    
+            start.y as f32 - 20.0,    
+            2.5, 
+            rgb8_hex(0xFFFFFF)        
+        );
+    }
+
     pub fn update(&mut self, platform: &mut dyn IcPlatform) {
         for s in self.key_states.iter_mut() {
             s.just_pressed = s.is_down && !s.was_down;
@@ -120,15 +195,26 @@ impl IcShell {
                     IcKey::Func6 => {
                         self.adjusting_something = Some(Adjustable::Brightness);
                         input_consumed_by_shell = true;
+                    },
+                    IcKey::Func5 => {
+                        self.adjusting_something = Some(Adjustable::Volume);
+                        input_consumed_by_shell = true;
+                    }
+                    _ => ()
+                }
+            } else if let Some(adjustable) = self.adjusting_something {
+                let adjust_amt = 32;
+                input_consumed_by_shell = true;
+                match key {
+                    IcKey::Func4 => {
+                        Self::adjust_adjustable(platform, adjustable, -adjust_amt);
+                    }
+                    IcKey::Func5 => {
+                        Self::adjust_adjustable(platform, adjustable, adjust_amt);
                     }
                     _ => {
-                        //self.adjusting_something = None();
-                    }
-                }
-            }
-            if let Some(adjustable) = self.adjusting_something {
-                match key {
-
+                        self.adjusting_something = None;
+                    } 
                 }
             }
             if let Some(app_idx) = self.active_app_idx {
@@ -174,16 +260,8 @@ impl IcShell {
             }
         }
         if let Some(adjustable) = self.adjusting_something {
-            const bar_w: i32 = 194;
-            const bar_h: i32 = 22;
-            platform.draw_rectangle_rounded(
-                IVec2::new(CANVAS_WIDTH as i32 / 2 - bar_w / 2, CANVAS_HEIGHT as i32 / 2 - bar_h / 2),
-                IVec2::new(CANVAS_WIDTH as i32 / 2 + bar_w / 2, CANVAS_HEIGHT as i32 / 2 + bar_h / 2),
-                rgb8_hex(0x000000),
-                4,
-                Some(rgb8_hex(0x6ABE30)),
-                6);
-            draw_text_f(platform, format_args!("{}", ), x, y, scale, color);
+            let v =Self::get_adjustable(platform, adjustable);
+            Self::draw_adjustable_readout(platform, adjustable, v);
         }
         self.draw_battery(platform);
     }
