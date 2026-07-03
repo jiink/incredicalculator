@@ -508,6 +508,10 @@ impl FaceCalculator {
 }
 
 impl IcApp for FaceCalculator {
+    fn name(&self) -> &str {
+        "Face"
+    }
+
     fn on_enter(&mut self) {
         ()
     }

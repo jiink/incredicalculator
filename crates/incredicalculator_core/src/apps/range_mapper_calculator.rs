@@ -298,6 +298,10 @@ impl RangeMapperCalculator {
 }
 
 impl IcApp for RangeMapperCalculator {
+    fn name(&self) -> &str {
+        "Range Mapper"
+    }
+
     fn on_enter(&mut self) {
         ()
     }

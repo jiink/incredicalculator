@@ -4,6 +4,7 @@ use crate::input::{IcKey, KeyState};
 use crate::platform;
 use crate::platform::IcPlatform;
 use crate::platform::debug_log;
+use crate::platform::{CANVAS_WIDTH, CANVAS_HEIGHT};
 use crate::text::{draw_text, draw_text_f, text_to_pos};
 use alloc::boxed::Box;
 use alloc::string::ToString;
@@ -85,8 +86,6 @@ enum EngineMode {
 }
 
 const EQ_HISTORY_MAX: usize = 4;
-const WIDTH: u32 = 320;
-const HEIGHT: u32 = 240;
 
 struct LineBuffer<const N: usize> {
     pub data: [u8; N],
@@ -259,7 +258,7 @@ impl CalcEngine for ScientificEngine {
             }
         } else if is_super {
             match key {
-                IcKey::Num0 => None,
+                IcKey::Num0 => Some(KeyAction::InsertChar(b'.')),
                 IcKey::Num1 => Some(KeyAction::End),
                 IcKey::Num2 => Some(KeyAction::MoveDown),
                 IcKey::Num3 => None,
@@ -526,7 +525,7 @@ impl CalcEngine for ProgrammerEngine {
                 IcKey::Num3 => Some(KeyAction::InsertChar(b'D')),
                 IcKey::Num4 => Some(KeyAction::InsertChar(b'E')),
                 IcKey::Num5 => Some(KeyAction::InsertChar(b'F')),
-                IcKey::Num6 => Some(KeyAction::InsertChar(b'.')),
+                IcKey::Num6 => Some(KeyAction::InsertChar(b'~')),
                 IcKey::Num7 => Some(KeyAction::InsertChar(b'(')),
                 IcKey::Num8 => Some(KeyAction::InsertChar(b')')),
                 IcKey::Num9 => Some(KeyAction::InsertChar2(b'0', b'x')),
@@ -542,7 +541,7 @@ impl CalcEngine for ProgrammerEngine {
             }
         } else if is_super {
             match key {
-                IcKey::Num0 => None,
+                IcKey::Num0 => Some(KeyAction::InsertChar(b'.')),
                 IcKey::Num1 => Some(KeyAction::End),
                 IcKey::Num2 => Some(KeyAction::MoveDown),
                 IcKey::Num3 => None,
@@ -837,7 +836,7 @@ impl Calculator {
                 if logical_idx == selection.idx {
                     platform.draw_rectangle(
                         IVec2::new(0, y_pos as i32 - margin as i32),
-                        IVec2::new(WIDTH as i32, y_pos as i32 + line_height as i32 - 5),
+                        IVec2::new(CANVAS_WIDTH as i32, y_pos as i32 + line_height as i32 - 5),
                         Rgb::new(0, 0, 0),
                         0,
                         Some(Rgb::new(0, 0, 255)),
@@ -845,7 +844,7 @@ impl Calculator {
                     draw_text(
                         platform,
                         "\x03",
-                        (WIDTH - margin - 9) as f32,
+                        (CANVAS_WIDTH - margin - 9) as f32,
                         y_pos as f32,
                         font_size,
                         Rgb {
@@ -897,7 +896,7 @@ impl Calculator {
 
             platform.draw_line(
                 IVec2::new(margin as i32, y2 as i32 + 16),
-                IVec2::new((WIDTH - margin) as i32, y2 as i32 + 16),
+                IVec2::new((CANVAS_WIDTH - margin) as i32, y2 as i32 + 16),
                 Rgb {
                     r: 0x80,
                     g: 0x80,
@@ -985,6 +984,10 @@ impl Calculator {
 }
 
 impl IcApp for Calculator {
+    fn name(&self) -> &str {
+        "Programmer & Scientific"
+    }
+
     fn on_key(&mut self, key: IcKey, ctx: &InputContext) {
         let action = self
             .engine

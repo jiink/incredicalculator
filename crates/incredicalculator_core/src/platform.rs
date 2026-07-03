@@ -2,6 +2,8 @@ use glam::IVec2;
 use rgb::*;
 use core::fmt;
 
+pub const CANVAS_WIDTH: u32 = 320;
+pub const CANVAS_HEIGHT: u32 = 240;
 
 pub trait IcPlatform {
     fn draw_line(&mut self, start: IVec2, end: IVec2, color: RGB8, width: u32);
@@ -24,6 +26,10 @@ pub trait IcPlatform {
     fn get_battery_soc(&self) -> i32;
     fn get_audio_vacancy(&self) -> usize;
     fn push_audio_samples(&mut self, samples: &[i16]);
+    fn get_brightness(&self) -> u8;
+    fn set_brightness(&mut self, value: u8);
+    fn get_volume(&self) -> u8;
+    fn set_volume(&mut self, value: u8);
 }
 
 #[macro_export]

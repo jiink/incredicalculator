@@ -72,19 +72,28 @@ struct InputBufferEvent {
     movement: KeyMovement
 }
 
-pub struct IcRpPlatform {
-    pub canvas_data: &'static mut [Rgb565; PIXEL_COUNT]
+pub struct IcRpPlatform<'d> {
+    pub canvas_data: &'static mut [Rgb565; PIXEL_COUNT],
+    backlight: Pwm<'d>,
+    backlight2: Pwm<'d>,
+    brightness: u8
 }
 
-impl IcRpPlatform {
-    pub fn new() -> IcRpPlatform {
-        IcRpPlatform {
-            canvas_data: unsafe { &mut *core::ptr::addr_of_mut!(CANVAS_DATA) }
+impl<'d> IcRpPlatform<'d> {
+    pub fn new(
+        backlight: Pwm<'d>,
+        backlight2: Pwm<'d>
+    ) -> Self {
+        Self {
+            canvas_data: unsafe { &mut *core::ptr::addr_of_mut!(CANVAS_DATA) },
+            backlight,
+            backlight2,
+            brightness: 128,
         }
     }
 }
 
-impl IcPlatform for IcRpPlatform {
+impl<'d> IcPlatform for IcRpPlatform<'d> {
     fn draw_line(&mut self, start: IVec2, end: IVec2, color: RGB8, width: u32) {
         let mut fbuf = FrameBuf::new(&mut *self.canvas_data, RENDER_W as usize, RENDER_H as usize);
         embedded_graphics::primitives::Line::new(
@@ -202,6 +211,28 @@ impl IcPlatform for IcRpPlatform {
     
     fn get_battery_soc(&self) -> i32 {
         BATTERY_SOC.load(core::sync::atomic::Ordering::Relaxed)
+    }
+    
+    fn get_brightness(&self) -> u8 {
+        self.brightness
+    }
+    
+    fn set_brightness(&mut self, value: u8) {
+        self.brightness = value;
+        let duty = ((value as u32 * 0xffff) / 255) as u16;
+        let mut config = PwmConfig::default();
+        config.top = 0xffff;
+        config.compare_b = duty.max(128);
+        self.backlight.set_config(&config);
+        self.backlight2.set_config(&config);
+    }
+    
+    fn get_volume(&self) -> u8 {
+        0
+    }
+    
+    fn set_volume(&mut self, value: u8) {
+        ()
     }
 }
 
@@ -448,11 +479,11 @@ async fn main(spawner: Spawner) {
     let mut pwm_config = PwmConfig::default();
     pwm_config.top = 0xFFFF;
     pwm_config.compare_b = 0xFFFF/2;
-    let _backlight = Pwm::new_output_b(p.PWM_SLICE7, module_bl, pwm_config);
+    let backlight = Pwm::new_output_b(p.PWM_SLICE7, module_bl, pwm_config);
     let mut pwm_config2 = PwmConfig::default();
     pwm_config2.top = 0xFFFF;
     pwm_config2.compare_b = 0xFFFF/2;
-    let _backlight2 = Pwm::new_output_b(p.PWM_SLICE8, bare_display_bl, pwm_config2);
+    let backlight2 = Pwm::new_output_b(p.PWM_SLICE8, bare_display_bl, pwm_config2);
 
     // create SPI
     let mut display_config = spi::Config::default();
@@ -522,7 +553,7 @@ async fn main(spawner: Spawner) {
     .draw(&mut display)
     .unwrap();
     let mut icalc: IcShell = IcShell::new();
-    let mut ic_rp_platform = IcRpPlatform::new();
+    let mut ic_rp_platform = IcRpPlatform::new(backlight, backlight2);
     display.clear(Rgb565::CYAN).unwrap();
     let mut frame_counter: usize = 0;
     loop {
