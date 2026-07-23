@@ -2,8 +2,7 @@ use ::core::fmt;
 use std::{collections::HashMap, num::NonZero};
 use std::time::Instant;
 
-use culsynth::voice::{Voice, VoiceParams, VoiceChannelInput, VoiceInput};
-use culsynth::context::Context;
+
 use embedded_graphics::{
     Drawable,
     pixelcolor::Rgb565,
@@ -11,6 +10,7 @@ use embedded_graphics::{
     primitives::{PrimitiveStyle, PrimitiveStyleBuilder},
 };
 use embedded_graphics_framebuf::FrameBuf;
+use incredicalculator_core::audio_engine::AudioEngine;
 use raylib::{
     ffi::{SetTextureFilter, RL_TEXTURE_FILTER_LINEAR},
     prelude::*,
@@ -26,100 +26,30 @@ use glam::IVec2;
 // In Cargo.toml add: rodio = { version = "0.21", features = ["playback"] }
 use rodio::source::{SineWave, Source};
 
-// What the main thread writes, the audio thread reads.
-struct SynthControl {
-    gate: bool,
-    note: f32,
-    velocity: f32,
+struct ShellAudioSource {
+    shell: Arc<Mutex<IcShell>>,
 }
 
-struct CulSynthSource {
-    call_count: u64,
-    voice: Voice<f32>,
-    params: VoiceParams<f32>,
-    ch_input: VoiceChannelInput<f32>,
-    ctx: Context<f32>,
-    // Cached copy so we don't block if the mutex is contended.
-    cached_input: VoiceInput<f32>,
-    control: Arc<Mutex<SynthControl>>,
-}
-
-impl CulSynthSource {
-    fn new(control: Arc<Mutex<SynthControl>>) -> Self {
-        let mut params = VoiceParams::<f32>::default();
-        params.oscs_p.primary.saw = 0.1;
-        params.oscs_p.primary.tri = 1.0;
-        params.amp_env_p.attack   = 0.01;
-        params.amp_env_p.release  = 0.1;
-        params.filt_p.cutoff      = 120.0;
-        params.filt_p.low_mix = 1.0;
-        params.ring_p.mix_a = 1.0;
-
-        Self {
-            call_count: 0,
-            voice:        Voice::<f32>::new(),
-            params,
-            ch_input:     VoiceChannelInput::<f32>::default(),
-            ctx:          Context::<f32>::new(48000.0),
-            cached_input: VoiceInput::<f32>::default(),
-            control,
-        }
+impl ShellAudioSource {
+    fn new(s: Arc<Mutex<IcShell>>) -> Self {
+        ShellAudioSource { shell: s }
     }
 }
 
-impl Iterator for CulSynthSource {
+impl Iterator for ShellAudioSource {
     type Item = f32;
 
-    // fn next(&mut self) -> Option<f32> {
-    //     // Grab latest control values if the lock is immediately available;
-    //     // otherwise just use the cached copy from last frame.
-    //     if let Ok(ctrl) = self.control.try_lock() {
-    //         self.cached_input.gate     = ctrl.gate;
-    //         self.cached_input.note     = ctrl.note;
-    //         self.cached_input.velocity = ctrl.velocity;
-    //     }
-
-    //     Some(self.voice.next(
-    //         &self.ctx,
-    //         None,
-    //         &self.cached_input,
-    //         &self.ch_input,
-    //         self.params.clone(),
-    //     ))
-    // }
     fn next(&mut self) -> Option<f32> {
-        self.call_count += 1;
-
-        // Fires once per second at 48kHz — proves rodio is calling us
-        if self.call_count % 48_000 == 0 {
-            println!("[audio] alive: {} samples, gate={}, note={}",
-                self.call_count, self.cached_input.gate, self.cached_input.note);
-        }
-
-        if let Ok(ctrl) = self.control.try_lock() {
-            // Log gate transitions
-            if ctrl.gate != self.cached_input.gate {
-                println!("[audio] gate -> {}", ctrl.gate);
-            }
-            self.cached_input.gate     = ctrl.gate;
-            self.cached_input.note     = ctrl.note;
-            self.cached_input.velocity = ctrl.velocity;
-        }
-
-        let sample = self.voice.next(
-            &self.ctx, None, &self.cached_input, &self.ch_input, self.params.clone(),
-        );
-
-        // When gate is on, are we getting non-zero output?
-        if self.cached_input.gate && self.call_count % 4_800 == 0 {
-            println!("[audio] sample={:.6}", sample);
-        }
-
-        Some(sample)
+        let mut shell = self.shell.lock().unwrap();
+        // todo try managing a bigger buffer later just for practice for the mcu version
+        let mut local_buf: [f32; 1] = [0.0; 1];
+        //shell.fill_audio(&mut local_buf[..]);
+        local_buf[0] = shell.audio_mut().next_sample();
+        Some(local_buf[0] as f32)
     }
 }
 
-impl rodio::Source for CulSynthSource {
+impl rodio::Source for ShellAudioSource {
     fn current_span_len(&self) -> Option<usize> { None }
     fn channels(&self)          -> NonZero<u16>  { NonZero::new(1).unwrap() }
     fn sample_rate(&self)       -> NonZero<u32>  { NonZero::new(48000).unwrap() }
@@ -341,49 +271,18 @@ fn rgbu8_to_rgb565(c: rgb::Rgb<u8>) -> Rgb565 {
 // ---------------------------------------------------------------------------
 
 fn main() {
-    let mut icalc = IcShell::new();
+    let shell = Arc::new(Mutex::new(IcShell::new()));
     let mut ic_rl_platform = Box::new(IcRaylibPlatform::new());
 
-    // -----------------------------------------------------------------------
-    // AUDIO — rodio sine wave test
-    //
-    // `audio_handle` owns the OS audio device connection; dropping it stops
-    // playback.  `audio_player` is the sequenced play queue connected to that
-    // device.  Both must live until the end of main.
-    // -----------------------------------------------------------------------
-    // let audio_handle = match rodio::DeviceSinkBuilder::open_default_sink() {
-    //     Ok(h) => {
-    //         println!("Audio: device opened OK");
-    //         Some(h)
-    //     }
-    //     Err(e) => {
-    //         eprintln!("Audio: could not open device ({e}); continuing without audio");
-    //         None
-    //     }
-    // };
-
-    // `audio_player` is kept alive in an Option for the same reason.
-    // let audio_player = audio_handle.as_ref().map(|h| {
-    //     let player = rodio::Player::connect_new(&h.mixer());
-    //     // SineWave is an infinite iterator, so this plays forever until the
-    //     // player (or handle) is dropped.
-    //     player.append(SineWave::new(440.0).amplify(0.1));
-    //     println!("Audio: 440 Hz sine wave started via rodio");
-    //     player
-    // });
-    
-    // Create shared control state
-    let synth_control = Arc::new(Mutex::new(SynthControl {
-        gate: false,
-        note: 69.0,  // A4
-        velocity: 0.8,
-    }));
-
     // Build and start the culsynth source
+    // let audio = {
+    //     let shell = shell.lock().unwrap();
+    //     shell.audio_mut()
+    // };
     let audio_handle = rodio::DeviceSinkBuilder::open_default_sink()
         .expect("Failed to open audio device");
     let audio_player = rodio::Player::connect_new(&audio_handle.mixer());
-    audio_player.append(CulSynthSource::new(Arc::clone(&synth_control)));
+    audio_player.append(ShellAudioSource::new(shell));
     println!("Audio: culsynth source started");
 
 
@@ -464,90 +363,59 @@ fn main() {
     // Main loop
     // -----------------------------------------------------------------------
     while !rl_handle.window_should_close() {
-        // --- Physical keyboard ---
-        while let Some(rl_key) = rl_handle.get_key_pressed() {
-            if let Some(&ic_key) = key_map.get(&rl_key) {
-                icalc.key_down(ic_key);
-            }
-        }
-        for rl_key in key_map.keys() {
-            if rl_handle.is_key_released(*rl_key) {
-                if let Some(&ic_key) = key_map.get(rl_key) {
-                    icalc.key_up(ic_key);
+        let virtual_key_size: i32 = 64;
+        {
+            let icalc = shell.lock().unwrap();
+            // --- Physical keyboard ---
+            while let Some(rl_key) = rl_handle.get_key_pressed() {
+                if let Some(&ic_key) = key_map.get(&rl_key) {
+                    icalc.key_down(ic_key);
                 }
             }
-        }
+            for rl_key in key_map.keys() {
+                if rl_handle.is_key_released(*rl_key) {
+                    if let Some(&ic_key) = key_map.get(rl_key) {
+                        icalc.key_up(ic_key);
+                    }
+                }
+            }
 
-        // --- Virtual keyboard (mouse) ---
-        let virtual_key_size: i32 = 64;
-        let mouse_pos = rl_handle.get_mouse_position();
-        let mouse_down = rl_handle.is_mouse_button_down(MouseButton::MOUSE_BUTTON_LEFT);
-        let mouse_pressed_this_frame =
-            rl_handle.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT);
+            // --- Virtual keyboard (mouse) ---
+            
+            let mouse_pos = rl_handle.get_mouse_position();
+            let mouse_down = rl_handle.is_mouse_button_down(MouseButton::MOUSE_BUTTON_LEFT);
+            let mouse_pressed_this_frame =
+                rl_handle.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT);
+            for vk in virtual_keys.iter_mut() {
+                let key_rect = Rectangle::new(
+                    vk.x as f32, vk.y as f32,
+                    virtual_key_size as f32, virtual_key_size as f32,
+                );
+                vk.hovered = key_rect.check_collision_point_rec(mouse_pos);
 
-        for vk in virtual_keys.iter_mut() {
-            let key_rect = Rectangle::new(
-                vk.x as f32, vk.y as f32,
-                virtual_key_size as f32, virtual_key_size as f32,
-            );
-            vk.hovered = key_rect.check_collision_point_rec(mouse_pos);
-
-            if vk.sticky {
-                if vk.hovered && mouse_pressed_this_frame {
-                    vk.pressed = !vk.pressed;
-                    if vk.pressed {
+                if vk.sticky {
+                    if vk.hovered && mouse_pressed_this_frame {
+                        vk.pressed = !vk.pressed;
+                        if vk.pressed {
+                            icalc.key_down(vk.key);
+                        } else {
+                            icalc.key_up(vk.key);
+                        }
+                    }
+                } else {
+                    if vk.hovered && mouse_down && !vk.pressed {
+                        vk.pressed = true;
                         icalc.key_down(vk.key);
-                    } else {
+                    } else if vk.pressed && !mouse_down {
+                        vk.pressed = false;
                         icalc.key_up(vk.key);
                     }
                 }
-            } else {
-                if vk.hovered && mouse_down && !vk.pressed {
-                    vk.pressed = true;
-                    icalc.key_down(vk.key);
-                } else if vk.pressed && !mouse_down {
-                    vk.pressed = false;
-                    icalc.key_up(vk.key);
-                }
             }
-        }
 
-        // --- SYNTH INPUT UPDATE ---
-        // Map number keys to MIDI notes and drive the gate
-        let num_keys = [
-            (KeyboardKey::KEY_ZERO,  60.0_f32),
-            (KeyboardKey::KEY_ONE,   61.0),
-            (KeyboardKey::KEY_TWO,   62.0),
-            (KeyboardKey::KEY_THREE, 63.0),
-            (KeyboardKey::KEY_FOUR,  64.0),
-            (KeyboardKey::KEY_FIVE,  65.0),
-            (KeyboardKey::KEY_SIX,   66.0),
-            (KeyboardKey::KEY_SEVEN, 67.0),
-            (KeyboardKey::KEY_EIGHT, 68.0),
-            (KeyboardKey::KEY_NINE,  69.0),
-        ];
-
-        let mut pressed_note: Option<f32> = None;
-        for (k, note) in num_keys {
-            if rl_handle.is_key_down(k) {
-                pressed_note = Some(note);
-                break;
-            }
-        }
-
-        if let Ok(mut ctrl) = synth_control.lock() {
-            let prev_gate = ctrl.gate;
-            ctrl.gate = pressed_note.is_some();
-            if let Some(note) = pressed_note {
-                ctrl.note = note;
-            }
-            if ctrl.gate != prev_gate {
-                println!("[main] gate -> {}, note={}", ctrl.gate, ctrl.note);
-            }
-        }
-
-        // --- Core update ---
-        icalc.update(ic_rl_platform.as_mut());
+            // --- Core update ---
+            icalc.update(ic_rl_platform.as_mut());
+        } // drop lock on shell
 
         // --- Upload pixel data to GPU ---
         let fps = rl_handle.get_fps();
@@ -602,8 +470,6 @@ fn main() {
         );
     }
 
-    // Explicitly drop audio last so it doesn't cut out early if the compiler
-    // decides to clean up in a surprising order.
     drop(audio_player);
     drop(audio_handle);
 }

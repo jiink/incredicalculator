@@ -4,13 +4,16 @@ use crate::apps::AspectRatioCalculator;
 use crate::apps::Calculator;
 use crate::apps::SoundTest;
 use crate::apps::{ RangeMapperCalculator, FaceCalculator };
+use crate::audio_engine::AudioEngine;
 use crate::input;
 use crate::input::IcKey;
 use crate::input::KeyState;
 use crate::platform::{IcPlatform, CANVAS_WIDTH, CANVAS_HEIGHT};
 use crate::platform::rgb8_hex;
 use crate::text::*;
+use crate::audio_engine;
 use alloc::boxed::Box;
+use alloc::sync::Arc;
 use glam::IVec2;
 use num_traits::FromPrimitive;
 use rgb::Rgb;
@@ -29,7 +32,8 @@ pub struct IcShell {
     last_active_app_idx: Option<usize>,
     key_states: [KeyState; IcKey::COUNT],
     super_interrupted: bool,
-    adjusting_something: Option<Adjustable>
+    adjusting_something: Option<Adjustable>,
+    audio: AudioEngine
 }
 
 impl IcShell {
@@ -46,8 +50,13 @@ impl IcShell {
             last_active_app_idx: None,
             key_states: [KeyState::default(); IcKey::COUNT],
             super_interrupted: false,
-            adjusting_something: None
+            adjusting_something: None,
+            audio: AudioEngine::new()
         }
+    }
+
+    pub fn audio_mut(&mut self) -> &mut AudioEngine {
+        &mut self.audio
     }
 
     pub fn key_down(&mut self, key: IcKey) {
@@ -63,6 +72,13 @@ impl IcShell {
         }
         self.key_states[key as usize].is_down = false;
     }
+
+    // pub fn fill_audio(&mut self, out: &mut [i16]) {
+    //     for sample in out {
+    //         let s = self.audio_engine.next_sample();
+    //         *sample = s as i16;
+    //     }
+    // }
 
     fn draw_battery(&mut self, platform: &mut dyn IcPlatform) {
         let batt_percentage: i32 = platform.get_battery_soc();
@@ -201,7 +217,7 @@ impl IcShell {
                     IcKey::Func5 => {
                         self.adjusting_something = Some(Adjustable::Volume);
                         input_consumed_by_shell = true;
-                    }
+                    },
                     _ => ()
                 }
             } else if let Some(adjustable) = self.adjusting_something {
@@ -247,7 +263,7 @@ impl IcShell {
             }
         }
         if let Some(appidx) = self.active_app_idx {
-            self.apps[appidx].update(platform, &ctx);
+            self.apps[appidx].update(platform, &ctx, &mut self.audio);
         } else {
             platform.clear(rgb8_hex(0x7FFF8E));
             for i in 0..self.apps.len() {

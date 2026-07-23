@@ -1,13 +1,13 @@
-use crate::input::{IcKey, KeyState};
+use crate::audio_engine;
+use crate::input::{IcKey};
 use crate::text::text_to_pos;
 use crate::{
     app::IcApp,
-    platform::{self, IcPlatform, rgb8_hex},
+    platform::{IcPlatform, rgb8_hex},
     text::{draw_text, draw_text_f},
 };
 use glam::IVec2;
-use num_traits::{abs, clamp_max};
-use rgb::{RGB8, Rgb};
+use rgb::{Rgb};
 
 // todo put LineBuffer in a common place for both this and calculator.rs to use
 struct LineBuffer<const N: usize> {
@@ -348,7 +348,7 @@ impl IcApp for RangeMapperCalculator {
         }
     }
 
-    fn update(&mut self, platform: &mut dyn IcPlatform, ctx: &crate::app::InputContext) {
+    fn update(&mut self, platform: &mut dyn IcPlatform, _ctx: &crate::app::InputContext, _audio: &mut audio_engine::AudioEngine) {
         platform.clear(rgb8_hex(0x1C0770));
         self.input_box_in_val
             .draw(platform, self.focused_ui == FocusUi::InValue);

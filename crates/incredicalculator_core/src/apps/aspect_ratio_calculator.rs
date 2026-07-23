@@ -1,12 +1,10 @@
-use crate::input::{IcKey, KeyState};
+use crate::{audio_engine, input::IcKey};
 use glam::IVec2;
 use num_traits::{abs, clamp_max};
-use num_traits::float::FloatCore;
-use rgb::{RGB8, Rgb};
+use rgb::{RGB8};
 
 use crate::{
     app::IcApp,
-    platform::{self, IcPlatform},
     text::{draw_text, draw_text_f},
 };
 
@@ -388,7 +386,8 @@ impl IcApp for AspectRatioCalculator {
     fn update(
         &mut self,
         platform: &mut dyn crate::platform::IcPlatform,
-        ctx: &crate::app::InputContext,
+        _ctx: &crate::app::InputContext,
+        _audio: &mut audio_engine::AudioEngine
     ) {
         platform.clear(RGB8::new(0xff, 0xb3, 0x3f));
         draw_text(

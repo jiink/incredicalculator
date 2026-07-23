@@ -1,13 +1,11 @@
-use crate::input::{IcKey, KeyState};
-use crate::text::text_to_pos;
+use crate::input::{IcKey};
 use crate::{
     app::{ IcApp, InputContext },
-    platform::{self, IcPlatform, rgb8_hex},
-    text::{draw_text, draw_text_f},
+    platform::{IcPlatform, rgb8_hex},
+    audio_engine
 };
 use glam::IVec2;
-use num_traits::{abs, clamp_max};
-use rgb::{RGB8, Rgb};
+use rgb::{RGB8};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum RoboMood {
@@ -538,7 +536,7 @@ impl IcApp for FaceCalculator {
         }
     }
 
-    fn update(&mut self, platform: &mut dyn IcPlatform, _ctx: &InputContext) {
+    fn update(&mut self, platform: &mut dyn IcPlatform, _ctx: &InputContext, _audio: &mut audio_engine::AudioEngine) {
         self.eyes.update(platform);
     }
 }

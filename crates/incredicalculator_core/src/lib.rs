@@ -9,4 +9,5 @@ pub mod apps;
 pub mod input;
 pub mod platform;
 pub mod shell;
+pub mod audio_engine;
 mod text;

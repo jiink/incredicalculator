@@ -1,7 +1,7 @@
 use crate::app::IcApp;
 use crate::app::InputContext;
-use crate::input::{IcKey, KeyState};
-use crate::platform;
+use crate::audio_engine::AudioEngine;
+use crate::input::{IcKey};
 use crate::platform::IcPlatform;
 use crate::platform::debug_log;
 use crate::platform::{CANVAS_WIDTH, CANVAS_HEIGHT};
@@ -9,8 +9,7 @@ use crate::text::{draw_text, draw_text_f, text_to_pos};
 use alloc::boxed::Box;
 use alloc::string::ToString;
 use alloc::{format, string::String};
-use core::str::FromStr;
-use core::{num::ParseIntError, result};
+use core::{num::ParseIntError};
 use glam::IVec2;
 use rgb::*;
 
@@ -205,7 +204,7 @@ impl CalcEngine for ScientificEngine {
         }
     }
 
-    fn draw_widgets(&self, platform: &mut dyn IcPlatform, _result_str: &str, is_focused: bool) {
+    fn draw_widgets(&self, platform: &mut dyn IcPlatform, _result_str: &str, _is_focused: bool) {
         draw_text(
             platform,
             "Scientific",
@@ -992,7 +991,7 @@ impl IcApp for Calculator {
         let action = self
             .engine
             .get_action(key, ctx.is_shifted(), ctx.is_super());
-        if let Some(mut act) = action {
+        if let Some(act) = action {
             if self.focused_ui == FocusUi::Widget {
                 let current_result_str =
                     core::str::from_utf8(&self.current_result[..self.current_result_len])
@@ -1074,7 +1073,7 @@ impl IcApp for Calculator {
         }
     }
 
-    fn update(&mut self, platform: &mut dyn IcPlatform, _ctx: &InputContext) {
+    fn update(&mut self, platform: &mut dyn IcPlatform, _ctx: &InputContext, _audio: &mut AudioEngine) {
         platform.clear(self.engine.get_color());
         self.draw_history(platform);
         self.draw_editor(platform);

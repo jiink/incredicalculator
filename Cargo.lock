@@ -1584,6 +1584,7 @@ name = "incredicalculator_core"
 version = "0.1.0"
 dependencies = [
  "bitwise_expr",
+ "culsynth",
  "exp-rs",
  "format_no_std",
  "glam",
@@ -1598,7 +1599,6 @@ name = "incredicalculator_pc"
 version = "0.1.0"
 dependencies = [
  "critical-section",
- "culsynth",
  "embedded-graphics",
  "embedded-graphics-framebuf",
  "embedded-ttf",

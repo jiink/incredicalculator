@@ -1,3 +1,4 @@
+use crate::audio_engine::AudioEngine;
 use crate::platform::IcPlatform;
 use crate::input::{IcKey, KeyState};
 
@@ -21,6 +22,6 @@ pub trait IcApp {
     fn name(&self) -> &str;
     fn on_enter(&mut self);
     fn on_key(&mut self, key: IcKey, ctx: &InputContext);
-    fn update(&mut self, platform: &mut dyn IcPlatform, ctx: &InputContext);
+    fn update(&mut self, platform: &mut dyn IcPlatform, ctx: &InputContext, audio: &mut AudioEngine);
 }
 
