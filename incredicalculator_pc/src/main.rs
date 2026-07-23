@@ -26,13 +26,26 @@ use glam::IVec2;
 // In Cargo.toml add: rodio = { version = "0.21", features = ["playback"] }
 use rodio::source::{SineWave, Source};
 
+const AUDIO_BUFFER_SIZE: usize = 2048;
+
+struct SharedAudioState {
+    back_buffer: Vec<f32>,
+    back_ready: bool,
+}
+
 struct ShellAudioSource {
-    shell: Arc<Mutex<IcShell>>,
+    front_buffer: Vec<f32>,
+    read_idx: usize,
+    shared: Arc<Mutex<SharedAudioState>>,
 }
 
 impl ShellAudioSource {
-    fn new(s: Arc<Mutex<IcShell>>) -> Self {
-        ShellAudioSource { shell: s }
+    fn new(shared: Arc<Mutex<SharedAudioState>>) -> Self {
+        ShellAudioSource { 
+            front_buffer: vec![0.0; AUDIO_BUFFER_SIZE],
+            read_idx: 0,
+            shared, 
+        }
     }
 }
 
@@ -40,12 +53,23 @@ impl Iterator for ShellAudioSource {
     type Item = f32;
 
     fn next(&mut self) -> Option<f32> {
-        let mut shell = self.shell.lock().unwrap();
-        // todo try managing a bigger buffer later just for practice for the mcu version
-        let mut local_buf: [f32; 1] = [0.0; 1];
-        //shell.fill_audio(&mut local_buf[..]);
-        local_buf[0] = shell.audio_mut().next_sample();
-        Some(local_buf[0] as f32)
+        // If we exhausted the front buffer, try swapping it with the back buffer.
+        if self.read_idx >= self.front_buffer.len() {
+            let mut shared = self.shared.lock().unwrap();
+            if shared.back_ready {
+                // Swap front and back. The newly swapped-in front buffer goes to rodio.
+                std::mem::swap(&mut self.front_buffer, &mut shared.back_buffer);
+                shared.back_ready = false;
+            } else {
+                // Buffer underflow (main thread too slow). Play silence to avoid panic/crackle.
+                self.front_buffer.fill(0.0);
+            }
+            self.read_idx = 0;
+        }
+
+        let sample = self.front_buffer[self.read_idx];
+        self.read_idx += 1;
+        Some(sample)
     }
 }
 
@@ -274,17 +298,17 @@ fn main() {
     let shell = Arc::new(Mutex::new(IcShell::new()));
     let mut ic_rl_platform = Box::new(IcRaylibPlatform::new());
 
-    // Build and start the culsynth source
-    // let audio = {
-    //     let shell = shell.lock().unwrap();
-    //     shell.audio_mut()
-    // };
+    // Back buffer state used for communication with rodio
+    let shared_audio = Arc::new(Mutex::new(SharedAudioState {
+        back_buffer: vec![0.0; AUDIO_BUFFER_SIZE],
+        back_ready: false,
+    }));
+
     let audio_handle = rodio::DeviceSinkBuilder::open_default_sink()
         .expect("Failed to open audio device");
     let audio_player = rodio::Player::connect_new(&audio_handle.mixer());
-    audio_player.append(ShellAudioSource::new(shell));
-    println!("Audio: culsynth source started");
-
+    audio_player.append(ShellAudioSource::new(shared_audio.clone()));
+    println!("Audio: culsynth double-buffer source started");
 
     // -----------------------------------------------------------------------
     // Keyboard mapping
@@ -365,7 +389,7 @@ fn main() {
     while !rl_handle.window_should_close() {
         let virtual_key_size: i32 = 64;
         {
-            let icalc = shell.lock().unwrap();
+            let mut icalc = shell.lock().unwrap();
             // --- Physical keyboard ---
             while let Some(rl_key) = rl_handle.get_key_pressed() {
                 if let Some(&ic_key) = key_map.get(&rl_key) {
@@ -415,6 +439,14 @@ fn main() {
 
             // --- Core update ---
             icalc.update(ic_rl_platform.as_mut());
+
+            // --- Fill Audio (if vacancy exists) ---
+            let mut shared = shared_audio.lock().unwrap();
+            if !shared.back_ready {
+                icalc.fill_audio(&mut shared.back_buffer);
+                shared.back_ready = true;
+            }
+
         } // drop lock on shell
 
         // --- Upload pixel data to GPU ---

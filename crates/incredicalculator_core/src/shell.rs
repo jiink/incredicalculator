@@ -73,12 +73,12 @@ impl IcShell {
         self.key_states[key as usize].is_down = false;
     }
 
-    // pub fn fill_audio(&mut self, out: &mut [i16]) {
-    //     for sample in out {
-    //         let s = self.audio_engine.next_sample();
-    //         *sample = s as i16;
-    //     }
-    // }
+    pub fn fill_audio(&mut self, out: &mut [f32]) {
+        for sample in out {
+            let s = self.audio.next_sample();
+            *sample = s;
+        }
+    }
 
     fn draw_battery(&mut self, platform: &mut dyn IcPlatform) {
         let batt_percentage: i32 = platform.get_battery_soc();
@@ -245,6 +245,7 @@ impl IcShell {
                     IcKey::Num1 => Some(1),
                     IcKey::Num2 => Some(2),
                     IcKey::Num3 => Some(3),
+                    IcKey::Num4 => Some(4),
                     _ => None
                 };
                 if let Some(idx) = selected_app_i {
