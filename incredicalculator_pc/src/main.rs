@@ -29,12 +29,12 @@ use rodio::source::{SineWave, Source};
 const AUDIO_BUFFER_SIZE: usize = 2048;
 
 struct SharedAudioState {
-    back_buffer: Vec<f32>,
+    back_buffer: Vec<i16>,
     back_ready: bool,
 }
 
 struct ShellAudioSource {
-    front_buffer: Vec<f32>,
+    front_buffer: Vec<i16>,
     read_idx: usize,
     shared: Arc<Mutex<SharedAudioState>>,
 }
@@ -42,7 +42,7 @@ struct ShellAudioSource {
 impl ShellAudioSource {
     fn new(shared: Arc<Mutex<SharedAudioState>>) -> Self {
         ShellAudioSource { 
-            front_buffer: vec![0.0; AUDIO_BUFFER_SIZE],
+            front_buffer: vec![0; AUDIO_BUFFER_SIZE],
             read_idx: 0,
             shared, 
         }
@@ -62,14 +62,14 @@ impl Iterator for ShellAudioSource {
                 shared.back_ready = false;
             } else {
                 // Buffer underflow (main thread too slow). Play silence to avoid panic/crackle.
-                self.front_buffer.fill(0.0);
+                self.front_buffer.fill(0);
             }
             self.read_idx = 0;
         }
 
         let sample = self.front_buffer[self.read_idx];
         self.read_idx += 1;
-        Some(sample)
+        Some(sample as f32 / 32768.0)
     }
 }
 
@@ -300,7 +300,7 @@ fn main() {
 
     // Back buffer state used for communication with rodio
     let shared_audio = Arc::new(Mutex::new(SharedAudioState {
-        back_buffer: vec![0.0; AUDIO_BUFFER_SIZE],
+        back_buffer: vec![0; AUDIO_BUFFER_SIZE],
         back_ready: false,
     }));
 

@@ -13,7 +13,7 @@ impl AudioEngine {
             synth: CulSynthSource::new(),
         }
     }
-    pub fn next_sample(&mut self) -> f32 {
+    pub fn next_sample(&mut self) -> i16 {
         let sample_fxp: SampleFxP = self.synth.voice.next(
             &self.synth.ctx,
             None,
@@ -21,7 +21,8 @@ impl AudioEngine {
             &self.synth.ch_input,
             self.synth.params.clone(),
         );
-        sample_fxp.to_num::<f32>()
+        // Convert the underlying raw bits of SampleFxP (I4F12) to standard i16 PCM.
+        sample_fxp.to_bits().saturating_mul(8)
     }
     pub fn note_on(&mut self, midi_note: u8) {
         self.synth.cached_input.note = NoteFxP::from_num(midi_note);

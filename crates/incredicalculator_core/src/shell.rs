@@ -73,8 +73,8 @@ impl IcShell {
         self.key_states[key as usize].is_down = false;
     }
 
-    pub fn fill_audio(&mut self, out: &mut [f32]) {
-        for sample in out {
+    pub fn fill_audio(&mut self, out_pcm: &mut [i16]) {
+        for sample in out_pcm {
             let s = self.audio.next_sample();
             *sample = s;
         }
