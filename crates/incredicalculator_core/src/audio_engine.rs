@@ -1,4 +1,5 @@
-use culsynth::context::Context;
+use culsynth::{EnvParamFxP, NoteFxP, SampleFxP, ScalarFxP};
+use culsynth::context::{Context, ContextFxP};
 use culsynth::voice::{Voice, VoiceChannelInput, VoiceInput, VoiceParams};
 use num_traits::ToPrimitive;
 
@@ -13,17 +14,18 @@ impl AudioEngine {
         }
     }
     pub fn next_sample(&mut self) -> f32 {
-        self.synth.voice.next(
+        let sample_fxp: SampleFxP = self.synth.voice.next(
             &self.synth.ctx,
             None,
             &self.synth.cached_input,
             &self.synth.ch_input,
             self.synth.params.clone(),
-        )
+        );
+        sample_fxp.to_num::<f32>()
     }
     pub fn note_on(&mut self, midi_note: u8) {
-        self.synth.cached_input.note = midi_note as f32;
-        self.synth.cached_input.velocity = 0.8;
+        self.synth.cached_input.note = NoteFxP::from_num(midi_note);
+        self.synth.cached_input.velocity = ScalarFxP::from_num(0.8);
         self.synth.cached_input.gate = true;
     }
     pub fn note_off(&mut self) {
@@ -32,33 +34,30 @@ impl AudioEngine {
 }
 
 struct CulSynthSource {
-    voice: Voice<f32>,
-    params: VoiceParams<f32>,
-    ch_input: VoiceChannelInput<f32>,
-    ctx: Context<f32>,
-    // Cached copy so we don't block if the mutex is contended.
-    cached_input: VoiceInput<f32>,
-    //control: Arc<Mutex<SynthControl>>,
+    voice: Voice<i16>,
+    params: VoiceParams<i16>,
+    ch_input: VoiceChannelInput<i16>,
+    ctx: ContextFxP,
+    cached_input: VoiceInput<i16>,
 }
 
 impl CulSynthSource {
     fn new() -> Self {
-        let mut params = VoiceParams::<f32>::default();
-        params.oscs_p.primary.saw = 0.1;
-        params.oscs_p.primary.tri = 1.0;
-        params.amp_env_p.attack = 0.01;
-        params.amp_env_p.release = 0.1;
-        params.filt_p.cutoff = 120.0;
-        params.filt_p.low_mix = 1.0;
-        params.ring_p.mix_a = 1.0;
+        let mut params = VoiceParams::<i16>::default();
+        params.oscs_p.primary.saw = ScalarFxP::from_num(0.1);
+        params.oscs_p.primary.tri = ScalarFxP::from_num(0.999);
+        params.amp_env_p.attack = EnvParamFxP::from_num(0.01);
+        params.amp_env_p.release = EnvParamFxP::from_num(0.1);
+        params.filt_p.cutoff = NoteFxP::from_num(120.0);
+        params.filt_p.low_mix = ScalarFxP::from_num(0.999);
+        params.ring_p.mix_a = ScalarFxP::from_num(0.999);
 
         Self {
-            voice: Voice::<f32>::new(),
+            voice: Voice::<i16>::new(),
             params,
-            ch_input: VoiceChannelInput::<f32>::default(),
-            ctx: Context::<f32>::new(48000.0),
-            cached_input: VoiceInput::<f32>::default(),
-            //control,
+            ch_input: VoiceChannelInput::<i16>::default(),
+            ctx: ContextFxP::new_480(),
+            cached_input: VoiceInput::<i16>::default(),
         }
     }
 }
