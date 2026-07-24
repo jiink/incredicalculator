@@ -3,6 +3,7 @@
 use core::{cmp, fmt};
 use rgb::*;
 use glam::IVec2;
+use num_traits::float::FloatCore;
 
 pub const LIFT: u8 = 0xFF;
 // the f_ means font_

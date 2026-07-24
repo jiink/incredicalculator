@@ -2,6 +2,7 @@ use crate::{audio_engine, input::IcKey};
 use glam::IVec2;
 use num_traits::{abs, clamp_max};
 use rgb::{RGB8};
+use num_traits::float::FloatCore;
 
 use crate::{
     app::IcApp,
