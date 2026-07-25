@@ -3,7 +3,7 @@
 
 extern crate alloc;
 
-use core::sync::atomic::AtomicI32;
+use core::sync::atomic::{AtomicBool, AtomicI32};
 use core::{cell::RefCell, fmt};
 
 use defmt::*;
@@ -38,6 +38,10 @@ use mipidsi::Builder;
 use mipidsi::models::ST7789;
 use mipidsi::options::{Orientation, Rotation};
 use static_cell::StaticCell;
+use embassy_rp::peripherals::{DMA_CH0, PIO0};
+use embassy_rp::pio::{InterruptHandler, Pio};
+use embassy_rp::pio_programs::i2s::{PioI2sOut, PioI2sOutProgram};
+use embassy_rp::{bind_interrupts, dma};
 
 use {defmt_rtt as _, panic_probe as _};
 
@@ -61,6 +65,13 @@ static INPUT_BUFFER: Channel<CriticalSectionRawMutex, InputBufferEvent, 32> = Ch
 
 type BoardI2c = embassy_rp::i2c::I2c<'static, embassy_rp::peripherals::I2C0, embassy_rp::i2c::Blocking>;
 static BATTERY_SOC: AtomicI32 = AtomicI32::new(-1);
+
+bind_interrupts!(struct Irqs {
+    PIO0_IRQ_0 => InterruptHandler<PIO0>;
+});
+const AUDIO_SAMPLE_RATE: u32 = 48_000;
+const AUDIO_BIT_DEPTH: u32 = 16;
+static BEEP_ACTIVE: AtomicBool = AtomicBool::new(false);
 
 enum KeyMovement {
     Up,
@@ -390,6 +401,33 @@ async fn main(spawner: Spawner) {
         test_str.as_str()
     );
 
+    // I2S audio init -----
+    let Pio { common: mut pio_common, sm0, .. } = 
+        Pio::new(p.PIO0, Irqs);
+    let audio_bit_clock_pin = p.PIN_29; // AKA BCLK or SCK
+    let audio_lr_clock_pin = p.PIN_30; // AKA LRCLK or WS
+    let audio_data_pin = p.PIN_28; // AKA DIN or SD
+    let audio_pio_program = PioI2sOutProgram::new(&mut pio_common);
+    // todo: in latest embassy-rp version 0.10.0, Irqs gets passed
+    // (see https://github.com/embassy-rs/embassy/pull/5338). Also
+    // makes it so you have to call i2c.start(). Try 
+    // updating embassy-rp to that version, and seeing
+    // how that goes.
+    // If upgrade successful and having audio trouble, look at this discussion:
+    // https://github.com/embassy-rs/embassy/pull/5388
+    let mut i2s = PioI2sOut::new(
+        &mut pio_common,
+        sm0,
+        p.DMA_CH0,
+        audio_data_pin,
+        audio_bit_clock_pin,
+        audio_lr_clock_pin,
+        AUDIO_SAMPLE_RATE,
+        AUDIO_BIT_DEPTH,
+        &audio_pio_program
+    );
+    // --------------------
+
     // for pico 2
     // let mut btn0 = Input::new(p.PIN_26, embassy_rp::gpio::Pull::Up);
     // let mut btn1 = Input::new(p.PIN_12, embassy_rp::gpio::Pull::Up);
@@ -407,35 +445,37 @@ async fn main(spawner: Spawner) {
     // let lcd_spi_bus = p.SPI0;
 
     // for incredicalculator board
-    // row0: gpio13
-    // row1: gpio14
-    // row2: gpio15
-    // row3: gpio16
-    // row4: gpio17
-    // col0: gpio21
-    // col1: gpio20
-    // col2: gpio19
-    // col3: gpio18
-    // row0, col0: no button present
-    // row0, col1: no button present
-    // row0, col2: switch 1 - Func1
-    // row0, col3: switch 2 - Func2
-    // row1, col0: switch 3 - Num7
-    // row1, col1: switch 4 - Num8
-    // row1, col2: switch 5 - Num9
-    // row1, col3: switch 6 - Func3
-    // row2, col0: switch 7 - Num4
-    // row2, col1: switch 8 - Num5
-    // row2, col2: switch 9 - Num6
-    // row2, col3: switch 10 - Func4
-    // row3, col0: switch 11 - Num1
-    // row3, col1: switch 12 - Num2
-    // row3, col2: switch 13 - Num3
-    // row3, col3: switch 14 - Func5
-    // row4, col0: switch 15 - Num0
-    // row4, col1: switch 16 - Shift
-    // row4, col2: switch 17 - Super
-    // row4, col3: switch 18 - Func6
+    // row/col
+    // row0 gpio13
+    // row1 gpio14
+    // row2 gpio15
+    // row3 gpio16
+    // row4 gpio17
+    // col0 gpio21
+    // col1 gpio20
+    // col2 gpio19
+    // col3 gpio18
+    // row  column  button num  button func
+    // row0 col0    no button present
+    // row0 col1    no button present
+    // row0 col2    switch 1    Func1
+    // row0 col3    switch 2    Func2
+    // row1 col0    switch 3    Num7
+    // row1 col1    switch 4    Num8
+    // row1 col2    switch 5    Num9
+    // row1 col3    switch 6    Func3
+    // row2 col0    switch 7    Num4
+    // row2 col1    switch 8    Num5
+    // row2 col2    switch 9    Num6
+    // row2 col3    switch 10   Func4
+    // row3 col0    switch 11   Num1
+    // row3 col1    switch 12   Num2
+    // row3 col2    switch 13   Num3
+    // row3 col3    switch 14   Func5
+    // row4 col0    switch 15   Num0
+    // row4 col1    switch 16   Shift
+    // row4 col2    switch 17   Super
+    // row4 col3    switch 18   Func6
     let matrix_rows = [
         Output::new(p.PIN_13, Level::High),
         Output::new(p.PIN_14, Level::High),
@@ -464,6 +504,7 @@ async fn main(spawner: Spawner) {
     let module_bl = p.PIN_31;
     let bare_display_bl = p.PIN_41;
     let lcd_spi_bus = p.SPI1;
+    let mut audio_shutdown_n = Output::new(p.PIN_27, Level::High);
 
     // ST7789 datasheet: "If not used, please fix this pin at VDDI or DGND."
     let _tft_unused_d0 = Output::new(p.PIN_33, Level::Low);
@@ -526,6 +567,7 @@ async fn main(spawner: Spawner) {
     // This board uses a MAX17048 battery fuel gauge
     let mut fuel_gauge: Max17048<BoardI2c> = Max17048::new(board_i2c);
     unwrap!(spawner.spawn(battery_task(fuel_gauge)));
+    unwrap!(spawner.spawn(audio_task(i2s)));
 
     spawn_core1(
         p.CORE1,
@@ -560,7 +602,12 @@ async fn main(spawner: Spawner) {
         let first_key_event = INPUT_BUFFER.receive().await;
         match first_key_event.movement {
             KeyMovement::Up => icalc.key_up(first_key_event.key),
-            KeyMovement::Down => icalc.key_down(first_key_event.key),
+            KeyMovement::Down =>  {
+                icalc.key_down(first_key_event.key);
+                BEEP_ACTIVE.store(true, core::sync::atomic::Ordering::Relaxed);
+                Timer::after_millis(100).await;
+                BEEP_ACTIVE.store(false, core::sync::atomic::Ordering::Relaxed);
+            }
         }
         led.set_high();
         info!("Pre-update");
@@ -622,6 +669,36 @@ async fn battery_task(mut fuel_gauge: Max17048<BoardI2c>) {
             warn!("Error getting battery soc from fuel gauge");
         }
         Timer::after_secs(10).await;
+    }
+}
+
+#[embassy_executor::task]
+async fn audio_task(mut i2s: PioI2sOut<'static, PIO0, 0>) {
+    const AUDIO_BUFFER_SIZE: usize = 960;
+    static AUDIO_DMA_BUFFER: StaticCell<[u32; AUDIO_BUFFER_SIZE * 2]> = StaticCell::new();
+    let audio_dma_buffer = AUDIO_DMA_BUFFER.init_with(|| [0u32; AUDIO_BUFFER_SIZE * 2]);
+    let (mut audio_back_buffer, mut audio_front_buffer) = 
+        audio_dma_buffer.split_at_mut(AUDIO_BUFFER_SIZE);
+    let mut phase = 0;
+    loop {
+        let dma_future = i2s.write(audio_front_buffer);
+        let is_beeping = BEEP_ACTIVE.load(core::sync::atomic::Ordering::Relaxed);
+        for s in audio_back_buffer.iter_mut() {
+            let sample = if is_beeping {
+                phase = (phase + 1) % 48;
+                if phase < 24 {
+                    8000i16 as i32
+                } else {
+                    -8000i16 as i32
+                }
+            } else {
+                0
+            };
+            // Duplicate to L/R channels for I2S
+            *s = (sample as u16 as u32) * 0x10001;
+        }
+        dma_future.await;
+        core::mem::swap(&mut audio_back_buffer, &mut audio_front_buffer);
     }
 }
 
