@@ -71,7 +71,24 @@ bind_interrupts!(struct Irqs {
 });
 const AUDIO_SAMPLE_RATE: u32 = 48_000;
 const AUDIO_BIT_DEPTH: u32 = 16;
-static BEEP_ACTIVE: AtomicBool = AtomicBool::new(false);
+const AUDIO_BUFFER_SIZE: usize = 2048;
+struct AudioBuffer {
+    samples: &'static mut [u32; AUDIO_BUFFER_SIZE],
+}
+static EMPTY_BUFFERS: Channel<
+    CriticalSectionRawMutex,
+    AudioBuffer,
+    2,
+> = Channel::new();
+
+static FILLED_BUFFERS: Channel<
+    CriticalSectionRawMutex,
+    AudioBuffer,
+    2,
+> = Channel::new();
+static AUDIO_DMA0: StaticCell<[u32; AUDIO_BUFFER_SIZE]> = StaticCell::new();
+static AUDIO_DMA1: StaticCell<[u32; AUDIO_BUFFER_SIZE]> = StaticCell::new();
+
 
 enum KeyMovement {
     Up,
@@ -564,9 +581,22 @@ async fn main(spawner: Spawner) {
     let i2c_cfg = embassy_rp::i2c::Config::default();
     let mut board_i2c = embassy_rp::i2c::I2c::new_blocking(p.I2C0, p.PIN_25, p.PIN_24, i2c_cfg);
 
+    let buf0 = AudioBuffer {
+        samples: AUDIO_DMA0.init([0; AUDIO_BUFFER_SIZE]),
+    };
+
+    let buf1 = AudioBuffer {
+        samples: AUDIO_DMA1.init([0; AUDIO_BUFFER_SIZE]),
+    };
+
+    // Initially both buffers are empty.
+    EMPTY_BUFFERS.send(buf0).await;
+    EMPTY_BUFFERS.send(buf1).await;
+
     // This board uses a MAX17048 battery fuel gauge
     let mut fuel_gauge: Max17048<BoardI2c> = Max17048::new(board_i2c);
     unwrap!(spawner.spawn(battery_task(fuel_gauge)));
+    unwrap!(spawner.spawn(audio_task(i2s)));
 
     spawn_core1(
         p.CORE1,
@@ -594,57 +624,43 @@ async fn main(spawner: Spawner) {
     .draw(&mut display)
     .unwrap();
     let mut icalc: IcShell = IcShell::new();
-    const AUDIO_BUFFER_SIZE: usize = 10000;
-    static AUDIO_DMA_BUFFER: StaticCell<[u32; AUDIO_BUFFER_SIZE * 2]> = StaticCell::new();
-    let audio_dma_buffer = AUDIO_DMA_BUFFER.init_with(|| [0u32; AUDIO_BUFFER_SIZE * 2]);
-    let (mut audio_back_buffer, mut audio_front_buffer) = 
-        audio_dma_buffer.split_at_mut(AUDIO_BUFFER_SIZE);
     let mut pcm_buffer = [0i16; AUDIO_BUFFER_SIZE];
     let mut audio_active = true;
     let mut ic_rp_platform = IcRpPlatform::new(backlight, backlight2);
     display.clear(Rgb565::CYAN).unwrap();
     let mut frame_counter: usize = 0;
     loop {
-        if audio_active {
-            let dma_future = i2s.write(audio_front_buffer);
-            while let Ok(event) = INPUT_BUFFER.try_receive() {
-                match event.movement {
-                    KeyMovement::Up => icalc.key_up(event.key),
-                    KeyMovement::Down => icalc.key_down(event.key),
-                }
+        let mut inputs_changed = false;
+        while let Ok(event) = INPUT_BUFFER.try_receive() {
+            match event.movement {
+                KeyMovement::Up => icalc.key_up(event.key),
+                KeyMovement::Down => icalc.key_down(event.key),
             }
-            // led.set_high();
-            // info!("Pre-update");
-            icalc.update(&mut ic_rp_platform);
-            // led.set_low();
-            // info!("Post-update");
-            icalc.fill_audio(&mut pcm_buffer);
-            for (dma_slot, &pcm_sample) in audio_back_buffer.iter_mut().zip(pcm_buffer.iter()) {
-                let sample_u16 = pcm_sample as u16 as u32;
-                *dma_slot = (sample_u16 << 16) | sample_u16;    
-            }
-            dma_future.await;
-            core::mem::swap(&mut audio_back_buffer, &mut audio_front_buffer);
-        } else {
-            let first_key_event = INPUT_BUFFER.receive().await;
-            match first_key_event.movement {
-                KeyMovement::Up => icalc.key_up(first_key_event.key),
-                KeyMovement::Down =>  {
-                    icalc.key_down(first_key_event.key);
-                    BEEP_ACTIVE.store(true, core::sync::atomic::Ordering::Relaxed);
-                    Timer::after_millis(100).await;
-                    BEEP_ACTIVE.store(false, core::sync::atomic::Ordering::Relaxed);
-                }
-            }
-            // led.set_high();
-            // info!("Pre-update");
-            icalc.update(&mut ic_rp_platform);
-            // led.set_low();
-            // info!("Post-update");
-            audio_active = true;
+            inputs_changed = true;
         }
-        
-        
+        if inputs_changed {
+            // led.set_high();
+            // info!("Pre-update");
+            icalc.update(&mut ic_rp_platform);
+            // led.set_low();
+            // info!("Post-update");
+            display.fill_contiguous(
+                &embedded_graphics::primitives::Rectangle::new(
+                    embedded_graphics::prelude::Point::new(0, 0),
+                    embedded_graphics::prelude::Size::new(RENDER_W, RENDER_H)
+                ),
+                ic_rp_platform.canvas_data.iter().copied()
+            ).unwrap();
+        }
+        if let Ok(mut buf) = EMPTY_BUFFERS.try_receive() {
+            icalc.fill_audio(&mut pcm_buffer);
+            for (dst, &pcm_sample) in buf.samples.iter_mut().zip(pcm_buffer.iter()) {
+                let sample_u16 = pcm_sample as u16 as u32;
+                *dst = (sample_u16 << 16) | sample_u16;    
+            }
+            FILLED_BUFFERS.send(buf).await;
+        }
+        Timer::after_millis(1).await;
         // ic_rp_platform.draw_string_f(
         //     format_args!("{}...", frame_counter % 10),
         //     glam::IVec2::new(0, 0),
@@ -667,13 +683,7 @@ async fn main(spawner: Spawner) {
         //     );
         // }
         frame_counter = frame_counter.wrapping_add(1);
-        display.fill_contiguous(
-            &embedded_graphics::primitives::Rectangle::new(
-                embedded_graphics::prelude::Point::new(0, 0),
-                embedded_graphics::prelude::Size::new(RENDER_W, RENDER_H)
-            ),
-            ic_rp_platform.canvas_data.iter().copied()
-        ).unwrap();
+        
     }
 }
 
@@ -692,31 +702,16 @@ async fn battery_task(mut fuel_gauge: Max17048<BoardI2c>) {
     }
 }
 
-// #[embassy_executor::task]
-// async fn audio_task(mut i2s: PioI2sOut<'static, PIO0, 0>) {
-    
-//     let mut phase = 0;
-//     loop {
-//         let dma_future = i2s.write(audio_front_buffer);
-//         let is_beeping = BEEP_ACTIVE.load(core::sync::atomic::Ordering::Relaxed);
-//         for s in audio_back_buffer.iter_mut() {
-//             let sample = if is_beeping {
-//                 phase = (phase + 1) % 48;
-//                 if phase < 24 {
-//                     8000i16 as i32
-//                 } else {
-//                     -8000i16 as i32
-//                 }
-//             } else {
-//                 0
-//             };
-//             // Duplicate to L/R channels for I2S
-//             *s = (sample as u16 as u32) * 0x10001;
-//         }
-//         dma_future.await;
-//         core::mem::swap(&mut audio_back_buffer, &mut audio_front_buffer);
-//     }
-// }
+#[embassy_executor::task]
+async fn audio_task(mut i2s: PioI2sOut<'static, PIO0, 0>) {
+    loop {
+        let buf = FILLED_BUFFERS.receive().await;
+        i2s.write(buf.samples).await;
+        // ok now you have like 100 uS to start a new DMA transfer before 
+        // there's a pop (since the PIO only holds like 8 samples in its FIFO)
+        EMPTY_BUFFERS.send(buf).await;
+    }
+}
 
 #[embassy_executor::task]
 async fn inputs_core1_task(matrix_rows: [Output<'static>; 5], matrix_cols: [Input<'static>; 4]) {
