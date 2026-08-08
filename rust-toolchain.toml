@@ -1,6 +1,6 @@
 [toolchain]
 channel = "1.89"
-components = [ "rust-src", "rustfmt", "llvm-tools" ]
+components = [ "rust-src", "rustfmt", "llvm-tools", "rust-analyzer" ]
 targets = [
     "thumbv8m.main-none-eabihf" # if you change this, ALSO change .cargo/config.toml
 ]
