@@ -265,6 +265,7 @@ impl IcShell {
                 self.apps[prev].on_enter();
             }
         }
+        self.audio.set_volume(platform.get_volume());
         if let Some(appidx) = self.active_app_idx {
             self.apps[appidx].update(platform, &ctx, &mut self.audio);
         } else {

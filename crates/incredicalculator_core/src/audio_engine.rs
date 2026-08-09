@@ -1,6 +1,10 @@
-use culsynth::{EnvParamFxP, NoteFxP, SampleFxP};
+use culsynth::{
+    EnvParamFxP, LfoFreqFxP, NoteFxP, SampleFxP, ScalarFxP, SignedNoteFxP,
+};
 use culsynth::context::ContextFxP;
-use culsynth::devices::{Amp, Device, Env, EnvParams, Osc, OscParams};
+use culsynth::devices::{
+    Amp, Device, Env, EnvParams, Lfo, LfoOptions, LfoParams, LfoWave, Osc, OscParams,
+};
 
 pub const MAX_VOICES: usize = 4;
 
@@ -24,6 +28,8 @@ pub struct AudioPatch {
     pub release_ms: u16,
     pub triangle_mix: u8,
     pub square_mix: u8,
+    /// Peak pitch excursion in cents for the shared 6 Hz vibrato LFO.
+    pub vibrato_depth_cents: u8,
 }
 
 impl Default for AudioPatch {
@@ -35,6 +41,7 @@ impl Default for AudioPatch {
             // leaving headroom for four voices in the final mixer.
             triangle_mix: 204,
             square_mix: 0,
+            vibrato_depth_cents: 15,
         }
     }
 }
@@ -43,8 +50,12 @@ pub struct AudioEngine {
     context: ContextFxP,
     patch: AudioPatch,
     amp_env_params: EnvParams<i16>,
+    vibrato_lfo: Lfo<i16>,
+    vibrato_lfo_params: LfoParams<i16>,
+    vibrato_depth_bits: i16,
     voices: [SynthVoice; MAX_VOICES],
     next_start_order: u32,
+    volume: u8,
 }
 
 impl AudioEngine {
@@ -54,8 +65,12 @@ impl AudioEngine {
             context: ContextFxP::new_480(),
             patch,
             amp_env_params: env_params_for_patch(patch),
+            vibrato_lfo: Lfo::<i16>::default(),
+            vibrato_lfo_params: vibrato_lfo_params(),
+            vibrato_depth_bits: vibrato_depth_bits(patch),
             voices: core::array::from_fn(|_| SynthVoice::new()),
             next_start_order: 0,
+            volume: u8::MAX,
         }
     }
 
@@ -66,6 +81,11 @@ impl AudioEngine {
     pub fn set_patch(&mut self, patch: AudioPatch) {
         self.patch = sanitize_patch(patch);
         self.amp_env_params = env_params_for_patch(self.patch);
+        self.vibrato_depth_bits = vibrato_depth_bits(self.patch);
+    }
+
+    pub fn set_volume(&mut self, volume: u8) {
+        self.volume = volume;
     }
 
     /// Set or release the note belonging to `source`.
@@ -96,6 +116,16 @@ impl AudioEngine {
     }
 
     pub fn next_sample(&mut self) -> i16 {
+        let gate_is_active = self.voices.iter().any(|voice| voice.gate);
+        let lfo_sample: SampleFxP = self.vibrato_lfo.next(
+            &self.context,
+            gate_is_active,
+            self.vibrato_lfo_params.clone(),
+        );
+        let vibrato_offset = SignedNoteFxP::from_bits(
+            ((lfo_sample.to_bits() as i32 * self.vibrato_depth_bits as i32) / 4_096)
+                .clamp(i16::MIN as i32, i16::MAX as i32) as i16,
+        );
         let mut mixed = 0i32;
         for voice in self.voices.iter_mut() {
             mixed += voice.next_sample(
@@ -103,11 +133,14 @@ impl AudioEngine {
                 &self.amp_env_params,
                 self.patch.triangle_mix,
                 self.patch.square_mix,
+                vibrato_offset,
             ) as i32;
         }
 
-        // Keep enough headroom that four full-scale notes do not clip.
-        (mixed / MAX_VOICES as i32).clamp(i16::MIN as i32, i16::MAX as i32) as i16
+        // Apply the user-selected master gain before saturation so lowering
+        // the volume also restores headroom for dense chords.
+        let mixed = mixed * self.volume as i32 / u8::MAX as i32;
+        mixed.clamp(i16::MIN as i32, i16::MAX as i32) as i16
     }
 
     fn start_or_update_note(&mut self, source: NoteId, midi_note: u8) {
@@ -202,16 +235,17 @@ impl SynthVoice {
         amp_env_params: &EnvParams<i16>,
         triangle_mix: u8,
         square_mix: u8,
+        vibrato_offset: SignedNoteFxP,
     ) -> i16 {
         let Some(_) = self.source else {
             return 0;
         };
 
-        let oscillator = self.osc.next(
-            context,
-            NoteFxP::from_num(self.midi_note),
-            self.osc_params.clone(),
-        );
+        let mut osc_params = self.osc_params.clone();
+        osc_params.tune = vibrato_offset;
+        let oscillator = self
+            .osc
+            .next(context, NoteFxP::from_num(self.midi_note), osc_params);
         let mixed_wave_bits = ((oscillator.tri.to_bits() as i32 * triangle_mix as i32)
             + (oscillator.sq.to_bits() as i32 * square_mix as i32))
             / u8::MAX as i32;
@@ -248,4 +282,16 @@ fn env_params_for_patch(patch: AudioPatch) -> EnvParams<i16> {
     params.attack = EnvParamFxP::from_num(patch.attack_ms as f32 / 1_000.0);
     params.release = EnvParamFxP::from_num(patch.release_ms as f32 / 1_000.0);
     params
+}
+
+fn vibrato_lfo_params() -> LfoParams<i16> {
+    let mut params = LfoParams::<i16>::default();
+    params.freq = LfoFreqFxP::from_num(6.0);
+    params.depth = ScalarFxP::from_num(0.999);
+    params.opts = LfoOptions::new(LfoWave::Sine, true, true);
+    params
+}
+
+fn vibrato_depth_bits(patch: AudioPatch) -> i16 {
+    SignedNoteFxP::from_num(patch.vibrato_depth_cents as f32 / 100.0).to_bits()
 }

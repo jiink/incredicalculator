@@ -120,7 +120,7 @@ impl IcRaylibPlatform {
             canvas_data: [Rgb565::BLACK; (RENDER_W * RENDER_H) as usize],
             start_time: Instant::now(),
             fake_brightness: 100,
-            fake_volume: 100,
+            fake_volume: 255,
         }
     }
 }

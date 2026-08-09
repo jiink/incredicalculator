@@ -180,7 +180,8 @@ pub struct IcRpPlatform<'d> {
     pub canvas_data: &'static mut [Rgb565; PIXEL_COUNT],
     backlight: Pwm<'d>,
     backlight2: Pwm<'d>,
-    brightness: u8
+    brightness: u8,
+    volume: u8,
 }
 
 impl<'d> IcRpPlatform<'d> {
@@ -193,6 +194,7 @@ impl<'d> IcRpPlatform<'d> {
             backlight,
             backlight2,
             brightness: 128,
+            volume: u8::MAX,
         }
     }
 }
@@ -332,11 +334,11 @@ impl<'d> IcPlatform for IcRpPlatform<'d> {
     }
     
     fn get_volume(&self) -> u8 {
-        0
+        self.volume
     }
     
     fn set_volume(&mut self, value: u8) {
-        ()
+        self.volume = value;
     }
 }
 
