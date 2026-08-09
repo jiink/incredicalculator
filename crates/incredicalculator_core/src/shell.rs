@@ -258,6 +258,8 @@ impl IcShell {
             if self.active_app_idx.is_some() {
                 self.last_active_app_idx = self.active_app_idx;
                 self.active_app_idx = None;
+                // release its sound instead of leaving a held note behind.
+                self.audio.release_all();
             } else if let Some(prev) = self.last_active_app_idx {
                 self.active_app_idx = Some(prev);
                 self.apps[prev].on_enter();
