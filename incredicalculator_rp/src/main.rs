@@ -31,10 +31,10 @@ use max170xx::Max17048;
 use lcd_async::interface::SpiInterface;
 use lcd_async::raw_framebuf::RawFrameBuf;
 use rgb::RGB8;
-use lcd_async::Builder;
+use lcd_async::{Builder, Display};
 use lcd_async::models::ST7789;
 use lcd_async::options::{ColorInversion, Orientation, Rotation};
-use static_cell::StaticCell;
+use static_cell::{ConstStaticCell, StaticCell};
 use embassy_rp::peripherals::{PIO0, SPI1};
 use embassy_rp::pio::{InterruptHandler, Pio};
 use embassy_rp::pio_programs::i2s::{PioI2sOut, PioI2sOutProgram};
@@ -55,9 +55,31 @@ const RENDER_H: u32 = 240;
 const PIXEL_COUNT: usize = (RENDER_W * RENDER_H) as usize;
 const FRAME_BUFFER_SIZE: usize = PIXEL_COUNT * 2;
 
-static mut CANVAS_DATA: [u8; FRAME_BUFFER_SIZE] = [0; FRAME_BUFFER_SIZE];
+// A canvas belongs either to the UI (where it is safe to draw into) or to the
+// display task (while SPI DMA is reading from it). Never share one canvas
+// between those two owners.
+struct FrameBuffer {
+    pixels: &'static mut [u8; FRAME_BUFFER_SIZE],
+}
+
+// `ConstStaticCell` keeps these large zeroed arrays in `.bss`. Do not use
+// `StaticCell::init([0; FRAME_BUFFER_SIZE])` here: that would create a 150 KiB
+// temporary on the core-0 stack before moving it into the cell.
+static CANVAS_DATA0: ConstStaticCell<[u8; FRAME_BUFFER_SIZE]> = ConstStaticCell::new([0; FRAME_BUFFER_SIZE]);
+static CANVAS_DATA1: ConstStaticCell<[u8; FRAME_BUFFER_SIZE]> = ConstStaticCell::new([0; FRAME_BUFFER_SIZE]);
+static FREE_FRAME_BUFFERS: Channel<CriticalSectionRawMutex, FrameBuffer, 2> = Channel::new();
+static READY_FRAME_BUFFERS: Channel<CriticalSectionRawMutex, FrameBuffer, 2> = Channel::new();
+
 static DISPLAY_SPI_BUS: StaticCell<AsyncMutex<NoopRawMutex, Spi<'static, SPI1, spi::Async>>> =
     StaticCell::new();
+
+type DisplaySpiDevice = SpiDeviceWithConfig<
+    'static,
+    NoopRawMutex,
+    Spi<'static, SPI1, spi::Async>,
+    Output<'static>,
+>;
+type LcdDisplay = Display<SpiInterface<DisplaySpiDevice, Output<'static>>, ST7789, Output<'static>>;
 
 static mut CORE1_STACK: Stack<4096> = Stack::new();
 static EXECUTOR1: StaticCell<Executor> = StaticCell::new();
@@ -177,7 +199,7 @@ struct InputBufferEvent {
 }
 
 pub struct IcRpPlatform<'d> {
-    pub canvas_data: &'static mut [u8; FRAME_BUFFER_SIZE],
+    canvas: Option<FrameBuffer>,
     backlight: Pwm<'d>,
     backlight2: Pwm<'d>,
     brightness: u8,
@@ -185,24 +207,44 @@ pub struct IcRpPlatform<'d> {
 }
 
 impl<'d> IcRpPlatform<'d> {
-    pub fn new(
+    fn new(
         backlight: Pwm<'d>,
-        backlight2: Pwm<'d>
+        backlight2: Pwm<'d>,
+        canvas: FrameBuffer,
     ) -> Self {
         Self {
-            canvas_data: unsafe { &mut *core::ptr::addr_of_mut!(CANVAS_DATA) },
+            canvas: Some(canvas),
             backlight,
             backlight2,
             brightness: 128,
             volume: u8::MAX,
         }
     }
+
+    fn has_canvas(&self) -> bool {
+        self.canvas.is_some()
+    }
+
+    fn set_canvas(&mut self, canvas: FrameBuffer) {
+        self.canvas = Some(canvas);
+    }
+
+    fn take_canvas(&mut self) -> FrameBuffer {
+        self.canvas.take().expect("UI tried to submit a missing canvas")
+    }
+
+    fn canvas_data_mut(&mut self) -> &mut [u8; FRAME_BUFFER_SIZE] {
+        self.canvas
+            .as_mut()
+            .expect("UI tried to draw while its canvas was in flight")
+            .pixels
+    }
 }
 
 impl<'d> IcPlatform for IcRpPlatform<'d> {
     fn draw_line(&mut self, start: IVec2, end: IVec2, color: RGB8, width: u32) {
         let mut fbuf = RawFrameBuf::<Rgb565, _>::new(
-            &mut self.canvas_data[..],
+            &mut self.canvas_data_mut()[..],
             RENDER_W as usize,
             RENDER_H as usize,
         );
@@ -217,7 +259,7 @@ impl<'d> IcPlatform for IcRpPlatform<'d> {
 
     fn draw_rectangle(&mut self, start: IVec2, end: IVec2, stroke_color: RGB8, stroke_width: u32, fill_color: Option<RGB8>) {
         let mut fbuf = RawFrameBuf::<Rgb565, _>::new(
-            &mut self.canvas_data[..],
+            &mut self.canvas_data_mut()[..],
             RENDER_W as usize,
             RENDER_H as usize,
         );
@@ -248,7 +290,7 @@ impl<'d> IcPlatform for IcRpPlatform<'d> {
         corner_radius: u32,
     ) {
         let mut fbuf = RawFrameBuf::<Rgb565, _>::new(
-            &mut self.canvas_data[..],
+            &mut self.canvas_data_mut()[..],
             RENDER_W as usize,
             RENDER_H as usize,
         );
@@ -274,7 +316,7 @@ impl<'d> IcPlatform for IcRpPlatform<'d> {
 
     fn draw_triangle(&mut self, vertex1: IVec2, vertex2: IVec2, vertex3: IVec2, stroke_color: RGB8, stroke_width: u32, fill_color: Option<RGB8>) {
         let mut fbuf = RawFrameBuf::<Rgb565, _>::new(
-            &mut self.canvas_data[..],
+            &mut self.canvas_data_mut()[..],
             RENDER_W as usize,
             RENDER_H as usize,
         );
@@ -296,7 +338,7 @@ impl<'d> IcPlatform for IcRpPlatform<'d> {
 
     fn draw_string(&mut self, text: &str, pos: IVec2, _size: u32, color: RGB8) {
         let mut fbuf = RawFrameBuf::<Rgb565, _>::new(
-            &mut self.canvas_data[..],
+            &mut self.canvas_data_mut()[..],
             RENDER_W as usize,
             RENDER_H as usize,
         );
@@ -327,7 +369,7 @@ impl<'d> IcPlatform for IcRpPlatform<'d> {
 
     fn clear(&mut self, color: RGB8) {
         let mut fbuf = RawFrameBuf::<Rgb565, _>::new(
-            &mut self.canvas_data[..],
+            &mut self.canvas_data_mut()[..],
             RENDER_W as usize,
             RENDER_H as usize,
         );
@@ -660,10 +702,11 @@ async fn main(spawner: Spawner) {
     display_config.polarity = spi::Polarity::IdleHigh;
 
     let spi = Spi::new_txonly(lcd_spi_bus, clk, mosi, p.DMA_CH1, display_config.clone());
-    let spi_bus = DISPLAY_SPI_BUS.init(AsyncMutex::new(spi));
+    let spi_bus: &'static AsyncMutex<NoopRawMutex, Spi<'static, SPI1, spi::Async>> =
+        DISPLAY_SPI_BUS.init(AsyncMutex::new(spi));
 
     let display_spi = SpiDeviceWithConfig::new(
-        &spi_bus,
+        spi_bus,
         Output::new(display_cs, Level::High),
         display_config,
     );
@@ -676,7 +719,7 @@ async fn main(spawner: Spawner) {
     let di = SpiInterface::new(display_spi, dcx);
 
     // Define the display from the display interface and initialize it
-    let mut display = Builder::new(ST7789, di)
+    let display: LcdDisplay = Builder::new(ST7789, di)
         .display_size(240, 320)
         .reset_pin(rst)
         .orientation(Orientation::new().rotate(Rotation::Deg270))
@@ -702,10 +745,21 @@ async fn main(spawner: Spawner) {
     EMPTY_BUFFERS.send(buf0).await;
     EMPTY_BUFFERS.send(buf1).await;
 
+    // The UI starts with one canvas; the other is immediately available for a
+    // future frame once the display task has finished with it.
+    let initial_canvas = FrameBuffer {
+        pixels: CANVAS_DATA0.take(),
+    };
+    let spare_canvas = FrameBuffer {
+        pixels: CANVAS_DATA1.take(),
+    };
+    FREE_FRAME_BUFFERS.send(spare_canvas).await;
+
     // This board uses a MAX17048 battery fuel gauge
     let mut fuel_gauge: Max17048<BoardI2c> = Max17048::new(board_i2c);
     unwrap!(spawner.spawn(battery_task(fuel_gauge)));
     unwrap!(spawner.spawn(audio_task(i2s)));
+    unwrap!(spawner.spawn(display_task(display)));
 
     spawn_core1(
         p.CORE1,
@@ -726,20 +780,12 @@ async fn main(spawner: Spawner) {
 
     let mut icalc: IcShell = IcShell::new();
     let mut pcm_buffer = [0i16; AUDIO_BUFFER_SIZE];
-    let mut ic_rp_platform = IcRpPlatform::new(backlight, backlight2);
+    let mut ic_rp_platform = IcRpPlatform::new(backlight, backlight2, initial_canvas);
     ic_rp_platform.clear(RGB8::new(0, 255, 255));
-    display
-        .show_raw_data(
-            0,
-            0,
-            RENDER_W as u16,
-            RENDER_H as u16,
-            &*ic_rp_platform.canvas_data,
-        )
-        .await
-        .unwrap();
+    READY_FRAME_BUFFERS.send(ic_rp_platform.take_canvas()).await;
     let mut frame_counter: usize = 0;
     let mut next_audio_report = Instant::now() + embassy_time::Duration::from_secs(1);
+    let mut screen_dirty = false;
     loop {
         let mut inputs_changed = false;
         while let Ok(event) = INPUT_BUFFER.try_receive() {
@@ -756,30 +802,12 @@ async fn main(spawner: Spawner) {
             inputs_changed = true;
         }
         if inputs_changed {
-            let update_start = Instant::now();
-            icalc.update(&mut ic_rp_platform);
-            let update_us = elapsed_us(update_start);
-            SHELL_UPDATES.fetch_add(1, Ordering::Relaxed);
-            record_max(&SHELL_UPDATE_MAX_US, update_us);
-            if update_us > AUDIO_SLOW_WORK_WARN_US {
-                warn!("shell update took {}us", update_us);
-            }
-
-            let display_start = Instant::now();
-            display
-                .show_raw_data(
-                    0,
-                    0,
-                    RENDER_W as u16,
-                    RENDER_H as u16,
-                    &*ic_rp_platform.canvas_data,
-                )
-                .await
-                .unwrap();
-            let display_us = elapsed_us(display_start);
-            DISPLAY_TRANSFERS.fetch_add(1, Ordering::Relaxed);
-            record_max(&DISPLAY_TRANSFER_MAX_US, display_us);
+            screen_dirty = true;
         }
+
+        // Prioritize the buffer that feeds the PIO before doing CPU-bound UI
+        // work. Key events have already been applied to `icalc`, so the new
+        // note state is reflected in this buffer.
         if let Ok(mut buf) = EMPTY_BUFFERS.try_receive() {
             let render_start = Instant::now();
             icalc.fill_audio(&mut pcm_buffer);
@@ -801,6 +829,28 @@ async fn main(spawner: Spawner) {
             let queue_send_start = Instant::now();
             FILLED_BUFFERS.send(buf).await;
             record_max(&AUDIO_QUEUE_SEND_MAX_US, elapsed_us(queue_send_start));
+        }
+
+        // A transfer owns its canvas until the display task returns it. If
+        // both canvases are in flight, retain only this dirty bit and render
+        // the latest UI state when one becomes free; never await the LCD here.
+        if screen_dirty && !ic_rp_platform.has_canvas() {
+            if let Ok(canvas) = FREE_FRAME_BUFFERS.try_receive() {
+                ic_rp_platform.set_canvas(canvas);
+            }
+        }
+        if screen_dirty && ic_rp_platform.has_canvas() {
+            let update_start = Instant::now();
+            icalc.update(&mut ic_rp_platform);
+            let update_us = elapsed_us(update_start);
+            SHELL_UPDATES.fetch_add(1, Ordering::Relaxed);
+            record_max(&SHELL_UPDATE_MAX_US, update_us);
+            if update_us > AUDIO_SLOW_WORK_WARN_US {
+                warn!("shell update took {}us", update_us);
+            }
+
+            READY_FRAME_BUFFERS.send(ic_rp_platform.take_canvas()).await;
+            screen_dirty = false;
         }
         if Instant::now() >= next_audio_report {
             report_audio_diagnostics();
@@ -830,6 +880,30 @@ async fn main(spawner: Spawner) {
         // }
         frame_counter = frame_counter.wrapping_add(1);
         
+    }
+}
+
+#[embassy_executor::task]
+async fn display_task(mut display: LcdDisplay) {
+    loop {
+        let canvas = READY_FRAME_BUFFERS.receive().await;
+        let display_start = Instant::now();
+        display
+            .show_raw_data(
+                0,
+                0,
+                RENDER_W as u16,
+                RENDER_H as u16,
+                &canvas.pixels[..],
+            )
+            .await
+            .unwrap();
+        let display_us = elapsed_us(display_start);
+        DISPLAY_TRANSFERS.fetch_add(1, Ordering::Relaxed);
+        record_max(&DISPLAY_TRANSFER_MAX_US, display_us);
+
+        // The UI may draw into this canvas only after DMA has completed.
+        FREE_FRAME_BUFFERS.send(canvas).await;
     }
 }
 
