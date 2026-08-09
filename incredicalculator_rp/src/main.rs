@@ -4,41 +4,38 @@
 extern crate alloc;
 
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
-use core::{cell::RefCell, fmt};
+use core::fmt;
 
 use defmt::*;
-use embassy_embedded_hal::shared_bus::blocking::spi::SpiDeviceWithConfig;
+use embassy_embedded_hal::shared_bus::asynch::spi::SpiDeviceWithConfig;
 use embassy_executor::{Executor, Spawner};
 use embassy_rp::gpio::{Input, Level, Output, Pull};
 use embassy_rp::multicore::{Stack, spawn_core1};
 use embassy_rp::spi;
 use embassy_rp::spi::Spi;
 use embassy_rp::pwm::{Config as PwmConfig, Pwm}; 
-use embassy_sync::blocking_mutex::Mutex;
 use embassy_sync::blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex};
 use embassy_sync::channel::{Channel, DynamicSender};
+use embassy_sync::mutex::Mutex as AsyncMutex;
 use embassy_time::{Delay, Instant};
 use embassy_time::Timer;
 use embedded_alloc::LlffHeap as Heap;
-use embedded_graphics::mono_font::MonoTextStyle;
-use embedded_graphics::mono_font::ascii::FONT_10X20;
 use embedded_graphics::pixelcolor::{Rgb565};
 use embedded_graphics::primitives::{PrimitiveStyle, PrimitiveStyleBuilder};
-use embedded_graphics::text::Text;
 use embedded_graphics::{prelude::*};
-use embedded_graphics_framebuf::FrameBuf;
 use incredicalculator_core::input::{self, IcKey};
 use incredicalculator_core::platform::IcPlatform;
 use incredicalculator_core::shell::IcShell;
 use glam::IVec2;
 use max170xx::Max17048;
-use mipidsi::interface::SpiInterface;
+use lcd_async::interface::SpiInterface;
+use lcd_async::raw_framebuf::RawFrameBuf;
 use rgb::RGB8;
-use mipidsi::Builder;
-use mipidsi::models::ST7789;
-use mipidsi::options::{Orientation, Rotation};
+use lcd_async::Builder;
+use lcd_async::models::ST7789;
+use lcd_async::options::{ColorInversion, Orientation, Rotation};
 use static_cell::StaticCell;
-use embassy_rp::peripherals::{DMA_CH0, PIO0};
+use embassy_rp::peripherals::{PIO0, SPI1};
 use embassy_rp::pio::{InterruptHandler, Pio};
 use embassy_rp::pio_programs::i2s::{PioI2sOut, PioI2sOutProgram};
 use embassy_rp::{bind_interrupts, dma};
@@ -56,8 +53,11 @@ static mut HEAP_MEM: [u8; 64_000] = [0; 64_000];
 const RENDER_W: u32 = 320;
 const RENDER_H: u32 = 240;
 const PIXEL_COUNT: usize = (RENDER_W * RENDER_H) as usize;
+const FRAME_BUFFER_SIZE: usize = PIXEL_COUNT * 2;
 
-static mut CANVAS_DATA: [Rgb565; PIXEL_COUNT] = [Rgb565::new(0, 0, 0); PIXEL_COUNT];
+static mut CANVAS_DATA: [u8; FRAME_BUFFER_SIZE] = [0; FRAME_BUFFER_SIZE];
+static DISPLAY_SPI_BUS: StaticCell<AsyncMutex<NoopRawMutex, Spi<'static, SPI1, spi::Async>>> =
+    StaticCell::new();
 
 static mut CORE1_STACK: Stack<4096> = Stack::new();
 static EXECUTOR1: StaticCell<Executor> = StaticCell::new();
@@ -177,7 +177,7 @@ struct InputBufferEvent {
 }
 
 pub struct IcRpPlatform<'d> {
-    pub canvas_data: &'static mut [Rgb565; PIXEL_COUNT],
+    pub canvas_data: &'static mut [u8; FRAME_BUFFER_SIZE],
     backlight: Pwm<'d>,
     backlight2: Pwm<'d>,
     brightness: u8,
@@ -201,7 +201,11 @@ impl<'d> IcRpPlatform<'d> {
 
 impl<'d> IcPlatform for IcRpPlatform<'d> {
     fn draw_line(&mut self, start: IVec2, end: IVec2, color: RGB8, width: u32) {
-        let mut fbuf = FrameBuf::new(&mut *self.canvas_data, RENDER_W as usize, RENDER_H as usize);
+        let mut fbuf = RawFrameBuf::<Rgb565, _>::new(
+            &mut self.canvas_data[..],
+            RENDER_W as usize,
+            RENDER_H as usize,
+        );
         embedded_graphics::primitives::Line::new(
             embedded_graphics::prelude::Point::new(start.x, start.y),
             embedded_graphics::prelude::Point::new(end.x, end.y),
@@ -212,7 +216,11 @@ impl<'d> IcPlatform for IcRpPlatform<'d> {
     }
 
     fn draw_rectangle(&mut self, start: IVec2, end: IVec2, stroke_color: RGB8, stroke_width: u32, fill_color: Option<RGB8>) {
-        let mut fbuf = FrameBuf::new(&mut *self.canvas_data, RENDER_W as usize, RENDER_H as usize);
+        let mut fbuf = RawFrameBuf::<Rgb565, _>::new(
+            &mut self.canvas_data[..],
+            RENDER_W as usize,
+            RENDER_H as usize,
+        );
         let mut style_builder = PrimitiveStyleBuilder::new()
             .stroke_color(rgbu8_to_rgb565(stroke_color))
             .stroke_width(stroke_width)
@@ -239,7 +247,11 @@ impl<'d> IcPlatform for IcRpPlatform<'d> {
         fill_color: Option<RGB8>,
         corner_radius: u32,
     ) {
-        let mut fbuf = FrameBuf::new(&mut *self.canvas_data, RENDER_W as usize, RENDER_H as usize);
+        let mut fbuf = RawFrameBuf::<Rgb565, _>::new(
+            &mut self.canvas_data[..],
+            RENDER_W as usize,
+            RENDER_H as usize,
+        );
         let mut style_builder = PrimitiveStyleBuilder::new()
             .stroke_color(rgbu8_to_rgb565(stroke_color))
             .stroke_width(stroke_width)
@@ -261,7 +273,11 @@ impl<'d> IcPlatform for IcRpPlatform<'d> {
     }
 
     fn draw_triangle(&mut self, vertex1: IVec2, vertex2: IVec2, vertex3: IVec2, stroke_color: RGB8, stroke_width: u32, fill_color: Option<RGB8>) {
-        let mut fbuf = FrameBuf::new(&mut *self.canvas_data, RENDER_W as usize, RENDER_H as usize);
+        let mut fbuf = RawFrameBuf::<Rgb565, _>::new(
+            &mut self.canvas_data[..],
+            RENDER_W as usize,
+            RENDER_H as usize,
+        );
         let mut style_builder = PrimitiveStyleBuilder::new()
             .stroke_color(rgbu8_to_rgb565(stroke_color))
             .stroke_width(stroke_width)
@@ -279,7 +295,11 @@ impl<'d> IcPlatform for IcRpPlatform<'d> {
     }
 
     fn draw_string(&mut self, text: &str, pos: IVec2, _size: u32, color: RGB8) {
-        let mut fbuf = FrameBuf::new(&mut *self.canvas_data, RENDER_W as usize, RENDER_H as usize);
+        let mut fbuf = RawFrameBuf::<Rgb565, _>::new(
+            &mut self.canvas_data[..],
+            RENDER_W as usize,
+            RENDER_H as usize,
+        );
         
         // using a BUILT-IN FONT!
         let char_style = embedded_graphics::mono_font::MonoTextStyle::new(
@@ -306,7 +326,12 @@ impl<'d> IcPlatform for IcRpPlatform<'d> {
     }
 
     fn clear(&mut self, color: RGB8) {
-        self.canvas_data.fill(rgbu8_to_rgb565(color));
+        let mut fbuf = RawFrameBuf::<Rgb565, _>::new(
+            &mut self.canvas_data[..],
+            RENDER_W as usize,
+            RENDER_H as usize,
+        );
+        fbuf.clear(rgbu8_to_rgb565(color)).unwrap();
     }
 
     fn log(&mut self, _arg: fmt::Arguments) {}
@@ -634,8 +659,8 @@ async fn main(spawner: Spawner) {
     display_config.phase = spi::Phase::CaptureOnSecondTransition;
     display_config.polarity = spi::Polarity::IdleHigh;
 
-    let spi = Spi::new_blocking_txonly(lcd_spi_bus, clk, mosi, display_config.clone());
-    let spi_bus: Mutex<NoopRawMutex, _> = Mutex::new(RefCell::new(spi));
+    let spi = Spi::new_txonly(lcd_spi_bus, clk, mosi, p.DMA_CH1, display_config.clone());
+    let spi_bus = DISPLAY_SPI_BUS.init(AsyncMutex::new(spi));
 
     let display_spi = SpiDeviceWithConfig::new(
         &spi_bus,
@@ -647,19 +672,18 @@ async fn main(spawner: Spawner) {
     let dcx = Output::new(dcx, Level::Low);
     let rst = Output::new(rst, Level::Low);
 
-    // display interface abstraction from SPI and DC
-    let mut spi_buf = [0_u8; 512];
-    let di = SpiInterface::new(display_spi, dcx, &mut spi_buf);
+    // display interface abstraction from the DMA-backed SPI device and DC pin
+    let di = SpiInterface::new(display_spi, dcx);
 
     // Define the display from the display interface and initialize it
     let mut display = Builder::new(ST7789, di)
         .display_size(240, 320)
         .reset_pin(rst)
         .orientation(Orientation::new().rotate(Rotation::Deg270))
-        .invert_colors(mipidsi::options::ColorInversion::Inverted)
+        .invert_colors(ColorInversion::Inverted)
         .init(&mut Delay)
+        .await
         .unwrap();
-    display.clear(Rgb565::CSS_PURPLE).unwrap();
 
     // set up i2c
     // Default I2C config enables internal pull-up resistors.
@@ -700,18 +724,20 @@ async fn main(spawner: Spawner) {
         }
     );
 
-    let style = MonoTextStyle::new(&FONT_10X20, Rgb565::GREEN);
-    Text::new(
-        "Hello embedded_graphics \n + incredicalculator",
-        Point::new(20, 200),
-        style,
-    )
-    .draw(&mut display)
-    .unwrap();
     let mut icalc: IcShell = IcShell::new();
     let mut pcm_buffer = [0i16; AUDIO_BUFFER_SIZE];
     let mut ic_rp_platform = IcRpPlatform::new(backlight, backlight2);
-    display.clear(Rgb565::CYAN).unwrap();
+    ic_rp_platform.clear(RGB8::new(0, 255, 255));
+    display
+        .show_raw_data(
+            0,
+            0,
+            RENDER_W as u16,
+            RENDER_H as u16,
+            &*ic_rp_platform.canvas_data,
+        )
+        .await
+        .unwrap();
     let mut frame_counter: usize = 0;
     let mut next_audio_report = Instant::now() + embassy_time::Duration::from_secs(1);
     loop {
@@ -740,23 +766,19 @@ async fn main(spawner: Spawner) {
             }
 
             let display_start = Instant::now();
-            display.fill_contiguous(
-                &embedded_graphics::primitives::Rectangle::new(
-                    embedded_graphics::prelude::Point::new(0, 0),
-                    embedded_graphics::prelude::Size::new(RENDER_W, RENDER_H)
-                ),
-                ic_rp_platform.canvas_data.iter().copied()
-            ).unwrap();
+            display
+                .show_raw_data(
+                    0,
+                    0,
+                    RENDER_W as u16,
+                    RENDER_H as u16,
+                    &*ic_rp_platform.canvas_data,
+                )
+                .await
+                .unwrap();
             let display_us = elapsed_us(display_start);
             DISPLAY_TRANSFERS.fetch_add(1, Ordering::Relaxed);
             record_max(&DISPLAY_TRANSFER_MAX_US, display_us);
-            if display_us > AUDIO_SLOW_WORK_WARN_US {
-                warn!(
-                    "display transfer took {}us; this exceeds the ~{}us I2S FIFO coverage and can delay DMA handoff",
-                    display_us,
-                    AUDIO_FIFO_COVERAGE_US,
-                );
-            }
         }
         if let Ok(mut buf) = EMPTY_BUFFERS.try_receive() {
             let render_start = Instant::now();

@@ -6,7 +6,7 @@ use culsynth::devices::{
     Amp, Device, Env, EnvParams, Lfo, LfoOptions, LfoParams, LfoWave, Osc, OscParams,
 };
 
-pub const MAX_VOICES: usize = 4;
+pub const MAX_VOICES: usize = 3;
 
 /// Identifies a logical note source owned by an app, sequencer, or control.
 ///
@@ -37,11 +37,9 @@ impl Default for AudioPatch {
         Self {
             attack_ms: 200,
             release_ms: 1_500,
-            // Preserve the former triangle's approximate 0.8 gain while
-            // leaving headroom for four voices in the final mixer.
             triangle_mix: 204,
             square_mix: 0,
-            vibrato_depth_cents: 15,
+            vibrato_depth_cents: 5,
         }
     }
 }
