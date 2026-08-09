@@ -5,7 +5,8 @@ use crate::text;
 use rgb::RGB8;
 
 const SOUND_TEST_SOURCE_BASE: u32 = 0x534f_0000;
-const ENV_STEP_MS: i32 = 50;
+const ENV_PRESETS_MS: [u16; 5] = [0, 100, 500, 1_000, 2_500];
+const VIBRATO_ON_DEPTH_CENTS: u8 = 5;
 const WAVE_MIX_TOTAL: u8 = 204;
 
 pub struct SoundTest {
@@ -19,12 +20,20 @@ impl SoundTest {
         }
     }
 
-    fn adjust_attack(&mut self, amount_ms: i32) {
-        self.patch.attack_ms = adjust_envelope_ms(self.patch.attack_ms, amount_ms);
+    fn cycle_attack(&mut self) {
+        self.patch.attack_ms = next_envelope_preset(self.patch.attack_ms);
     }
 
-    fn adjust_release(&mut self, amount_ms: i32) {
-        self.patch.release_ms = adjust_envelope_ms(self.patch.release_ms, amount_ms);
+    fn cycle_release(&mut self) {
+        self.patch.release_ms = next_envelope_preset(self.patch.release_ms);
+    }
+
+    fn toggle_vibrato(&mut self) {
+        self.patch.vibrato_depth_cents = if self.patch.vibrato_depth_cents == 0 {
+            VIBRATO_ON_DEPTH_CENTS
+        } else {
+            0
+        };
     }
 
     fn adjust_square_mix(&mut self, amount: i16) {
@@ -40,10 +49,9 @@ impl IcApp for SoundTest {
 
     fn on_key(&mut self, key: IcKey, _ctx: &InputContext) {
         match key {
-            IcKey::Func1 => self.adjust_attack(-ENV_STEP_MS),
-            IcKey::Func2 => self.adjust_attack(ENV_STEP_MS),
-            IcKey::Func3 => self.adjust_release(-ENV_STEP_MS),
-            IcKey::Func4 => self.adjust_release(ENV_STEP_MS),
+            IcKey::Func2 => self.toggle_vibrato(),
+            IcKey::Func3 => self.cycle_attack(),
+            IcKey::Func4 => self.cycle_release(),
             IcKey::Func5 => self.adjust_square_mix(-16),
             IcKey::Func6 => self.adjust_square_mix(16),
             _ => {}
@@ -96,18 +104,29 @@ impl IcApp for SoundTest {
         );
         text::draw_text_f(
             platform,
-            format_args!("F1/F2 Attack: {} ms", self.patch.attack_ms),
+            format_args!(
+                "F2 Vibrato: {}",
+                if self.patch.vibrato_depth_cents == 0 { "Off" } else { "On" },
+            ),
             4.0,
             28.0,
-            2.5,
+            2.0,
             RGB8::new(0, 0, 0),
         );
         text::draw_text_f(
             platform,
-            format_args!("F3/F4 Release: {} ms", self.patch.release_ms),
+            format_args!("F3 Attack: {} ms", self.patch.attack_ms),
             4.0,
             48.0,
-            2.5,
+            2.0,
+            RGB8::new(0, 0, 0),
+        );
+        text::draw_text_f(
+            platform,
+            format_args!("F4 Release: {} ms", self.patch.release_ms),
+            4.0,
+            68.0,
+            2.0,
             RGB8::new(0, 0, 0),
         );
         text::draw_text_f(
@@ -118,8 +137,8 @@ impl IcApp for SoundTest {
                 self.patch.square_mix,
             ),
             4.0,
-            68.0,
-            2.5,
+            88.0,
+            2.0,
             RGB8::new(0, 0, 0),
         );
     }
@@ -129,6 +148,10 @@ impl IcApp for SoundTest {
     }
 }
 
-fn adjust_envelope_ms(value: u16, amount: i32) -> u16 {
-    (value as i32 + amount).clamp(5, 7_900) as u16
+fn next_envelope_preset(value_ms: u16) -> u16 {
+    ENV_PRESETS_MS
+        .iter()
+        .copied()
+        .find(|&preset_ms| preset_ms > value_ms)
+        .unwrap_or(ENV_PRESETS_MS[0])
 }

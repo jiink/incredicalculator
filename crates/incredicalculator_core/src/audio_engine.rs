@@ -261,7 +261,7 @@ impl SynthVoice {
 }
 
 fn sanitize_patch(mut patch: AudioPatch) -> AudioPatch {
-    const MIN_ENV_MS: u16 = 5;
+    const MIN_ENV_MS: u16 = 0;
     const MAX_ENV_MS: u16 = 7_900;
 
     patch.attack_ms = patch.attack_ms.clamp(MIN_ENV_MS, MAX_ENV_MS);

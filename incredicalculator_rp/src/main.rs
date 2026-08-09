@@ -217,7 +217,7 @@ impl<'d> IcRpPlatform<'d> {
             backlight,
             backlight2,
             brightness: 128,
-            volume: u8::MAX,
+            volume: 100,
         }
     }
 
