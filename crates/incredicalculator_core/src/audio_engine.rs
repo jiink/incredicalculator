@@ -7,6 +7,7 @@ use culsynth::devices::{
 };
 
 pub const MAX_VOICES: usize = 3;
+const SAMPLE_RATE_HZ: u32 = 48_000;
 
 /// Identifies a logical note source owned by an app, sequencer, or control.
 ///
@@ -86,6 +87,19 @@ impl AudioEngine {
         self.volume = volume;
     }
 
+    /// Whether advancing the synth can still produce audible samples.
+    ///
+    /// Released voices remain active until their envelope has reached zero,
+    /// so their scheduled release tail must be considered as well as their
+    /// gate state.
+    pub fn is_active(&self) -> bool {
+        self.volume != 0
+            && self
+                .voices
+                .iter()
+                .any(|voice| voice.gate || voice.release_samples_remaining != 0)
+    }
+
     /// Set or release the note belonging to `source`.
     ///
     /// Calling this repeatedly with an unchanged note is a no-op. A source
@@ -100,7 +114,7 @@ impl AudioEngine {
                     .iter_mut()
                     .find(|voice| voice.source == Some(source))
                 {
-                    voice.release();
+                    voice.release(self.patch.release_ms);
                 }
             }
         }
@@ -109,7 +123,7 @@ impl AudioEngine {
     /// Gate every active note off, preserving its normal release envelope.
     pub fn release_all(&mut self) {
         for voice in self.voices.iter_mut() {
-            voice.release();
+            voice.release(self.patch.release_ms);
         }
     }
 
@@ -194,6 +208,7 @@ struct SynthVoice {
     gate: bool,
     start_order: u32,
     last_level: u16,
+    release_samples_remaining: u32,
 }
 
 impl SynthVoice {
@@ -208,6 +223,7 @@ impl SynthVoice {
             gate: false,
             start_order: 0,
             last_level: 0,
+            release_samples_remaining: 0,
         }
     }
 
@@ -221,10 +237,15 @@ impl SynthVoice {
         self.gate = true;
         self.start_order = start_order;
         self.last_level = 0;
+        self.release_samples_remaining = 0;
     }
 
-    fn release(&mut self) {
+    fn release(&mut self, release_ms: u16) {
+        if !self.gate {
+            return;
+        }
         self.gate = false;
+        self.release_samples_remaining = u32::from(release_ms) * (SAMPLE_RATE_HZ / 1_000) + 1;
     }
 
     fn next_sample(
@@ -256,6 +277,9 @@ impl SynthVoice {
         let sample: SampleFxP = self.amp.next(context, mixed_wave, amplitude);
         let pcm = sample.to_bits().saturating_mul(8);
         self.last_level = pcm.unsigned_abs();
+        if !self.gate {
+            self.release_samples_remaining = self.release_samples_remaining.saturating_sub(1);
+        }
         pcm
     }
 }

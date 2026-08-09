@@ -80,6 +80,10 @@ impl IcShell {
         }
     }
 
+    pub fn has_active_audio(&self) -> bool {
+        self.audio.is_active()
+    }
+
     fn draw_battery(&mut self, platform: &mut dyn IcPlatform) {
         let batt_percentage: i32 = platform.get_battery_soc();
         let batt_icon_pos = IVec2::new(282, 3);

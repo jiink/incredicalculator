@@ -9,6 +9,7 @@ use core::fmt;
 use defmt::*;
 use embassy_embedded_hal::shared_bus::asynch::spi::SpiDeviceWithConfig;
 use embassy_executor::{Executor, Spawner};
+use embassy_futures::select::{Either, select, select4};
 use embassy_rp::gpio::{Input, Level, Output, Pull};
 use embassy_rp::multicore::{Stack, spawn_core1};
 use embassy_rp::spi;
@@ -443,6 +444,14 @@ impl<'d> KeyMatrix<'d> {
         }
     }
 
+    // With every row low, a pressed switch holds its column low. This gives
+    // the column GPIOs a stable level to use as an idle wake source.
+    fn all_rows_low(&mut self) {
+        for row in self.rows.iter_mut() {
+            row.set_low();
+        }
+    }
+
     fn select_row(&mut self, idx: usize) {
         self.all_rows_high();
         self.rows[idx].set_low();
@@ -491,6 +500,27 @@ impl<'d> KeyMatrix<'d> {
         }
         self.prev_pressed = current_pressed;
         changed
+    }
+
+    fn has_pressed_keys(&self) -> bool {
+        self.prev_pressed.iter().any(|&pressed| pressed)
+    }
+
+    async fn wait_for_key_press(&mut self) {
+        // A level-low wait intentionally also completes when a key is already
+        // down. That closes the race between putting the rows into their idle
+        // state and arming the GPIO interrupts.
+        self.all_rows_low();
+        info!("input idle: waiting for a matrix-column interrupt");
+        let [col0, col1, col2, col3] = &mut self.cols;
+        select4(
+            col0.wait_for_low(),
+            col1.wait_for_low(),
+            col2.wait_for_low(),
+            col3.wait_for_low(),
+        )
+        .await;
+        info!("input wake: matrix column asserted; scanning keys");
     }
 
     fn key_from_index(idx: usize) -> Option<IcKey> {
@@ -783,11 +813,42 @@ async fn main(spawner: Spawner) {
     let mut ic_rp_platform = IcRpPlatform::new(backlight, backlight2, initial_canvas);
     ic_rp_platform.clear(RGB8::new(0, 255, 255));
     READY_FRAME_BUFFERS.send(ic_rp_platform.take_canvas()).await;
-    let mut frame_counter: usize = 0;
-    let mut next_audio_report = Instant::now() + embassy_time::Duration::from_secs(1);
+    let mut next_audio_report = None;
     let mut screen_dirty = false;
+    let mut audio_is_running = false;
+    info!("audio idle: no active voices; waiting for input");
     loop {
+        // When the synth is silent, wait only for input. While it is active,
+        // wake for either fresh input or a DMA buffer that needs rendering.
+        // The executor can therefore enter WFI instead of waking every 1 ms
+        // to generate silence.
+        let mut audio_buffer = None;
+        let first_input = if icalc.has_active_audio() {
+            match select(INPUT_BUFFER.receive(), EMPTY_BUFFERS.receive()).await {
+                Either::First(event) => Some(event),
+                Either::Second(buffer) => {
+                    audio_buffer = Some(buffer);
+                    None
+                }
+            }
+        } else {
+            Some(INPUT_BUFFER.receive().await)
+        };
+
         let mut inputs_changed = false;
+        if let Some(event) = first_input {
+            match event.movement {
+                KeyMovement::Up => {
+                    debug!("input key={} up", event.key as usize);
+                    icalc.key_up(event.key);
+                }
+                KeyMovement::Down => {
+                    debug!("input key={} down", event.key as usize);
+                    icalc.key_down(event.key);
+                }
+            }
+            inputs_changed = true;
+        }
         while let Ok(event) = INPUT_BUFFER.try_receive() {
             match event.movement {
                 KeyMovement::Up => {
@@ -805,10 +866,39 @@ async fn main(spawner: Spawner) {
             screen_dirty = true;
         }
 
-        // Prioritize the buffer that feeds the PIO before doing CPU-bound UI
-        // work. Key events have already been applied to `icalc`, so the new
-        // note state is reflected in this buffer.
-        if let Ok(mut buf) = EMPTY_BUFFERS.try_receive() {
+        // `IcShell::update` creates and releases notes as part of handling
+        // input, so perform it before deciding whether audio needs to run.
+        // If both canvases are busy, await one rather than polling for it.
+        if screen_dirty && !ic_rp_platform.has_canvas() {
+            let canvas = FREE_FRAME_BUFFERS.receive().await;
+            ic_rp_platform.set_canvas(canvas);
+        }
+        if screen_dirty {
+            let update_start = Instant::now();
+            icalc.update(&mut ic_rp_platform);
+            let update_us = elapsed_us(update_start);
+            SHELL_UPDATES.fetch_add(1, Ordering::Relaxed);
+            record_max(&SHELL_UPDATE_MAX_US, update_us);
+            if update_us > AUDIO_SLOW_WORK_WARN_US {
+                warn!("shell update took {}us", update_us);
+            }
+
+            READY_FRAME_BUFFERS.send(ic_rp_platform.take_canvas()).await;
+            screen_dirty = false;
+        }
+
+        if icalc.has_active_audio() && !audio_is_running {
+            info!("audio active: resuming PCM rendering and I2S DMA");
+            audio_is_running = true;
+        }
+
+        // Once silent, leave the empty buffers in their channel and let the
+        // audio task block waiting for a future sound. This also lets the I2S
+        // PIO stall instead of transmitting a continuous stream of zeroes.
+        if audio_buffer.is_none() && icalc.has_active_audio() {
+            audio_buffer = Some(EMPTY_BUFFERS.receive().await);
+        }
+        if let Some(buf) = audio_buffer {
             let render_start = Instant::now();
             icalc.fill_audio(&mut pcm_buffer);
             for (dst, &pcm_sample) in buf.samples.iter_mut().zip(pcm_buffer.iter()) {
@@ -831,55 +921,22 @@ async fn main(spawner: Spawner) {
             record_max(&AUDIO_QUEUE_SEND_MAX_US, elapsed_us(queue_send_start));
         }
 
-        // A transfer owns its canvas until the display task returns it. If
-        // both canvases are in flight, retain only this dirty bit and render
-        // the latest UI state when one becomes free; never await the LCD here.
-        if screen_dirty && !ic_rp_platform.has_canvas() {
-            if let Ok(canvas) = FREE_FRAME_BUFFERS.try_receive() {
-                ic_rp_platform.set_canvas(canvas);
+        if icalc.has_active_audio() {
+            let next_report = next_audio_report.get_or_insert_with(|| {
+                Instant::now() + embassy_time::Duration::from_secs(1)
+            });
+            if Instant::now() >= *next_report {
+                report_audio_diagnostics();
+                *next_report = Instant::now() + embassy_time::Duration::from_secs(1);
+            }
+        } else {
+            next_audio_report = None;
+            if audio_is_running {
+                info!("audio idle: release tail finished; PCM rendering and I2S DMA stopped");
+                audio_is_running = false;
             }
         }
-        if screen_dirty && ic_rp_platform.has_canvas() {
-            let update_start = Instant::now();
-            icalc.update(&mut ic_rp_platform);
-            let update_us = elapsed_us(update_start);
-            SHELL_UPDATES.fetch_add(1, Ordering::Relaxed);
-            record_max(&SHELL_UPDATE_MAX_US, update_us);
-            if update_us > AUDIO_SLOW_WORK_WARN_US {
-                warn!("shell update took {}us", update_us);
-            }
 
-            READY_FRAME_BUFFERS.send(ic_rp_platform.take_canvas()).await;
-            screen_dirty = false;
-        }
-        if Instant::now() >= next_audio_report {
-            report_audio_diagnostics();
-            next_audio_report += embassy_time::Duration::from_secs(1);
-        }
-        Timer::after_millis(1).await;
-        // ic_rp_platform.draw_string_f(
-        //     format_args!("{}...", frame_counter % 10),
-        //     glam::IVec2::new(0, 0),
-        //     1,
-        //     RGB8::new(0, 255, 0)
-        // );
-        // if let (Ok(v), Ok(soc)) = (fuel_gauge.voltage(), fuel_gauge.soc()) {
-        //     ic_rp_platform.draw_string_f(
-        //         format_args!("{:.1}% ({:.2} V)", soc, v),
-        //         glam::IVec2::new(0, 0),
-        //         1,
-        //         RGB8::new(0, 255, 0)
-        //     );
-        // } else {
-        //     ic_rp_platform.draw_string_f(
-        //         format_args!("fuel guage err!"),
-        //         glam::IVec2::new(0, 0),
-        //         1,
-        //         RGB8::new(255, 0, 0)
-        //     );
-        // }
-        frame_counter = frame_counter.wrapping_add(1);
-        
     }
 }
 
@@ -966,13 +1023,18 @@ async fn inputs_core1_task(matrix_rows: [Output<'static>; 5], matrix_cols: [Inpu
     let mut key_matrix = KeyMatrix::new(matrix_rows, matrix_cols);
     let input_buf_sender = INPUT_BUFFER.dyn_sender();
     loop {
-        // todo: wait here for interrupt of one of the column lines (input gpios) changing states
-        // so that this core can sleep while youre not pressing anything. 
-        // then reducing the after_millis can be a good idea
+        // Release events cannot wake the matrix while every row is low, so
+        // keep scanning only until all pressed keys have been released.
+        // Otherwise the core-1 executor sleeps in the GPIO interrupt wait.
+        if key_matrix.has_pressed_keys() {
+            Timer::after_millis(16).await;
+        } else {
+            key_matrix.wait_for_key_press().await;
+        }
+
         key_matrix.scan_and_send(input_buf_sender);
         if key_matrix.is_pressed(IcKey::Super) && key_matrix.is_pressed(IcKey::Shift) {
             reboot_into_bootloader();
         }
-        Timer::after_millis(16).await;
     }
 }
