@@ -84,6 +84,12 @@ impl IcShell {
         self.audio.is_active()
     }
 
+    pub fn requires_realtime_updates(&self) -> bool {
+        self.active_app_idx
+            .map(|idx| self.apps[idx].requires_realtime_updates())
+            .unwrap_or(false)
+    }
+
     fn draw_battery(&mut self, platform: &mut dyn IcPlatform) {
         let batt_percentage: i32 = platform.get_battery_soc();
         let batt_icon_pos = IVec2::new(282, 3);

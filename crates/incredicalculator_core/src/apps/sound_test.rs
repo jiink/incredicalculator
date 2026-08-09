@@ -45,6 +45,10 @@ impl SoundTest {
 }
 
 impl IcApp for SoundTest {
+    fn requires_realtime_updates(&self) -> bool {
+        false
+    }
+
     fn on_enter(&mut self) {}
 
     fn on_key(&mut self, key: IcKey, _ctx: &InputContext) {

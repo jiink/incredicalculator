@@ -510,6 +510,10 @@ impl IcApp for FaceCalculator {
         "Face"
     }
 
+    fn requires_realtime_updates(&self) -> bool {
+        true
+    }
+
     fn on_enter(&mut self) {
         ()
     }

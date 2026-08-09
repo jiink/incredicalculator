@@ -9,7 +9,7 @@ use core::fmt;
 use defmt::*;
 use embassy_embedded_hal::shared_bus::asynch::spi::SpiDeviceWithConfig;
 use embassy_executor::{Executor, Spawner};
-use embassy_futures::select::{Either, select, select4};
+use embassy_futures::select::{Either, Either3, select, select3, select4};
 use embassy_rp::gpio::{Input, Level, Output, Pull};
 use embassy_rp::multicore::{Stack, spawn_core1};
 use embassy_rp::spi;
@@ -822,17 +822,30 @@ async fn main(spawner: Spawner) {
         // wake for either fresh input or a DMA buffer that needs rendering.
         // The executor can therefore enter WFI instead of waking every 1 ms
         // to generate silence.
-        let mut audio_buffer = None;
-        let first_input = if icalc.has_active_audio() {
-            match select(INPUT_BUFFER.receive(), EMPTY_BUFFERS.receive()).await {
-                Either::First(event) => Some(event),
-                Either::Second(buffer) => {
-                    audio_buffer = Some(buffer);
-                    None
-                }
-            }
-        } else {
-            Some(INPUT_BUFFER.receive().await)
+        let (first_input, mut audio_buffer, realtime_tick) = match (
+            icalc.has_active_audio(),
+            icalc.requires_realtime_updates(),
+        ) {
+            (true, true) => match select3(
+                INPUT_BUFFER.receive(),
+                EMPTY_BUFFERS.receive(),
+                Timer::after_millis(16),
+            )
+            .await
+            {
+                Either3::First(event) => (Some(event), None, false),
+                Either3::Second(buffer) => (None, Some(buffer), false),
+                Either3::Third(()) => (None, None, true),
+            },
+            (true, false) => match select(INPUT_BUFFER.receive(), EMPTY_BUFFERS.receive()).await {
+                Either::First(event) => (Some(event), None, false),
+                Either::Second(buffer) => (None, Some(buffer), false),
+            },
+            (false, true) => match select(INPUT_BUFFER.receive(), Timer::after_millis(16)).await {
+                Either::First(event) => (Some(event), None, false),
+                Either::Second(()) => (None, None, true),
+            },
+            (false, false) => (Some(INPUT_BUFFER.receive().await), None, false),
         };
 
         let mut inputs_changed = false;
@@ -862,7 +875,7 @@ async fn main(spawner: Spawner) {
             }
             inputs_changed = true;
         }
-        if inputs_changed {
+        if inputs_changed || realtime_tick {
             screen_dirty = true;
         }
 
@@ -896,7 +909,7 @@ async fn main(spawner: Spawner) {
         // audio task block waiting for a future sound. This also lets the I2S
         // PIO stall instead of transmitting a continuous stream of zeroes.
         if audio_buffer.is_none() && icalc.has_active_audio() {
-            audio_buffer = Some(EMPTY_BUFFERS.receive().await);
+            audio_buffer = EMPTY_BUFFERS.try_receive().ok();
         }
         if let Some(buf) = audio_buffer {
             let render_start = Instant::now();

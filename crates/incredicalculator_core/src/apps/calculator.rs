@@ -987,6 +987,10 @@ impl IcApp for Calculator {
         "Programmer & Scientific"
     }
 
+    fn requires_realtime_updates(&self) -> bool {
+        false
+    }
+
     fn on_key(&mut self, key: IcKey, ctx: &InputContext) {
         let action = self
             .engine

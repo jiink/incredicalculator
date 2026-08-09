@@ -302,6 +302,10 @@ impl IcApp for RangeMapperCalculator {
         "Range Mapper"
     }
 
+    fn requires_realtime_updates(&self) -> bool {
+        false
+    }
+
     fn on_enter(&mut self) {
         ()
     }
