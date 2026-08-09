@@ -3,7 +3,7 @@
 
 extern crate alloc;
 
-use core::sync::atomic::{AtomicBool, AtomicI32};
+use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use core::{cell::RefCell, fmt};
 
 use defmt::*;
@@ -72,6 +72,82 @@ bind_interrupts!(struct Irqs {
 const AUDIO_SAMPLE_RATE: u32 = 48_000;
 const AUDIO_BIT_DEPTH: u32 = 16;
 const AUDIO_BUFFER_SIZE: usize = 2048;
+const AUDIO_BUFFER_DURATION_US: u32 =
+    (AUDIO_BUFFER_SIZE as u32 * 1_000_000) / AUDIO_SAMPLE_RATE;
+// The PIO FIFO is only a few samples deep. Any synchronous operation longer
+// than this can prevent the executor from queuing the next DMA transfer.
+const AUDIO_FIFO_COVERAGE_US: u32 = 200;
+const AUDIO_SLOW_WORK_WARN_US: u32 = 1_000;
+
+// Keep instrumentation out of the real-time path: the audio task records
+// counters only, while the main task prints a compact report once per second.
+static AUDIO_BUFFERS_RENDERED: AtomicU32 = AtomicU32::new(0);
+static AUDIO_RENDER_MAX_US: AtomicU32 = AtomicU32::new(0);
+static AUDIO_QUEUE_SEND_MAX_US: AtomicU32 = AtomicU32::new(0);
+static AUDIO_DMA_TRANSFERS: AtomicU32 = AtomicU32::new(0);
+static AUDIO_DMA_MAX_US: AtomicU32 = AtomicU32::new(0);
+static AUDIO_LATE_DMA_COMPLETIONS: AtomicU32 = AtomicU32::new(0);
+static AUDIO_STARVATIONS: AtomicU32 = AtomicU32::new(0);
+static AUDIO_STARVATION_MAX_US: AtomicU32 = AtomicU32::new(0);
+static SHELL_UPDATES: AtomicU32 = AtomicU32::new(0);
+static SHELL_UPDATE_MAX_US: AtomicU32 = AtomicU32::new(0);
+static DISPLAY_TRANSFERS: AtomicU32 = AtomicU32::new(0);
+static DISPLAY_TRANSFER_MAX_US: AtomicU32 = AtomicU32::new(0);
+
+fn record_max(maximum: &AtomicU32, value: u32) {
+    maximum.fetch_max(value, Ordering::Relaxed);
+}
+
+fn elapsed_us(start: Instant) -> u32 {
+    start.elapsed().as_micros().min(u32::MAX as u64) as u32
+}
+
+fn report_audio_diagnostics() {
+    let rendered = AUDIO_BUFFERS_RENDERED.swap(0, Ordering::Relaxed);
+    let render_max_us = AUDIO_RENDER_MAX_US.swap(0, Ordering::Relaxed);
+    let queue_send_max_us = AUDIO_QUEUE_SEND_MAX_US.swap(0, Ordering::Relaxed);
+    let dma_transfers = AUDIO_DMA_TRANSFERS.swap(0, Ordering::Relaxed);
+    let dma_max_us = AUDIO_DMA_MAX_US.swap(0, Ordering::Relaxed);
+    let late_dma_completions = AUDIO_LATE_DMA_COMPLETIONS.swap(0, Ordering::Relaxed);
+    let starvations = AUDIO_STARVATIONS.swap(0, Ordering::Relaxed);
+    let starvation_max_us = AUDIO_STARVATION_MAX_US.swap(0, Ordering::Relaxed);
+    let shell_updates = SHELL_UPDATES.swap(0, Ordering::Relaxed);
+    let shell_update_max_us = SHELL_UPDATE_MAX_US.swap(0, Ordering::Relaxed);
+    let display_transfers = DISPLAY_TRANSFERS.swap(0, Ordering::Relaxed);
+    let display_transfer_max_us = DISPLAY_TRANSFER_MAX_US.swap(0, Ordering::Relaxed);
+
+    info!(
+        "audio/s: rendered={} dma={} render_max={}us queue_max={}us dma_max={}us dma_late={} starve={} starve_max={}us shell_updates={} update_max={}us display={} display_max={}us",
+        rendered,
+        dma_transfers,
+        render_max_us,
+        queue_send_max_us,
+        dma_max_us,
+        late_dma_completions,
+        starvations,
+        starvation_max_us,
+        shell_updates,
+        shell_update_max_us,
+        display_transfers,
+        display_transfer_max_us,
+    );
+
+    if starvations != 0 {
+        warn!(
+            "I2S buffer starvation: audio DMA finished before a filled buffer was ready; max wait={}us",
+            starvation_max_us
+        );
+    }
+    if late_dma_completions != 0 {
+        warn!(
+            "I2S DMA completion was serviced late {} times; expected buffer duration is {}us, observed maximum {}us",
+            late_dma_completions,
+            AUDIO_BUFFER_DURATION_US,
+            dma_max_us,
+        );
+    }
+}
+
 struct AudioBuffer {
     samples: &'static mut [u32; AUDIO_BUFFER_SIZE],
 }
@@ -443,6 +519,13 @@ async fn main(spawner: Spawner) {
         AUDIO_BIT_DEPTH,
         &audio_pio_program
     );
+    info!(
+        "I2S configured: {} Hz, {}-bit stereo, {} frames/buffer ({} us/buffer)",
+        AUDIO_SAMPLE_RATE,
+        AUDIO_BIT_DEPTH,
+        AUDIO_BUFFER_SIZE,
+        AUDIO_BUFFER_DURATION_US,
+    );
     // --------------------
 
     // for pico 2
@@ -625,25 +708,36 @@ async fn main(spawner: Spawner) {
     .unwrap();
     let mut icalc: IcShell = IcShell::new();
     let mut pcm_buffer = [0i16; AUDIO_BUFFER_SIZE];
-    let mut audio_active = true;
     let mut ic_rp_platform = IcRpPlatform::new(backlight, backlight2);
     display.clear(Rgb565::CYAN).unwrap();
     let mut frame_counter: usize = 0;
+    let mut next_audio_report = Instant::now() + embassy_time::Duration::from_secs(1);
     loop {
         let mut inputs_changed = false;
         while let Ok(event) = INPUT_BUFFER.try_receive() {
             match event.movement {
-                KeyMovement::Up => icalc.key_up(event.key),
-                KeyMovement::Down => icalc.key_down(event.key),
+                KeyMovement::Up => {
+                    debug!("input key={} up", event.key as usize);
+                    icalc.key_up(event.key);
+                }
+                KeyMovement::Down => {
+                    debug!("input key={} down", event.key as usize);
+                    icalc.key_down(event.key);
+                }
             }
             inputs_changed = true;
         }
         if inputs_changed {
-            // led.set_high();
-            // info!("Pre-update");
+            let update_start = Instant::now();
             icalc.update(&mut ic_rp_platform);
-            // led.set_low();
-            // info!("Post-update");
+            let update_us = elapsed_us(update_start);
+            SHELL_UPDATES.fetch_add(1, Ordering::Relaxed);
+            record_max(&SHELL_UPDATE_MAX_US, update_us);
+            if update_us > AUDIO_SLOW_WORK_WARN_US {
+                warn!("shell update took {}us", update_us);
+            }
+
+            let display_start = Instant::now();
             display.fill_contiguous(
                 &embedded_graphics::primitives::Rectangle::new(
                     embedded_graphics::prelude::Point::new(0, 0),
@@ -651,14 +745,42 @@ async fn main(spawner: Spawner) {
                 ),
                 ic_rp_platform.canvas_data.iter().copied()
             ).unwrap();
+            let display_us = elapsed_us(display_start);
+            DISPLAY_TRANSFERS.fetch_add(1, Ordering::Relaxed);
+            record_max(&DISPLAY_TRANSFER_MAX_US, display_us);
+            if display_us > AUDIO_SLOW_WORK_WARN_US {
+                warn!(
+                    "display transfer took {}us; this exceeds the ~{}us I2S FIFO coverage and can delay DMA handoff",
+                    display_us,
+                    AUDIO_FIFO_COVERAGE_US,
+                );
+            }
         }
         if let Ok(mut buf) = EMPTY_BUFFERS.try_receive() {
+            let render_start = Instant::now();
             icalc.fill_audio(&mut pcm_buffer);
             for (dst, &pcm_sample) in buf.samples.iter_mut().zip(pcm_buffer.iter()) {
                 let sample_u16 = pcm_sample as u16 as u32;
                 *dst = (sample_u16 << 16) | sample_u16;    
             }
+            let render_us = elapsed_us(render_start);
+            AUDIO_BUFFERS_RENDERED.fetch_add(1, Ordering::Relaxed);
+            record_max(&AUDIO_RENDER_MAX_US, render_us);
+            if render_us > AUDIO_BUFFER_DURATION_US {
+                warn!(
+                    "audio render took {}us (buffer duration {}us)",
+                    render_us,
+                    AUDIO_BUFFER_DURATION_US,
+                );
+            }
+
+            let queue_send_start = Instant::now();
             FILLED_BUFFERS.send(buf).await;
+            record_max(&AUDIO_QUEUE_SEND_MAX_US, elapsed_us(queue_send_start));
+        }
+        if Instant::now() >= next_audio_report {
+            report_audio_diagnostics();
+            next_audio_report += embassy_time::Duration::from_secs(1);
         }
         Timer::after_millis(1).await;
         // ic_rp_platform.draw_string_f(
@@ -704,9 +826,36 @@ async fn battery_task(mut fuel_gauge: Max17048<BoardI2c>) {
 
 #[embassy_executor::task]
 async fn audio_task(mut i2s: PioI2sOut<'static, PIO0, 0>) {
+    let mut has_started = false;
     loop {
-        let buf = FILLED_BUFFERS.receive().await;
+        // `write` only returns after the DMA transfer has drained. If no next
+        // buffer is queued at this point, the PIO runs out of FIFO data and an
+        // audible gap is expected. Do not log here: RTT logging in this task
+        // would itself perturb the timing.
+        let buf = match FILLED_BUFFERS.try_receive() {
+            Ok(buf) => buf,
+            Err(_) => {
+                let wait_start = Instant::now();
+                let buf = FILLED_BUFFERS.receive().await;
+                // Waiting for the very first buffer is expected during boot;
+                // after that it means the PIO had no next DMA transfer ready.
+                if has_started {
+                    AUDIO_STARVATIONS.fetch_add(1, Ordering::Relaxed);
+                    record_max(&AUDIO_STARVATION_MAX_US, elapsed_us(wait_start));
+                }
+                buf
+            }
+        };
+
+        let dma_start = Instant::now();
         i2s.write(buf.samples).await;
+        let dma_us = elapsed_us(dma_start);
+        AUDIO_DMA_TRANSFERS.fetch_add(1, Ordering::Relaxed);
+        record_max(&AUDIO_DMA_MAX_US, dma_us);
+        if dma_us > AUDIO_BUFFER_DURATION_US + AUDIO_FIFO_COVERAGE_US {
+            AUDIO_LATE_DMA_COMPLETIONS.fetch_add(1, Ordering::Relaxed);
+        }
+        has_started = true;
         // ok now you have like 100 uS to start a new DMA transfer before 
         // there's a pop (since the PIO only holds like 8 samples in its FIFO)
         EMPTY_BUFFERS.send(buf).await;
