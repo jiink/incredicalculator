@@ -332,6 +332,20 @@ impl ProgrammerEngine {
         buffer.set_content(new_str.as_bytes());
     }
 
+    fn set_bit_state(
+        &self,
+        target_state: bool,
+        buffer: &mut LineBuffer<{ EqEntry::EQUATION_MAX_SIZE }>,
+        current_result: &str,
+    ) {
+        let current_val = current_result.parse::<i32>().unwrap_or(0);
+        let is_set = (current_val & (1 << self.binary_selection_idx)) != 0;
+        
+        if target_state != is_set {
+            self.binary_widget_set_bit(self.binary_selection_idx, buffer, current_result);
+        }
+    }
+
     // If we wanted to stick to heapless no_std, then we would use write!()
     // instead of format!() and make a struct with a buffer and cursor and
     // implement as_str and fmt::Write for that
@@ -402,22 +416,16 @@ impl CalcEngine for ProgrammerEngine {
             KeyAction::InsertChar(c) => match c {
                 b'0'..=b'9' => {
                     let set = c != b'0';
-                    let current_val = current_result.parse::<i32>().unwrap_or(0);
-                    let is_set = (current_val & (1 << self.binary_selection_idx)) != 0;
-                    if set != is_set {
-                        self.binary_widget_set_bit(
-                            self.binary_selection_idx,
-                            buffer,
-                            current_result,
-                        );
-                    }
+                    self.set_bit_state(set, buffer, current_result);
                 }
                 _ => {}
             },
             KeyAction::Enter => {
                 self.binary_widget_set_bit(self.binary_selection_idx, buffer, current_result);
             }
-            KeyAction::Backspace => {}
+            KeyAction::Backspace => {
+                self.set_bit_state(false, buffer, current_result);
+            }
             _ => return false,
         }
         true
@@ -454,21 +462,33 @@ impl CalcEngine for ProgrammerEngine {
             let bin_widget_bit1_x: i32 = 310;
             let bin_widget_bit1_y: i32 = 230;
             let bin_widget_element_w: i32 = 8;
-            let bin_widget_element_margin: i32 = 3;
+            let bin_widget_element_margin: i32 = 2;
+            let gap_4bit: i32 = 3;
+            let gap_8bit: i32 = 6;
             for i in 0..32 {
+                let row_idx = i % 16;
+                let extra_gap = (row_idx / 4) * gap_4bit + (row_idx / 8) * gap_8bit;
                 let bit_x: i32 = bin_widget_bit1_x
-                    - ((i % 16) * (bin_widget_element_w + bin_widget_element_margin));
+                    - (row_idx * (bin_widget_element_w + bin_widget_element_margin) + extra_gap);
                 let bit_y: i32 = if i < 16 {
                     bin_widget_bit1_y
                 } else {
-                    bin_widget_bit1_y - bin_widget_element_margin - bin_widget_element_w
+                    bin_widget_bit1_y - bin_widget_element_margin - bin_widget_element_w - 4
                 };
                 let bit_val: bool = (result_as_int >> i) & 1 != 0;
-                let color: Rgb<u8> = if is_focused && i == self.binary_selection_idx as i32 {
-                    Rgb {
-                        r: 0x00,
-                        g: 0xff,
-                        b: 0x55,
+                let color: Rgb<u8> = if is_focused {
+                    if i == self.binary_selection_idx as i32 {
+                        Rgb {
+                            r: 0xff,
+                            g: 0xff,
+                            b: 0x00,
+                        }
+                    } else {
+                        Rgb {
+                            r: 0x00,
+                            g: 0xaa,
+                            b: 0x11,
+                        }
                     }
                 } else {
                     Rgb {
