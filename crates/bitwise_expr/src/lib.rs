@@ -107,24 +107,34 @@ fn parse_multiplicative(input: &str) -> IResult<&str, i64> {
         pair(
             alt((
                 tag("*"),
-                tag("/")
+                tag("/"),
+                tag("%")
             )),
             parse_factor
         )
     )(input)?;
     for (op, val) in ops_and_vals {
-        if op == "*" {
-            result *= val;
-        } else {
-            if val == 0 {
-                return Err(nom::Err::Error(nom::error::Error::new(
-                    "Division by zero", 
-                    nom::error::ErrorKind::MapRes
-                )));
-
-            } else {
+        match op {
+            "*" => result *= val,
+            "/" => {
+                if val == 0 {
+                    return Err(nom::Err::Error(nom::error::Error::new(
+                        "Division by zero",
+                        nom::error::ErrorKind::MapRes
+                    )));
+                }
                 result /= val;
             }
+            "%" => {
+                if val == 0 {
+                    return Err(nom::Err::Error(nom::error::Error::new(
+                        "Division by zero",
+                        nom::error::ErrorKind::MapRes
+                    )));
+                }
+                result %= val;
+            }
+            _ => unreachable!("unexpected operator {op}"),
         }
     }
     Ok((input, result))
@@ -265,6 +275,9 @@ mod tests {
         assert_eq!(parse_multiplicative("3*4*5"), Ok(("", 60)));
         assert_eq!(parse_multiplicative("10"), Ok(("", 10)));
         assert_eq!(parse_multiplicative("7*2+3"), Ok(("+3", 14)));
+        assert_eq!(parse_multiplicative("10%3"), Ok(("", 1)));
+        assert_eq!(parse_multiplicative("0%300"), Ok(("", 0)));
+        assert_eq!(parse_multiplicative("300%300"), Ok(("", 0)));
     }
 
     #[test]
@@ -288,6 +301,8 @@ mod tests {
         assert_eq!(evaluate("((0x0002 + 3) * 4) + 5"), Ok(25));
         assert_eq!(evaluate("10 - 5"), Ok(5));
         assert_eq!(evaluate("20 / 4"), Ok(5));
+        assert_eq!(evaluate("10 % 3"), Ok(1));
+        assert_eq!(evaluate("12 % (5 - 2)"), Ok(0));
         assert_eq!(evaluate("10 - 2 * 3"), Ok(4));
         assert_eq!(evaluate("20 / 2 - 3"), Ok(7));
         assert_eq!(evaluate("10 - 3 - 2"), Ok(5));
