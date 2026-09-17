@@ -239,7 +239,7 @@ impl CalcEngine for ScientificEngine {
                 IcKey::Num1 => Some(KeyAction::InsertChar4(b'c', b'o', b's', b'(')),
                 IcKey::Num2 => Some(KeyAction::InsertChar4(b't', b'a', b'n', b'(')),
                 IcKey::Num3 => Some(KeyAction::InsertChar5(b'a', b's', b'i', b'n', b'(')),
-                IcKey::Num4 => Some(KeyAction::InsertChar5(b'a', b'c', b'o', b's', b'(')),
+                IcKey::Num4 => Some(KeyAction::InsertChar(b'E')),
                 IcKey::Num5 => Some(KeyAction::InsertChar5(b'a', b't', b'a', b'n', b'(')),
                 IcKey::Num6 => Some(KeyAction::InsertChar(b'.')),
                 IcKey::Num7 => Some(KeyAction::InsertChar(b'(')),
@@ -417,6 +417,7 @@ impl CalcEngine for ProgrammerEngine {
             KeyAction::Enter => {
                 self.binary_widget_set_bit(self.binary_selection_idx, buffer, current_result);
             }
+            KeyAction::Backspace => {}
             _ => return false,
         }
         true
@@ -745,18 +746,15 @@ impl Calculator {
         if let Some(hs) = self.history_selection {
             let idx = self.get_physical_idx(hs.idx);
             let entry = self.eq_history[idx];
-            match hs.part {
-                EqEntryPart::Equation => {
-                    self.current_eq.data = entry.equation;
-                    self.current_eq.len = entry.equation_len;
-                }
-                EqEntryPart::Result => {
-                    self.current_eq.data = entry.result;
-                    self.current_eq.len = entry.result_len;
-                }
+            self.current_eq.move_cursor_end();
+            let to_append = match hs.part {
+                EqEntryPart::Equation => &entry.equation[..entry.equation_len],
+                EqEntryPart::Result => &entry.result[..entry.result_len]
+            };
+            for &b in to_append {
+                self.current_eq.insert_char(b);
             }
             self.history_selection = None;
-            self.current_eq.cursor = self.current_eq.len;
         }
     }
 

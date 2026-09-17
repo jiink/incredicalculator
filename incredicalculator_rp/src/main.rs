@@ -811,8 +811,11 @@ async fn main(spawner: Spawner) {
     let mut icalc: IcShell = IcShell::new();
     let mut pcm_buffer = [0i16; AUDIO_BUFFER_SIZE];
     let mut ic_rp_platform = IcRpPlatform::new(backlight, backlight2, initial_canvas);
-    ic_rp_platform.clear(RGB8::new(0, 255, 255));
+    
+    // render the first frame
+    icalc.update(&mut ic_rp_platform);
     READY_FRAME_BUFFERS.send(ic_rp_platform.take_canvas()).await;
+
     let mut next_audio_report = None;
     let mut screen_dirty = false;
     let mut audio_is_running = false;

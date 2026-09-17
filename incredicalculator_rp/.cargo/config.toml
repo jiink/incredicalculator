@@ -5,7 +5,7 @@
 
 # B) Use this if you want to produce a .uf2 file you can
 # drag and drop onto the chip's bootloader's storage device
-#runner = "elf2uf2-rs -d"
+#runner = ["elf2uf2-rs"]
 
 # C) Use this if you want to program the chip over USB
 # while it's in bootloader mode
