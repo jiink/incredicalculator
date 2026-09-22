@@ -2193,4 +2193,5 @@ pub static FONT_FUTURAL: HersheyFont = HersheyFont {
     space_advance: 10,
     line_height: 25,
     missing_glyph: &FUTURAL_GLYPH_10,
+    units_per_em: 10.0
 };

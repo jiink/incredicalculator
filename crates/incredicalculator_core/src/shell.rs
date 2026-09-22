@@ -192,6 +192,7 @@ impl IcShell {
             start.x as f32 + 3.0,    
             start.y as f32 - 20.0,    
             2.5, 
+            2.0,
             rgb8_hex(0xFFFFFF),
             FontId::Futural
         );
@@ -291,6 +292,7 @@ impl IcShell {
                     format_args!("#{}: {}", i, self.apps[i].name()),
                     4.0,
                     4.0 + (20 * i) as f32,
+                    8.0,
                     2.0,
                     rgb8_hex(0x000000),
                     FontId::Futural

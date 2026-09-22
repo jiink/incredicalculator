@@ -11,7 +11,7 @@ use alloc::boxed::Box;
 use alloc::string::ToString;
 use alloc::{format, string::String};
 use core::{num::ParseIntError};
-use glam::IVec2;
+use glam::{IVec2, Vec2};
 use rgb::*;
 
 #[derive(Clone, Copy)]
@@ -211,6 +211,7 @@ impl CalcEngine for ScientificEngine {
             "Scientific",
             2.0,
             222.0,
+            2.0,
             2.0,
             Rgb {
                 r: 0x44,
@@ -453,6 +454,7 @@ impl CalcEngine for ProgrammerEngine {
                     margin as f32,
                     222.0,
                     2.0,
+                    2.0,
                     Rgb {
                         r: 0x00,
                         g: 0xff,
@@ -502,20 +504,20 @@ impl CalcEngine for ProgrammerEngine {
                 };
                 if bit_val {
                     platform.draw_line(
-                        IVec2::new((bit_x + bin_widget_element_w / 2) as i32, bit_y as i32),
-                        IVec2::new(
-                            (bit_x + bin_widget_element_w / 2) as i32,
-                            (bit_y + bin_widget_element_w) as i32,
+                        Vec2::new((bit_x + bin_widget_element_w / 2) as f32, bit_y as f32),
+                        Vec2::new(
+                            (bit_x + bin_widget_element_w / 2) as f32,
+                            (bit_y + bin_widget_element_w) as f32,
                         ),
                         color,
                         2,
                     );
                 } else {
                     platform.draw_rectangle(
-                        IVec2::new((bit_x + 1) as i32, bit_y as i32),
+                        IVec2::new(bit_x + 1, bit_y),
                         IVec2::new(
-                            (bit_x + bin_widget_element_w - 1) as i32,
-                            (bit_y + bin_widget_element_w) as i32,
+                            bit_x + bin_widget_element_w - 1,
+                            bit_y + bin_widget_element_w,
                         ),
                         color,
                         1,
@@ -529,6 +531,7 @@ impl CalcEngine for ProgrammerEngine {
                 "Programmer",
                 margin as f32,
                 222.0,
+                2.0,
                 2.0,
                 Rgb {
                     r: 0x44,
@@ -834,7 +837,7 @@ impl Calculator {
         let mut draw_row: u32 = 0;
         let row_height: u32 = 40;
         let margin: u32 = 2;
-        let font_size: f32 = 2.0;
+        let font_size: f32 = 6.0;
         let max_entries_to_disp: u32 = 3;
         let num_entries_to_disp = core::cmp::min(self.eq_history_len as u32, max_entries_to_disp);
         for i in 0..num_entries_to_disp {
@@ -868,6 +871,7 @@ impl Calculator {
                         (CANVAS_WIDTH - margin - 9) as f32,
                         y_pos as f32,
                         font_size,
+                        2.0,
                         Rgb {
                             r: 0xff,
                             g: 0,
@@ -881,8 +885,9 @@ impl Calculator {
                 platform,
                 eq_disp,
                 margin as f32,
-                y as f32,
+                y as f32 + 8.0,
                 font_size,
+                2.0,
                 Rgb {
                     r: 0x99,
                     g: 0x99,
@@ -896,8 +901,9 @@ impl Calculator {
                 platform,
                 "=",
                 margin as f32,
-                y2 as f32,
+                y2 as f32 + 6.0,
                 font_size,
+                2.0,
                 Rgb {
                     r: 0x99,
                     g: 0x99,
@@ -908,9 +914,10 @@ impl Calculator {
             draw_text(
                 platform,
                 ans_disp,
-                margin as f32 + 11.0,
-                y2 as f32,
+                margin as f32 + 14.0,
+                y2 as f32 + 6.0,
                 font_size,
+                2.0,
                 Rgb {
                     r: 0xff,
                     g: 0xff,
@@ -920,8 +927,8 @@ impl Calculator {
             );
 
             platform.draw_line(
-                IVec2::new(margin as i32, y2 as i32 + 16),
-                IVec2::new((CANVAS_WIDTH - margin) as i32, y2 as i32 + 16),
+                Vec2::new(margin as f32, (y2 + 16) as f32),
+                Vec2::new((CANVAS_WIDTH - margin) as f32, (y2 + 16) as f32),
                 Rgb {
                     r: 0x80,
                     g: 0x80,
@@ -948,6 +955,7 @@ impl Calculator {
             margin as f32,
             eq_y,
             eq_scale,
+            2.0,
             Rgb {
                 r: 0xff,
                 g: 0xff,
@@ -968,8 +976,8 @@ impl Calculator {
                 cursor_x_pos = 2.0;
             }
             platform.draw_line(
-                IVec2::new(cursor_x_pos as i32 - 3, eq_y as i32 - 5),
-                IVec2::new(cursor_x_pos as i32 - 3, eq_y as i32 + 30),
+                Vec2::new(cursor_x_pos - 3.0, eq_y - 5.0),
+                Vec2::new(cursor_x_pos - 3.0, eq_y + 30.0),
                 Rgb::new(0xff, 0xff, 0x44),
                 2,
             );
@@ -989,6 +997,7 @@ impl Calculator {
             margin as f32,
             eq_y + 31.0,
             ans_scale,
+            2.0,
             Rgb {
                 r: 0xff,
                 g: 0xff,
@@ -1002,6 +1011,7 @@ impl Calculator {
             (margin + 24) as f32,
             eq_y + 31.0,
             ans_scale,
+            2.0,
             Rgb {
                 r: 0xff,
                 g: 0xff,

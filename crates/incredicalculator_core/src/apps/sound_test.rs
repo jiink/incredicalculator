@@ -105,6 +105,7 @@ impl IcApp for SoundTest {
             4.0,
             4.0,
             3.0,
+            2.0,
             RGB8::new(0, 0, 0),
             FontId::Futural
         );
@@ -117,6 +118,7 @@ impl IcApp for SoundTest {
             4.0,
             28.0,
             2.0,
+            2.0,
             RGB8::new(0, 0, 0),
             FontId::Futural
         );
@@ -126,6 +128,7 @@ impl IcApp for SoundTest {
             4.0,
             48.0,
             2.0,
+            2.0,
             RGB8::new(0, 0, 0),
             FontId::Futural
         );
@@ -134,6 +137,7 @@ impl IcApp for SoundTest {
             format_args!("F4 Release: {} ms", self.patch.release_ms),
             4.0,
             68.0,
+            2.0,
             2.0,
             RGB8::new(0, 0, 0),
             FontId::Futural
@@ -147,6 +151,7 @@ impl IcApp for SoundTest {
             ),
             4.0,
             88.0,
+            2.0,
             2.0,
             RGB8::new(0, 0, 0),
             FontId::Futural

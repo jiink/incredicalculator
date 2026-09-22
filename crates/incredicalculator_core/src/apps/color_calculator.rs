@@ -526,7 +526,7 @@ use crate::{
     platform::{rgb8_hex, IcPlatform},
     text::{draw_text, draw_text_f},
 };
-use glam::IVec2;
+use glam::{IVec2, Vec2};
 use rgb::Rgb;
 use alloc::format;
 use crate::fonts::FontId;
@@ -649,6 +649,7 @@ impl InputBox {
             x,
             y,
             scale,
+            2.0,
             rgb8_hex(if focused { 0xFFFFFF } else { 0xB9C6D8 }),
             FontId::Futural
         );
@@ -656,8 +657,8 @@ impl InputBox {
         if focused {
             let cursor_x = text_to_pos(text, x, scale, self.expression.cursor, FontId::Futural);
             platform.draw_line(
-                IVec2::new(cursor_x as i32, self.pos.y + 4),
-                IVec2::new(cursor_x as i32, self.pos.y + self.size.y - 5),
+                Vec2::new(cursor_x, self.pos.y as f32 + 4.0),
+                Vec2::new(cursor_x, self.pos.y as f32 + self.size.y as f32 - 5.0),
                 Rgb::new(0x58, 0xD9, 0xFF),
                 2,
             );
@@ -1065,6 +1066,7 @@ impl IcApp for ColorCalculator {
             12.0,
             8.0,
             2.0,
+            2.0,
             rgb8_hex(0xFFFFFF),
             FontId::Futural
         );
@@ -1074,6 +1076,7 @@ impl IcApp for ColorCalculator {
             13.0,
             24.0,
             1.0,
+            2.0,
             rgb8_hex(0x6F829E),
             FontId::Futural
         );
@@ -1093,37 +1096,39 @@ impl IcApp for ColorCalculator {
             51.0,
             47.0,
             2.0,
+            2.0,
             rgb8_hex(0x6F829E),
             FontId::Futural
         );
         self.hex.draw(platform, self.focus == Focus::Hex);
 
         // Section labels.
-        draw_text(platform, "RGB  0.0 — 1.0", 12.0, 79.0, 1.0, rgb8_hex(0x6F829E), FontId::Futural);
-        draw_text(platform, "R", 55.0, 87.0, 1.0, rgb8_hex(0xFF667A), FontId::Futural);
-        draw_text(platform, "G", 132.0, 87.0, 1.0, rgb8_hex(0x62E88B), FontId::Futural);
-        draw_text(platform, "B", 209.0, 87.0, 1.0, rgb8_hex(0x61A9FF), FontId::Futural);
+        draw_text(platform, "RGB  0.0 — 1.0", 12.0, 79.0, 1.0, 2.0, rgb8_hex(0x6F829E), FontId::Futural);
+        draw_text(platform, "R", 55.0, 87.0, 1.0, 2.0, rgb8_hex(0xFF667A), FontId::Futural);
+        draw_text(platform, "G", 132.0, 87.0, 1.0, 2.0, rgb8_hex(0x62E88B), FontId::Futural);
+        draw_text(platform, "B", 209.0, 87.0, 1.0, 2.0, rgb8_hex(0x61A9FF), FontId::Futural);
 
         self.r.draw(platform, self.focus == Focus::R);
         self.g.draw(platform, self.focus == Focus::G);
         self.b.draw(platform, self.focus == Focus::B);
 
-        draw_text(platform, "HSV  H 0—360   S/V 0—100", 12.0, 135.0, 1.0, rgb8_hex(0x6F829E), FontId::Futural);
-        draw_text(platform, "H", 55.0, 143.0, 1.0, rgb8_hex(0xFFB84D), FontId::Futural);
-        draw_text(platform, "S", 132.0, 143.0, 1.0, rgb8_hex(0xD28CFF), FontId::Futural);
-        draw_text(platform, "V", 209.0, 143.0, 1.0, rgb8_hex(0xFFFFFF), FontId::Futural);
+        draw_text(platform, "HSV  H 0—360   S/V 0—100", 12.0, 135.0, 1.0, 2.0, rgb8_hex(0x6F829E), FontId::Futural);
+        draw_text(platform, "H", 55.0, 143.0, 1.0, 2.0, rgb8_hex(0xFFB84D), FontId::Futural);
+        draw_text(platform, "S", 132.0, 143.0, 1.0, 2.0, rgb8_hex(0xD28CFF), FontId::Futural);
+        draw_text(platform, "V", 209.0, 143.0, 1.0, 2.0, rgb8_hex(0xFFFFFF), FontId::Futural);
 
         self.h.draw(platform, self.focus == Focus::H);
         self.s.draw(platform, self.focus == Focus::S);
         self.v.draw(platform, self.focus == Focus::V);
 
         // Footer / current color readout.
-        draw_text(platform, "CURRENT", 12.0, 190.0, 1.0, rgb8_hex(0x6F829E), FontId::Futural);
+        draw_text(platform, "CURRENT", 12.0, 190.0, 1.0, 2.0, rgb8_hex(0x6F829E), FontId::Futural);
         draw_text_f(
             platform,
             format_args!("#{:06X}", rgb),
             12.0,
             201.0,
+            2.0,
             2.0,
             rgb8_hex(0xFFFFFF),
             FontId::Futural
@@ -1135,6 +1140,7 @@ impl IcApp for ColorCalculator {
             12.0,
             225.0,
             1.0,
+            2.0,
             rgb8_hex(0x52627A),
             FontId::Futural
         );

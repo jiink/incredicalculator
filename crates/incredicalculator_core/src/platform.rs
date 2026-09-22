@@ -1,4 +1,4 @@
-use glam::IVec2;
+use glam::{IVec2, Vec2};
 use rgb::*;
 use core::fmt;
 
@@ -6,7 +6,7 @@ pub const CANVAS_WIDTH: u32 = 320;
 pub const CANVAS_HEIGHT: u32 = 240;
 
 pub trait IcPlatform {
-    fn draw_line(&mut self, start: IVec2, end: IVec2, color: RGB8, width: u32);
+    fn draw_line(&mut self, start: Vec2, end: Vec2, color: RGB8, width: u32);
     fn draw_rectangle(&mut self, start: IVec2, end: IVec2, stroke_color: RGB8, stroke_width: u32, fill_color: Option<RGB8>);
     fn draw_rectangle_rounded(
         &mut self,

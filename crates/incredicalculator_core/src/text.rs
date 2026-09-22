@@ -13,7 +13,8 @@
 
 use core::fmt;
 
-use glam::IVec2;
+use glam::{IVec2, Vec2};
+use num_traits::ToPrimitive;
 use rgb::*;
 use num_traits::float::FloatCore;
 use core::cmp;
@@ -62,8 +63,8 @@ fn draw_stroke_point(
     // supplied. A tiny line gives standalone Hershey points visible output.
     let half = (thickness.max(1) as f32) * 0.5;
     platform.draw_line(
-        IVec2::new((sx - half).round() as i32, (sy - half).round() as i32),
-        IVec2::new((sx + half).round() as i32, (sy + half).round() as i32),
+        Vec2::new(sx - half, sy - half),
+        Vec2::new(sx + half, sy + half),
         color,
         thickness.max(1),
     );
@@ -87,18 +88,19 @@ pub fn draw_text(
     x: f32,
     y: f32,
     scale: f32,
+    thickness: f32,
     color: RGB8,
     font_id: fonts::FontId,
 ) {
     let font = fonts::get_font(font_id);
-    if scale <= 0.0 {
+    let font_scale = scale / font.units_per_em;
+    if font_scale <= 0.0 {
         return;
     }
 
     let mut current_x = x;
     let mut current_y = y;
-    let line_height = font.line_height as f32 * scale;
-    let thickness = scale.round().max(1.0) as u32;
+    let line_height = font.line_height as f32 * font_scale;
 
     for c in text.bytes() {
         if c == b'\n' {
@@ -112,11 +114,11 @@ pub fn draw_text(
         }
 
         let glyph = get_glyph(font, c);
-        let advance_x = glyph_advance(font, c, glyph) * scale;
+        let advance_x = glyph_advance(font, c, glyph) * font_scale;
 
         // Same left-bearing behavior as your C++ renderer:
         // current_x is the left edge of the glyph cell.
-        let x_offset = -(glyph.left as f32) * scale;
+        let x_offset = -(glyph.left as f32) * font_scale;
 
         let mut pen_down = false;
         let mut last_sx = 0.0_f32;
@@ -128,15 +130,15 @@ pub fn draw_text(
                 continue;
             }
 
-            let sx = current_x + x_offset + vertex.x as f32 * scale;
-            let sy = current_y + vertex.y as f32 * scale;
+            let sx = current_x + x_offset + vertex.x as f32 * font_scale;
+            let sy = current_y + vertex.y as f32 * font_scale;
 
             if pen_down {
                 platform.draw_line(
-                    IVec2::new(last_sx.round() as i32, last_sy.round() as i32),
-                    IVec2::new(sx.round() as i32, sy.round() as i32),
+                    Vec2::new(last_sx, last_sy),
+                    Vec2::new(sx, sy),
                     color,
-                    thickness,
+                    thickness as u32,
                 );
             } else {
                 // Draw isolated points only when this vertex is a one-point
@@ -146,7 +148,7 @@ pub fn draw_text(
                     !is_last && glyph.vertices[index + 1] == HERSHEY_LIFT;
 
                 if glyph.vertices.len() == 1 || is_last || next_is_lift {
-                    draw_stroke_point(platform, sx, sy, color, thickness);
+                    draw_stroke_point(platform, sx, sy, color, thickness as u32);
                 }
             }
 
@@ -166,13 +168,14 @@ pub fn draw_text_f(
     x: f32,
     y: f32,
     scale: f32,
+    thickness: f32,
     color: RGB8,
     font_id: fonts::FontId,
 ) {
     let mut buf = [0u8; 128];
 
     let text = format_no_std::show(&mut buf, arg).unwrap();
-    draw_text(platform, text, x, y, scale, color, font_id);
+    draw_text(platform, text, x, y, scale, thickness, color, font_id);
 }
 
 /// Return the X position after `cursor` characters.

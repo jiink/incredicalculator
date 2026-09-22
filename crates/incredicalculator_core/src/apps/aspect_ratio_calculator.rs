@@ -1,5 +1,5 @@
 use crate::{audio_engine, input::IcKey};
-use glam::IVec2;
+use glam::{IVec2, Vec2};
 use num_traits::{abs, clamp_max};
 use rgb::{RGB8};
 use num_traits::float::FloatCore;
@@ -48,6 +48,7 @@ impl NumInputBox {
             (self.pos.x + margin) as f32,
             (self.pos.y + margin) as f32,
             4.0,
+            2.0,
             RGB8::new(0, 0, 0),
             FontId::Futural
         );
@@ -267,14 +268,14 @@ impl AspectRatioCalculator {
             Some(base_col),
         );
         platform.draw_line(
-            IVec2::new(center_x - 1, top_left.y - 5),
-            antenna_l_pos,
+            Vec2::new(center_x as f32 - 1.0, top_left.y as f32 - 5.0),
+            Vec2::new(antenna_l_pos.x as f32, antenna_l_pos.y as f32),
             base_col,
             2,
         );
         platform.draw_line(
-            IVec2::new(center_x + 1, top_left.y - 5),
-            antenna_r_pos,
+            Vec2::new(center_x as f32 + 1.0, top_left.y as f32 - 5.0),
+            Vec2::new(antenna_r_pos.x as f32, antenna_r_pos.y as f32),
             base_col,
             2,
         );
@@ -403,6 +404,7 @@ impl IcApp for AspectRatioCalculator {
             10.0,
             10.0,
             2.0,
+            2.0,
             RGB8::new(0, 0, 0),
             FontId::Futural
         );
@@ -412,26 +414,26 @@ impl IcApp for AspectRatioCalculator {
         self.input_box_height2.draw(platform);
         self.get_focused_input_box().draw_highlight(platform);
         platform.draw_line(
-            IVec2::new(152, 83),
-            IVec2::new(152 + 17, 83),
+            Vec2::new(152.0, 83.0),
+            Vec2::new((152 + 17) as f32, 83.0),
             RGB8::new(0, 0, 0),
             3,
         );
         platform.draw_line(
-            IVec2::new(152, 93),
-            IVec2::new(152 + 17, 93),
+            Vec2::new(152.0, 93.0),
+            Vec2::new((152 + 17) as f32, 93.0),
             RGB8::new(0, 0, 0),
             3,
         );
         platform.draw_line(
-            IVec2::new(17, 89),
-            IVec2::new(17 + 129, 89),
+            Vec2::new(17.0, 89.0),
+            Vec2::new((17 + 129) as f32, 89.0),
             RGB8::new(0, 0, 0),
             3,
         );
         platform.draw_line(
-            IVec2::new(175, 89),
-            IVec2::new(175 + 129, 89),
+            Vec2::new(175.0, 89.0),
+            Vec2::new((175 + 129) as f32, 89.0),
             RGB8::new(0, 0, 0),
             3,
         );

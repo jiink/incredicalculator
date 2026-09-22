@@ -24,6 +24,7 @@ pub struct HersheyFont {
     pub space_advance: i16,
     pub line_height: i16,
     pub missing_glyph: &'static HersheyGlyph,
+    pub units_per_em: f32,
 }
 
 impl HersheyGlyph {
