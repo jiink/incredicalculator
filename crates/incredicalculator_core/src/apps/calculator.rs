@@ -6,6 +6,7 @@ use crate::platform::IcPlatform;
 use crate::platform::debug_log;
 use crate::platform::{CANVAS_WIDTH, CANVAS_HEIGHT};
 use crate::text::{draw_text, draw_text_f, text_to_pos};
+use crate::fonts::FontId;
 use alloc::boxed::Box;
 use alloc::string::ToString;
 use alloc::{format, string::String};
@@ -216,6 +217,7 @@ impl CalcEngine for ScientificEngine {
                 g: 0x44,
                 b: 0x44,
             },
+            FontId::Futural
         );
     }
 
@@ -456,6 +458,7 @@ impl CalcEngine for ProgrammerEngine {
                         g: 0xff,
                         b: 0xff,
                     },
+                    FontId::Futural
                 );
             }
             // draw bin form of ans
@@ -532,6 +535,7 @@ impl CalcEngine for ProgrammerEngine {
                     g: 0x44,
                     b: 0x44,
                 },
+                FontId::Futural
             );
         }
     }
@@ -869,6 +873,7 @@ impl Calculator {
                             g: 0,
                             b: 0,
                         },
+                        FontId::Futural
                     );
                 }
             }
@@ -883,6 +888,7 @@ impl Calculator {
                     g: 0x99,
                     b: 0x99,
                 },
+                FontId::Futural
             );
             let ans_disp =
                 core::str::from_utf8(&entry.result[..entry.result_len]).unwrap_or("Invalid UTF-8");
@@ -897,6 +903,7 @@ impl Calculator {
                     g: 0x99,
                     b: 0x99,
                 },
+                FontId::Futural
             );
             draw_text(
                 platform,
@@ -909,6 +916,7 @@ impl Calculator {
                     g: 0xff,
                     b: 0x00,
                 },
+                FontId::Futural
             );
 
             platform.draw_line(
@@ -945,6 +953,7 @@ impl Calculator {
                 g: 0xff,
                 b: 0xff,
             },
+            FontId::Futural
         );
         if self.focused_ui == FocusUi::Equation && self.history_selection.is_none() {
             let mut cursor_x_pos = text_to_pos(
@@ -952,6 +961,7 @@ impl Calculator {
                 margin as f32,
                 eq_scale,
                 self.current_eq.cursor,
+                FontId::Futural
             );
             cursor_x_pos -= 2.0;
             if cursor_x_pos < 2.0 {
@@ -984,6 +994,7 @@ impl Calculator {
                 g: 0xff,
                 b: 0xff,
             },
+            FontId::Futural
         );
         draw_text(
             platform,
@@ -996,6 +1007,7 @@ impl Calculator {
                 g: 0xff,
                 b: 0xff,
             },
+            FontId::Futural
         );
     }
 }

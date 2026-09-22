@@ -3,6 +3,7 @@ use glam::IVec2;
 use num_traits::{abs, clamp_max};
 use rgb::{RGB8};
 use num_traits::float::FloatCore;
+use crate::fonts::FontId;
 
 use crate::{
     app::IcApp,
@@ -48,6 +49,7 @@ impl NumInputBox {
             (self.pos.y + margin) as f32,
             4.0,
             RGB8::new(0, 0, 0),
+            FontId::Futural
         );
     }
     fn draw_highlight(&mut self, platform: &mut dyn crate::platform::IcPlatform) {
@@ -402,6 +404,7 @@ impl IcApp for AspectRatioCalculator {
             10.0,
             2.0,
             RGB8::new(0, 0, 0),
+            FontId::Futural
         );
         self.input_box_width1.draw(platform);
         self.input_box_height1.draw(platform);

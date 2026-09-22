@@ -2,6 +2,7 @@ use crate::app::IcApp;
 use crate::app::InputContext;
 use crate::apps::AspectRatioCalculator;
 use crate::apps::Calculator;
+use crate::apps::ColorCalculator;
 use crate::apps::SoundTest;
 use crate::apps::{ RangeMapperCalculator, FaceCalculator };
 use crate::audio_engine::AudioEngine;
@@ -11,6 +12,7 @@ use crate::input::KeyState;
 use crate::platform::{IcPlatform, CANVAS_WIDTH, CANVAS_HEIGHT};
 use crate::platform::rgb8_hex;
 use crate::text::*;
+use crate::fonts::FontId;
 use crate::audio_engine;
 use alloc::boxed::Box;
 use alloc::sync::Arc;
@@ -27,7 +29,7 @@ pub enum Adjustable {
 }
 
 pub struct IcShell {
-    apps: [Box<dyn IcApp>; 5], // INCREASE THIS SIZE WHEN ADDING NEW APPS
+    apps: [Box<dyn IcApp>; 6], // INCREASE THIS SIZE WHEN ADDING NEW APPS
     active_app_idx: Option<usize>,
     last_active_app_idx: Option<usize>,
     key_states: [KeyState; IcKey::COUNT],
@@ -44,7 +46,8 @@ impl IcShell {
                 Box::new(AspectRatioCalculator::new()),
                 Box::new(RangeMapperCalculator::new()),
                 Box::new(FaceCalculator::new()),
-                Box::new(SoundTest::new())
+                Box::new(SoundTest::new()),
+                Box::new(ColorCalculator::new()),
             ],
             active_app_idx: Some(0),
             last_active_app_idx: None,
@@ -189,7 +192,8 @@ impl IcShell {
             start.x as f32 + 3.0,    
             start.y as f32 - 20.0,    
             2.5, 
-            rgb8_hex(0xFFFFFF)        
+            rgb8_hex(0xFFFFFF),
+            FontId::Futural
         );
     }
 
@@ -256,6 +260,7 @@ impl IcShell {
                     IcKey::Num2 => Some(2),
                     IcKey::Num3 => Some(3),
                     IcKey::Num4 => Some(4),
+                    IcKey::Num5 => Some(5),
                     _ => None
                 };
                 if let Some(idx) = selected_app_i {
@@ -288,6 +293,7 @@ impl IcShell {
                     4.0 + (20 * i) as f32,
                     2.0,
                     rgb8_hex(0x000000),
+                    FontId::Futural
                 );
             }
         }

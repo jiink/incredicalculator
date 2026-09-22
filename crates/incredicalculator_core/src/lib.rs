@@ -11,3 +11,4 @@ pub mod platform;
 pub mod shell;
 pub mod audio_engine;
 mod text;
+mod fonts;

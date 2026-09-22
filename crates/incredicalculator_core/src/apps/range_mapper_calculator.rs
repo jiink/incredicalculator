@@ -6,6 +6,7 @@ use crate::{
     platform::{IcPlatform, rgb8_hex},
     text::{draw_text, draw_text_f},
 };
+use crate::fonts::FontId;
 use glam::IVec2;
 use rgb::{Rgb};
 
@@ -141,8 +142,9 @@ impl ExpressionInputBox {
             text_y,
             text_scale,
             rgb8_hex(if has_focus { 0x000000 } else { 0xffffff }),
+            FontId::Futural
         );
-        let cursor_x = text_to_pos(&display_text, text_x, text_scale, self.expression.cursor);
+        let cursor_x = text_to_pos(&display_text, text_x, text_scale, self.expression.cursor, FontId::Futural);
         if has_focus {
             platform.draw_line(
                 IVec2::new(cursor_x as i32 - 3, text_y as i32 - 5),
@@ -371,11 +373,12 @@ impl IcApp for RangeMapperCalculator {
             155.0,
             4.0,
             rgb8_hex(0xffffff),
+            FontId::Futural
         );
-        draw_text(platform, "Map", 7.0, 19.0, 2.0, rgb8_hex(0xffffff));
-        draw_text(platform, "from", 6.0, 68.0, 2.0, rgb8_hex(0xffffff));
-        draw_text(platform, "to", 28.0, 114.0, 2.0, rgb8_hex(0xffffff));
-        draw_text(platform, "=", 32.0, 162.0, 2.0, rgb8_hex(0xffffff));
+        draw_text(platform, "Map", 7.0, 19.0, 2.0, rgb8_hex(0xffffff), FontId::Futural);
+        draw_text(platform, "from", 6.0, 68.0, 2.0, rgb8_hex(0xffffff), FontId::Futural);
+        draw_text(platform, "to", 28.0, 114.0, 2.0, rgb8_hex(0xffffff), FontId::Futural);
+        draw_text(platform, "=", 32.0, 162.0, 2.0, rgb8_hex(0xffffff), FontId::Futural);
         draw_text(
             platform,
             "X = C + ((X-A)*(D-C) / B-A)",
@@ -383,6 +386,7 @@ impl IcApp for RangeMapperCalculator {
             207.0,
             2.0,
             rgb8_hex(0x3A9AFF),
+            FontId::Futural
         )
     }
 }

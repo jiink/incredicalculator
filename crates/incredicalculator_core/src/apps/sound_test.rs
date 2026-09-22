@@ -2,6 +2,7 @@ use crate::app::{IcApp, InputContext};
 use crate::audio_engine::{AudioEngine, AudioPatch, NoteId};
 use crate::input::IcKey;
 use crate::text;
+use crate::fonts::FontId;
 use rgb::RGB8;
 
 const SOUND_TEST_SOURCE_BASE: u32 = 0x534f_0000;
@@ -105,6 +106,7 @@ impl IcApp for SoundTest {
             4.0,
             3.0,
             RGB8::new(0, 0, 0),
+            FontId::Futural
         );
         text::draw_text_f(
             platform,
@@ -116,6 +118,7 @@ impl IcApp for SoundTest {
             28.0,
             2.0,
             RGB8::new(0, 0, 0),
+            FontId::Futural
         );
         text::draw_text_f(
             platform,
@@ -124,6 +127,7 @@ impl IcApp for SoundTest {
             48.0,
             2.0,
             RGB8::new(0, 0, 0),
+            FontId::Futural
         );
         text::draw_text_f(
             platform,
@@ -132,6 +136,7 @@ impl IcApp for SoundTest {
             68.0,
             2.0,
             RGB8::new(0, 0, 0),
+            FontId::Futural
         );
         text::draw_text_f(
             platform,
@@ -144,6 +149,7 @@ impl IcApp for SoundTest {
             88.0,
             2.0,
             RGB8::new(0, 0, 0),
+            FontId::Futural
         );
     }
 
