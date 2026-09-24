@@ -452,8 +452,8 @@ impl CalcEngine for ProgrammerEngine {
                     platform,
                     &result_as_hex,
                     margin as f32,
-                    222.0,
-                    2.0,
+                    228.0,
+                    7.0,
                     2.0,
                     Rgb {
                         r: 0x00,
@@ -945,17 +945,17 @@ impl Calculator {
         let equation_disp = core::str::from_utf8(&self.current_eq.data[..self.current_eq.len])
             .unwrap_or("Invalid UTF-8");
         let eq_scale = match self.current_eq.len {
-            x if x > 12 => 2.0,
-            _ => 4.0,
+            x if x > 12 => 5.0,
+            _ => 10.0,
         };
-        let eq_y: f32 = 154.0;
+        let eq_y: f32 = 164.0;
         draw_text(
             platform,
             &equation_disp,
             margin as f32,
             eq_y,
             eq_scale,
-            2.0,
+            3.0,
             Rgb {
                 r: 0xff,
                 g: 0xff,
@@ -988,8 +988,8 @@ impl Calculator {
         let result_disp = core::str::from_utf8(&self.current_result[..self.current_result_len])
             .unwrap_or("Invalid UTF-8");
         let ans_scale = match self.current_result_len {
-            x if x > 12 => 2.0,
-            _ => 4.0,
+            x if x > 12 => 8.0,
+            _ => 10.0,
         };
         draw_text(
             platform,
@@ -997,7 +997,7 @@ impl Calculator {
             margin as f32,
             eq_y + 31.0,
             ans_scale,
-            2.0,
+            1.0,
             Rgb {
                 r: 0xff,
                 g: 0xff,
@@ -1011,7 +1011,7 @@ impl Calculator {
             (margin + 24) as f32,
             eq_y + 31.0,
             ans_scale,
-            2.0,
+            4.0,
             Rgb {
                 r: 0xff,
                 g: 0xff,
