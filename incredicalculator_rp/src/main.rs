@@ -431,16 +431,23 @@ impl<'d> IcPlatform for IcRpPlatform<'d> {
 // Anti-aliased line rendering into the RGB565 buffer
 // ---------------------------------------------------------------------------
 
-fn blend_rgb565(dst: Rgb565, src: Rgb565, alpha: u8) -> Rgb565 {
-    if alpha == 0 { return dst; }
-    if alpha == 255 { return src; }
+fn blend_rgb565(dst_be: Rgb565, src_native: Rgb565, alpha: u8) -> Rgb565 {
+    if alpha == 0 { return dst_be; }
 
     let alpha = alpha as u32;
     let inv_alpha = 255u32 - alpha;
 
-    // Convert dst pixel from display byte order (Big-Endian) to native integer
-    let dst_u16 = u16::from_be(unsafe { core::mem::transmute::<Rgb565, u16>(dst) });
-    let src_u16 = u16::from_be(unsafe { core::mem::transmute::<Rgb565, u16>(src) });
+    // `dst_be` is already Big-Endian in the framebuffer; convert to native u16
+    let dst_u16 = u16::from_be(unsafe { core::mem::transmute::<Rgb565, u16>(dst_be) });
+    
+    // `src_native` is Native-Endian from Rgb565::new(); convert directly to u16
+    let src_u16 = unsafe { core::mem::transmute::<Rgb565, u16>(src_native) };
+
+    if alpha == 255 {
+        // Fast-path full opacity: return source converted to Big-Endian
+        let out_be = src_u16.to_be();
+        return unsafe { core::mem::transmute::<u16, Rgb565>(out_be) };
+    }
 
     // Extract 5-bit Red, 6-bit Green, 5-bit Blue components
     let dst_r = ((dst_u16 >> 11) & 0x1F) as u32;
@@ -451,7 +458,7 @@ fn blend_rgb565(dst: Rgb565, src: Rgb565, alpha: u8) -> Rgb565 {
     let src_g = ((src_u16 >> 5) & 0x3F) as u32;
     let src_b = (src_u16 & 0x1F) as u32;
 
-    // Expand to 8-bit precision for accurate linear blending
+    // Expand to 8-bit precision for linear blending
     let dst_r8 = (dst_r << 3) | (dst_r >> 2);
     let dst_g8 = (dst_g << 2) | (dst_g >> 4);
     let dst_b8 = (dst_b << 3) | (dst_b >> 2);
@@ -465,12 +472,12 @@ fn blend_rgb565(dst: Rgb565, src: Rgb565, alpha: u8) -> Rgb565 {
     let g8 = (dst_g8 * inv_alpha + src_g8 * alpha) / 255;
     let b8 = (dst_b8 * inv_alpha + src_b8 * alpha) / 255;
 
-    // Reconstruct 16-bit RGB565 integer
+    // Reconstruct native 16-bit RGB565 integer
     let blended_u16 = (((r8 >> 3) as u16) << 11) 
                     | (((g8 >> 2) as u16) << 5) 
                     | ((b8 >> 3) as u16);
 
-    // Convert back to display Big-Endian byte order
+    // Convert back to Big-Endian for display buffer storage
     let out_be = blended_u16.to_be();
     unsafe { core::mem::transmute::<u16, Rgb565>(out_be) }
 }
@@ -869,10 +876,7 @@ impl<'d> KeyMatrix<'d> {
 }
 
 fn rgbu8_to_rgb565(rgbu8_col: rgb::Rgb<u8>) -> Rgb565 {
-    let native = Rgb565::new(rgbu8_col.r >> 3, rgbu8_col.g >> 2, rgbu8_col.b >> 3);
-    let native_u16 = unsafe { core::mem::transmute::<Rgb565, u16>(native) };
-    let be_u16 = native_u16.to_be();
-    unsafe { core::mem::transmute::<u16, Rgb565>(be_u16) }
+    Rgb565::new(rgbu8_col.r >> 3, rgbu8_col.g >> 2, rgbu8_col.b >> 3)
 }
 
 fn reboot_into_bootloader() {
