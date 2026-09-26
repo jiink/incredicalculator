@@ -530,6 +530,7 @@ use glam::{IVec2, Vec2};
 use rgb::Rgb;
 use alloc::format;
 use crate::fonts::FontId;
+use num_traits::float::FloatCore;
 
 // Based on the input/editing pattern used by the example Range Mapper app.
 // The original uses fixed-size LineBuffers, focus cycling with Enter, and
