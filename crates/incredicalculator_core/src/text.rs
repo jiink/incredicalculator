@@ -190,7 +190,9 @@ pub fn text_to_pos(
     font_id: fonts::FontId,
 ) -> f32 {
     let font = fonts::get_font(font_id);
-    if scale <= 0.0 || cursor == 0 {
+    let font_scale = scale / font.units_per_em;
+
+    if font_scale <= 0.0 || cursor == 0 {
         return x;
     }
 
@@ -209,7 +211,7 @@ pub fn text_to_pos(
         }
 
         let glyph = get_glyph(font, c);
-        let advance_x = glyph_advance(font, c, glyph) * scale;
+        let advance_x = glyph_advance(font, c, glyph) * font_scale; // Fixed!
 
         current_x += advance_x;
         counter += 1;
@@ -218,6 +220,5 @@ pub fn text_to_pos(
             return current_x;
         }
     }
-
     current_x
 }

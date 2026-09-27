@@ -86,6 +86,12 @@ enum EngineMode {
 }
 
 const EQ_HISTORY_MAX: usize = 4;
+const LOCAL_COLOR_BG_0: RGB8 = Rgb { r: 40, g: 41, b: 35 };
+const LOCAL_COLOR_FG_0: RGB8 = Rgb { r: 255, g: 255, b: 255 };
+const LOCAL_COLOR_FG_SUBTLE_0: RGB8 = Rgb { r: 116, g: 112, b: 93 };
+const LOCAL_COLOR_FG_EMPH_0: RGB8 = Rgb { r: 103, g: 216, b: 239 };
+const LOCAL_COLOR_FG_EMPH_1: RGB8 = Rgb { r: 231, g: 219, b: 116 };
+const LOCAL_COLOR_FG_EMPH_2: RGB8 = Rgb { r: 249, g: 36, b: 114 };
 
 struct LineBuffer<const N: usize> {
     pub data: [u8; N],
@@ -213,11 +219,7 @@ impl CalcEngine for ScientificEngine {
             222.0,
             2.0,
             2.0,
-            Rgb {
-                r: 0x44,
-                g: 0x44,
-                b: 0x44,
-            },
+            LOCAL_COLOR_FG_SUBTLE_0,
             FontId::Futural
         );
     }
@@ -306,7 +308,7 @@ impl CalcEngine for ScientificEngine {
     }
     
     fn get_color(&self) -> RGB8 {
-        RGB8::new(0x20, 0, 0)
+        LOCAL_COLOR_BG_0
     }
 }
 
@@ -455,11 +457,7 @@ impl CalcEngine for ProgrammerEngine {
                     228.0,
                     7.0,
                     2.0,
-                    Rgb {
-                        r: 0x00,
-                        g: 0xff,
-                        b: 0xff,
-                    },
+                    LOCAL_COLOR_FG_EMPH_0,
                     FontId::Futural
                 );
             }
@@ -483,24 +481,12 @@ impl CalcEngine for ProgrammerEngine {
                 let bit_val: bool = (result_as_int >> i) & 1 != 0;
                 let color: Rgb<u8> = if is_focused {
                     if i == self.binary_selection_idx as i32 {
-                        Rgb {
-                            r: 0xff,
-                            g: 0xff,
-                            b: 0x00,
-                        }
+                        LOCAL_COLOR_FG_0
                     } else {
-                        Rgb {
-                            r: 0x00,
-                            g: 0xaa,
-                            b: 0x11,
-                        }
+                        LOCAL_COLOR_FG_SUBTLE_0
                     }
                 } else {
-                    Rgb {
-                        r: 0xff,
-                        g: 0xff,
-                        b: 0x00,
-                    }
+                    LOCAL_COLOR_FG_EMPH_1
                 };
                 if bit_val {
                     platform.draw_line(
@@ -531,13 +517,9 @@ impl CalcEngine for ProgrammerEngine {
                 "Programmer",
                 margin as f32,
                 222.0,
+                10.0,
                 2.0,
-                2.0,
-                Rgb {
-                    r: 0x44,
-                    g: 0x44,
-                    b: 0x44,
-                },
+                LOCAL_COLOR_FG_SUBTLE_0,
                 FontId::Futural
             );
         }
@@ -614,7 +596,7 @@ impl CalcEngine for ProgrammerEngine {
     }
 
     fn get_color(&self) -> RGB8 {
-        RGB8::new(0, 0x20, 0x20)
+        RGB8::new(40, 41, 35)
     }
 }
 
@@ -851,6 +833,8 @@ impl Calculator {
             let y = base_y + margin - draw_row * row_height;
             let line_height: u32 = 20;
             let y2 = base_y + line_height + margin - draw_row * row_height;
+            let mut h_exp_col = LOCAL_COLOR_FG_SUBTLE_0;
+            let mut h_ans_col = LOCAL_COLOR_FG_EMPH_1;
             if let Some(selection) = self.history_selection {
                 let y_pos = match selection.part {
                     EqEntryPart::Equation => y,
@@ -863,22 +847,20 @@ impl Calculator {
                         IVec2::new(CANVAS_WIDTH as i32, y_pos as i32 + line_height as i32 - 5),
                         Rgb::new(0, 0, 0),
                         0,
-                        Some(Rgb::new(0, 0, 255)),
+                        Some(LOCAL_COLOR_FG_EMPH_2),
                     );
                     draw_text(
                         platform,
-                        "\x03",
+                        "*",
                         (CANVAS_WIDTH - margin - 9) as f32,
-                        y_pos as f32,
+                        y_pos as f32 + 4.0,
                         font_size,
                         2.0,
-                        Rgb {
-                            r: 0xff,
-                            g: 0,
-                            b: 0,
-                        },
+                        LOCAL_COLOR_BG_0,
                         FontId::Futural
                     );
+                    h_exp_col = LOCAL_COLOR_FG_0;
+                    h_ans_col = LOCAL_COLOR_FG_0;
                 }
             }
             draw_text(
@@ -888,11 +870,7 @@ impl Calculator {
                 y as f32 + 8.0,
                 font_size,
                 2.0,
-                Rgb {
-                    r: 0x99,
-                    g: 0x99,
-                    b: 0x99,
-                },
+                h_exp_col,
                 FontId::Futural
             );
             let ans_disp =
@@ -904,11 +882,7 @@ impl Calculator {
                 y2 as f32 + 6.0,
                 font_size,
                 2.0,
-                Rgb {
-                    r: 0x99,
-                    g: 0x99,
-                    b: 0x99,
-                },
+                h_exp_col,
                 FontId::Futural
             );
             draw_text(
@@ -918,22 +892,14 @@ impl Calculator {
                 y2 as f32 + 6.0,
                 font_size,
                 2.0,
-                Rgb {
-                    r: 0xff,
-                    g: 0xff,
-                    b: 0x00,
-                },
+                h_ans_col,
                 FontId::Futural
             );
 
             platform.draw_line(
                 Vec2::new(margin as f32, (y2 + 16) as f32),
                 Vec2::new((CANVAS_WIDTH - margin) as f32, (y2 + 16) as f32),
-                Rgb {
-                    r: 0x80,
-                    g: 0x80,
-                    b: 0x80,
-                },
+                LOCAL_COLOR_FG_SUBTLE_0,
                 2,
             );
             draw_row += 1;
@@ -956,11 +922,7 @@ impl Calculator {
             eq_y,
             eq_scale,
             3.0,
-            Rgb {
-                r: 0xff,
-                g: 0xff,
-                b: 0xff,
-            },
+            LOCAL_COLOR_FG_0,
             FontId::Futural
         );
         if self.focused_ui == FocusUi::Equation && self.history_selection.is_none() {
@@ -976,9 +938,9 @@ impl Calculator {
                 cursor_x_pos = 2.0;
             }
             platform.draw_line(
-                Vec2::new(cursor_x_pos - 3.0, eq_y - 5.0),
-                Vec2::new(cursor_x_pos - 3.0, eq_y + 30.0),
-                Rgb::new(0xff, 0xff, 0x44),
+                Vec2::new(cursor_x_pos + 5.0, eq_y - 16.0),
+                Vec2::new(cursor_x_pos + 5.0, eq_y + 13.0),
+                LOCAL_COLOR_FG_EMPH_2,
                 2,
             );
         }
@@ -997,12 +959,8 @@ impl Calculator {
             margin as f32,
             eq_y + 31.0,
             ans_scale,
-            1.0,
-            Rgb {
-                r: 0xff,
-                g: 0xff,
-                b: 0xff,
-            },
+            2.0,
+            LOCAL_COLOR_FG_EMPH_2,
             FontId::Futural
         );
         draw_text(
@@ -1012,11 +970,7 @@ impl Calculator {
             eq_y + 31.0,
             ans_scale,
             4.0,
-            Rgb {
-                r: 0xff,
-                g: 0xff,
-                b: 0xff,
-            },
+            LOCAL_COLOR_FG_0,
             FontId::Futural
         );
     }

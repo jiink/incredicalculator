@@ -353,37 +353,6 @@ impl<'d> IcPlatform for IcRpPlatform<'d> {
         .into_styled(style).draw(&mut fbuf).unwrap();
     }
 
-    fn draw_string(&mut self, text: &str, pos: IVec2, _size: u32, color: RGB8) {
-        let mut fbuf = RawFrameBuf::<Rgb565, _>::new(
-            &mut self.canvas_data_mut()[..],
-            RENDER_W as usize,
-            RENDER_H as usize,
-        );
-        
-        // using a BUILT-IN FONT!
-        let char_style = embedded_graphics::mono_font::MonoTextStyle::new(
-            &embedded_graphics::mono_font::ascii::FONT_10X20,
-            rgbu8_to_rgb565(color)
-        );
-        let text_style = embedded_graphics::text::TextStyleBuilder::new()
-        .alignment(embedded_graphics::text::Alignment::Left)
-        .baseline(embedded_graphics::text::Baseline::Top)
-        .build();
-        embedded_graphics::text::Text::with_text_style(
-            text,
-            embedded_graphics::prelude::Point::new(pos.x, pos.y),
-            char_style,
-            text_style,
-        )
-        .draw(&mut fbuf)
-        .unwrap();
-    }
-
-    fn draw_string_f(&mut self, arg: fmt::Arguments, pos: IVec2, size: u32, color: RGB8) {
-        let mut buf = [0u8; 128];
-        self.draw_string(format_no_std::show(&mut buf, arg).unwrap(), pos, size, color);
-    }
-
     fn clear(&mut self, color: RGB8) {
         let mut fbuf = RawFrameBuf::<Rgb565, _>::new(
             &mut self.canvas_data_mut()[..],
@@ -399,8 +368,12 @@ impl<'d> IcPlatform for IcRpPlatform<'d> {
         Instant::now().as_millis()
     }
     
-    fn get_battery_soc(&self) -> i32 {
-        BATTERY_SOC.load(core::sync::atomic::Ordering::Relaxed)
+    fn get_battery_soc(&self) -> Option<i32> {
+        let s = BATTERY_SOC.load(core::sync::atomic::Ordering::Relaxed);
+        match s {
+            0.. => Some(s),
+            _ => None
+        }
     }
     
     fn get_brightness(&self) -> u8 {
@@ -427,29 +400,17 @@ impl<'d> IcPlatform for IcRpPlatform<'d> {
 }
 
 
-// ---------------------------------------------------------------------------
-// Anti-aliased line rendering into the RGB565 buffer
-// ---------------------------------------------------------------------------
-
 fn blend_rgb565(dst_be: Rgb565, src_native: Rgb565, alpha: u8) -> Rgb565 {
     if alpha == 0 { return dst_be; }
 
     let alpha = alpha as u32;
     let inv_alpha = 255u32 - alpha;
-
-    // `dst_be` is already Big-Endian in the framebuffer; convert to native u16
     let dst_u16 = u16::from_be(unsafe { core::mem::transmute::<Rgb565, u16>(dst_be) });
-    
-    // `src_native` is Native-Endian from Rgb565::new(); convert directly to u16
     let src_u16 = unsafe { core::mem::transmute::<Rgb565, u16>(src_native) };
-
     if alpha == 255 {
-        // Fast-path full opacity: return source converted to Big-Endian
         let out_be = src_u16.to_be();
         return unsafe { core::mem::transmute::<u16, Rgb565>(out_be) };
     }
-
-    // Extract 5-bit Red, 6-bit Green, 5-bit Blue components
     let dst_r = ((dst_u16 >> 11) & 0x1F) as u32;
     let dst_g = ((dst_u16 >> 5) & 0x3F) as u32;
     let dst_b = (dst_u16 & 0x1F) as u32;
@@ -457,27 +418,24 @@ fn blend_rgb565(dst_be: Rgb565, src_native: Rgb565, alpha: u8) -> Rgb565 {
     let src_r = ((src_u16 >> 11) & 0x1F) as u32;
     let src_g = ((src_u16 >> 5) & 0x3F) as u32;
     let src_b = (src_u16 & 0x1F) as u32;
-
-    // Expand to 8-bit precision for linear blending
+    
     let dst_r8 = (dst_r << 3) | (dst_r >> 2);
     let dst_g8 = (dst_g << 2) | (dst_g >> 4);
     let dst_b8 = (dst_b << 3) | (dst_b >> 2);
-
+    
     let src_r8 = (src_r << 3) | (src_r >> 2);
     let src_g8 = (src_g << 2) | (src_g >> 4);
     let src_b8 = (src_b << 3) | (src_b >> 2);
-
-    // Blend components
+    
     let r8 = (dst_r8 * inv_alpha + src_r8 * alpha) / 255;
     let g8 = (dst_g8 * inv_alpha + src_g8 * alpha) / 255;
     let b8 = (dst_b8 * inv_alpha + src_b8 * alpha) / 255;
 
-    // Reconstruct native 16-bit RGB565 integer
     let blended_u16 = (((r8 >> 3) as u16) << 11) 
                     | (((g8 >> 2) as u16) << 5) 
                     | ((b8 >> 3) as u16);
 
-    // Convert back to Big-Endian for display buffer storage
+    // be stands for big endian
     let out_be = blended_u16.to_be();
     unsafe { core::mem::transmute::<u16, Rgb565>(out_be) }
 }
@@ -567,17 +525,11 @@ fn plot_pixel(buf: &mut [Rgb565], x: i32, y: i32, color: Rgb565, alpha: f32) {
     }
     let idx = (y as usize) * (RENDER_W as usize) + (x as usize);
 
-    // Gamma approximation: squaring alpha tightens the AA edge and removes the
-    // perceptual "fuzzy halo" caused by linear blending in non-linear RGB space.
     let gamma_alpha = alpha * alpha;
     let a = (round_f32(gamma_alpha.min(1.0) * 255.0)) as u8;
 
     buf[idx] = blend_rgb565(buf[idx], color, a);
 }
-
-// ---------------------------------------------------------------------------
-// 1. Xiaolin Wu's Algorithm (Fast & crisp for 1px lines)
-// ---------------------------------------------------------------------------
 
 fn draw_line_wu(
     buf: &mut [Rgb565],
@@ -596,7 +548,6 @@ fn draw_line_wu(
     }
 
     if dx.abs() > dy.abs() {
-        // X-major line
         if x1 > x2 {
             mem::swap(&mut x1, &mut x2);
             mem::swap(&mut y1, &mut y2);
@@ -605,7 +556,6 @@ fn draw_line_wu(
         dy = y2 - y1;
         let gradient = if dx == 0.0 { 1.0 } else { dy / dx };
 
-        // Endpoint 1
         let x_end1 = round_f32(x1);
         let y_end1 = y1 + gradient * (x_end1 - x1);
         let gap1 = rfpart(x1 + 0.5);
@@ -615,7 +565,6 @@ fn draw_line_wu(
         plot_pixel(buf, ix1, iy1 + 1, color,  fpart(y_end1) * gap1);
         let mut inter_y = y_end1 + gradient;
 
-        // Endpoint 2
         let x_end2 = round_f32(x2);
         let y_end2 = y2 + gradient * (x_end2 - x2);
         let gap2 = fpart(x2 + 0.5);
@@ -624,14 +573,12 @@ fn draw_line_wu(
         plot_pixel(buf, ix2, iy2,     color, rfpart(y_end2) * gap2);
         plot_pixel(buf, ix2, iy2 + 1, color,  fpart(y_end2) * gap2);
 
-        // Main span
         for x in (ix1 + 1)..ix2 {
             plot_pixel(buf, x, ipart(inter_y),     color, rfpart(inter_y));
             plot_pixel(buf, x, ipart(inter_y) + 1, color,  fpart(inter_y));
             inter_y += gradient;
         }
     } else {
-        // Y-major line
         if y1 > y2 {
             mem::swap(&mut x1, &mut x2);
             mem::swap(&mut y1, &mut y2);
@@ -640,7 +587,6 @@ fn draw_line_wu(
         dy = y2 - y1;
         let gradient = if dy == 0.0 { 1.0 } else { dx / dy };
 
-        // Endpoint 1
         let y_end1 = round_f32(y1);
         let x_end1 = x1 + gradient * (y_end1 - y1);
         let gap1 = rfpart(y1 + 0.5);
@@ -650,7 +596,6 @@ fn draw_line_wu(
         plot_pixel(buf, ix1 + 1, iy1, color,  fpart(x_end1) * gap1);
         let mut inter_x = x_end1 + gradient;
 
-        // Endpoint 2
         let y_end2 = round_f32(y2);
         let x_end2 = x2 + gradient * (y_end2 - y2);
         let gap2 = fpart(y2 + 0.5);
@@ -659,7 +604,6 @@ fn draw_line_wu(
         plot_pixel(buf, ix2,     iy2, color, rfpart(x_end2) * gap2);
         plot_pixel(buf, ix2 + 1, iy2, color,  fpart(x_end2) * gap2);
 
-        // Main span
         for y in (iy1 + 1)..iy2 {
             plot_pixel(buf, ipart(inter_x),     y, color, rfpart(inter_x));
             plot_pixel(buf, ipart(inter_x) + 1, y, color,  fpart(inter_x));
@@ -667,10 +611,6 @@ fn draw_line_wu(
         }
     }
 }
-
-// ---------------------------------------------------------------------------
-// 2. Distance-field Anti-Aliasing (Solid core, crisp AA edges for thickness > 1)
-// ---------------------------------------------------------------------------
 
 fn draw_line_aa_distance(
     buf: &mut [Rgb565],
@@ -686,7 +626,6 @@ fn draw_line_aa_distance(
     let len2 = vx * vx + vy * vy;
     let radius = thickness * 0.5;
 
-    // Degenerate case: single point / dot
     if len2 < 1e-6 {
         let min_x = (floor_f32(x1 - radius - 1.0) as i32).max(0);
         let max_x = (ceil_f32(x1 + radius + 1.0) as i32).min(RENDER_W as i32 - 1);
@@ -705,7 +644,6 @@ fn draw_line_aa_distance(
         return;
     }
 
-    // Tight bounding box clamped to viewport
     let min_x = (floor_f32(x1.min(x2) - radius - 1.0) as i32).max(0);
     let max_x = (ceil_f32(x1.max(x2) + radius + 1.0) as i32).min(RENDER_W as i32 - 1);
     let min_y = (floor_f32(y1.min(y2) - radius - 1.0) as i32).max(0);
@@ -719,14 +657,12 @@ fn draw_line_aa_distance(
             let cx = px as f32 + 0.5;
             let wx = cx - x1;
 
-            // Project pixel center onto segment: t in [0.0, 1.0]
             let t = ((wx * vx + wy * vy) / len2).clamp(0.0, 1.0);
             let qx = x1 + t * vx;
             let qy = y1 + t * vy;
 
             let dist = hypot_f32(cx - qx, cy - qy);
 
-            // Solid core when dist <= radius - 0.5, AA transition on outer 1px
             let alpha = (radius + 0.5 - dist).clamp(0.0, 1.0);
             plot_pixel(buf, px, py, color, alpha);
         }

@@ -239,37 +239,12 @@ impl IcPlatform for IcRaylibPlatform {
         .unwrap();
     }
 
-    fn draw_string(&mut self, text: &str, pos: IVec2, _size: u32, color: rgb::RGB8) {
-        let mut fbuf = FrameBuf::new(&mut self.canvas_data, RENDER_W as usize, RENDER_H as usize);
-        let char_style = embedded_graphics::mono_font::MonoTextStyle::new(
-            &embedded_graphics::mono_font::ascii::FONT_10X20,
-            rgbu8_to_rgb565(color),
-        );
-        let text_style = embedded_graphics::text::TextStyleBuilder::new()
-            .alignment(embedded_graphics::text::Alignment::Left)
-            .baseline(embedded_graphics::text::Baseline::Top)
-            .build();
-        embedded_graphics::text::Text::with_text_style(
-            text,
-            embedded_graphics::prelude::Point::new(pos.x, pos.y),
-            char_style,
-            text_style,
-        )
-        .draw(&mut fbuf)
-        .unwrap();
-    }
-
-    fn draw_string_f(&mut self, arg: fmt::Arguments, pos: IVec2, size: u32, color: rgb::RGB8) {
-        let mut buf = [0u8; 128];
-        self.draw_string(format_no_std::show(&mut buf, arg).unwrap(), pos, size, color);
-    }
-
     fn millis(&self) -> u64 {
         self.start_time.elapsed().as_millis() as u64
     }
 
-    fn get_battery_soc(&self) -> i32 {
-        77
+    fn get_battery_soc(&self) -> Option<i32> {
+        None
     }
     
     fn get_brightness(&self) -> u8 {

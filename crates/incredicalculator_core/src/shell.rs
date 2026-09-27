@@ -17,6 +17,8 @@ use crate::audio_engine;
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 use glam::IVec2;
+use num_traits::clamp;
+use num_traits::clamp_max;
 use num_traits::FromPrimitive;
 use rgb::Rgb;
 use rgb::*;
@@ -94,11 +96,12 @@ impl IcShell {
     }
 
     fn draw_battery(&mut self, platform: &mut dyn IcPlatform) {
-        let batt_percentage: i32 = platform.get_battery_soc();
+        let soc = platform.get_battery_soc();
+        let batt_percentage = soc.map(|val| clamp(val, 0, 100));
         let batt_icon_pos = IVec2::new(282, 3);
         let batt_icon_w = 34;
         let batt_icon_h = 17;
-        let fill_w = (batt_percentage * batt_icon_w) / 100;
+        let fill_w = (batt_percentage.unwrap_or(100) * batt_icon_w) / 100;
         platform.draw_rectangle(
             batt_icon_pos,
             batt_icon_pos + IVec2::new(batt_icon_w, batt_icon_h),
@@ -106,19 +109,46 @@ impl IcShell {
             0,
             Some(RGB::new(0x80, 0x80, 0x80)),
         );
-        platform.draw_rectangle(
-            batt_icon_pos,
-            batt_icon_pos + IVec2::new(fill_w, batt_icon_h),
-            RGB8::new(0, 0, 0),
-            0,
-            Some(RGB::new(0xff, 0xff, 0xff)),
-        );
-        platform.draw_string_f(
-            format_args!("{}", batt_percentage),
-            IVec2::new(290, 2),
-            4,
-            Rgb::new(0, 0, 0),
-        );
+        if fill_w > 0 {
+            platform.draw_rectangle(
+                batt_icon_pos,
+                batt_icon_pos + IVec2::new(fill_w, batt_icon_h),
+                RGB8::new(0, 0, 0),
+                0,
+                Some(RGB::new(0xff, 0xff, 0xff)),
+            );
+        }
+        match batt_percentage {
+            Some(pct) => {
+                let x_pos = match pct {
+                    100.. => 284.0,
+                    10.. => 290.0,
+                    _ => 295.0,
+                };
+                draw_text_f(
+                    platform,
+                    format_args!("{}", pct),
+                    x_pos,
+                    12.0,
+                    5.0,
+                    2.0,
+                    Rgb::new(0, 0, 0),
+                    FontId::Futural,
+                );
+            }
+            None => {
+                draw_text_f(
+                    platform,
+                    format_args!("N/A"),
+                    284.0,
+                    12.0,
+                    5.0,
+                    2.0,
+                    Rgb::new(0, 0, 0),
+                    FontId::Futural,
+                );
+            }
+        }
     }
 
     fn adjust_adjustable(platform: &mut dyn IcPlatform, adjustable: Adjustable, amount: i32) {
