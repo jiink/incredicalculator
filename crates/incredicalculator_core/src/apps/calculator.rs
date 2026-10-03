@@ -86,12 +86,37 @@ enum EngineMode {
 }
 
 const EQ_HISTORY_MAX: usize = 4;
-const LOCAL_COLOR_BG_0: RGB8 = Rgb { r: 40, g: 41, b: 35 };
-const LOCAL_COLOR_FG_0: RGB8 = Rgb { r: 255, g: 255, b: 255 };
-const LOCAL_COLOR_FG_SUBTLE_0: RGB8 = Rgb { r: 116, g: 112, b: 93 };
-const LOCAL_COLOR_FG_EMPH_0: RGB8 = Rgb { r: 103, g: 216, b: 239 };
-const LOCAL_COLOR_FG_EMPH_1: RGB8 = Rgb { r: 231, g: 219, b: 116 };
-const LOCAL_COLOR_FG_EMPH_2: RGB8 = Rgb { r: 249, g: 36, b: 114 };
+
+#[derive(Clone, Copy)]
+struct CalculatorTheme {
+    background: RGB8,
+    foreground: RGB8,
+    subtle: RGB8,
+    emphasis_0: RGB8,
+    emphasis_1: RGB8,
+    emphasis_2: RGB8,
+    icon: RGB8,
+}
+
+const PROGRAMMER_THEME: CalculatorTheme = CalculatorTheme {
+    background: Rgb { r: 40, g: 41, b: 35 },
+    foreground: Rgb { r: 255, g: 255, b: 255 },
+    subtle: Rgb { r: 116, g: 112, b: 93 },
+    emphasis_0: Rgb { r: 103, g: 216, b: 239 },
+    emphasis_1: Rgb { r: 231, g: 219, b: 116 },
+    emphasis_2: Rgb { r: 249, g: 36, b: 114 },
+    icon: Rgb { r: 52, g: 54, b: 46 },
+};
+
+const SCIENTIFIC_THEME: CalculatorTheme = CalculatorTheme {
+    background: Rgb { r: 245, g: 246, b: 239 },
+    foreground: Rgb { r: 39, g: 45, b: 42 },
+    subtle: Rgb { r: 139, g: 148, b: 137 },
+    emphasis_0: Rgb { r: 20, g: 116, b: 132 },
+    emphasis_1: Rgb { r: 157, g: 112, b: 28 },
+    emphasis_2: Rgb { r: 207, g: 69, b: 91 },
+    icon: Rgb { r: 229, g: 232, b: 222 },
+};
 
 struct LineBuffer<const N: usize> {
     pub data: [u8; N],
@@ -182,7 +207,13 @@ impl<const N: usize> LineBuffer<N> {
 
 trait CalcEngine {
     fn evaluate(&self, equation: &str) -> String;
-    fn draw_widgets(&self, platform: &mut dyn IcPlatform, result_str: &str, is_focused: bool);
+    fn draw_widgets(
+        &self,
+        platform: &mut dyn IcPlatform,
+        result_str: &str,
+        is_focused: bool,
+        theme: CalculatorTheme,
+    );
     // true means this CalcEngine consumed the input
     fn on_widget_key(
         &mut self,
@@ -192,7 +223,6 @@ trait CalcEngine {
     ) -> bool;
     fn has_widget(&self) -> bool;
     fn get_action(&self, key: IcKey, is_shifted: bool, is_super: bool) -> Option<KeyAction>;
-    fn get_color(&self) -> RGB8;
 }
 
 pub struct ScientificEngine {}
@@ -211,7 +241,13 @@ impl CalcEngine for ScientificEngine {
         }
     }
 
-    fn draw_widgets(&self, platform: &mut dyn IcPlatform, _result_str: &str, _is_focused: bool) {
+    fn draw_widgets(
+        &self,
+        platform: &mut dyn IcPlatform,
+        _result_str: &str,
+        _is_focused: bool,
+        theme: CalculatorTheme,
+    ) {
         draw_text(
             platform,
             "Scientific",
@@ -219,7 +255,7 @@ impl CalcEngine for ScientificEngine {
             222.0,
             10.0,
             2.0,
-            LOCAL_COLOR_FG_SUBTLE_0,
+            theme.subtle,
             FontId::Futural
         );
     }
@@ -305,10 +341,6 @@ impl CalcEngine for ScientificEngine {
                 IcKey::_Max => None,
             }
         }
-    }
-    
-    fn get_color(&self) -> RGB8 {
-        LOCAL_COLOR_BG_0
     }
 }
 
@@ -436,7 +468,13 @@ impl CalcEngine for ProgrammerEngine {
         true
     }
 
-    fn draw_widgets(&self, platform: &mut dyn IcPlatform, result_str: &str, is_focused: bool) {
+    fn draw_widgets(
+        &self,
+        platform: &mut dyn IcPlatform,
+        result_str: &str,
+        is_focused: bool,
+        theme: CalculatorTheme,
+    ) {
         let margin = 2;
         let (result_as_int, result_is_int) = match result_str.parse::<i32>() {
             Ok(s) => (s, true),
@@ -457,7 +495,7 @@ impl CalcEngine for ProgrammerEngine {
                     228.0,
                     7.0,
                     2.0,
-                    LOCAL_COLOR_FG_EMPH_0,
+                    theme.emphasis_0,
                     FontId::Futural
                 );
             }
@@ -481,12 +519,12 @@ impl CalcEngine for ProgrammerEngine {
                 let bit_val: bool = (result_as_int >> i) & 1 != 0;
                 let color: Rgb<u8> = if is_focused {
                     if i == self.binary_selection_idx as i32 {
-                        LOCAL_COLOR_FG_0
+                        theme.foreground
                     } else {
-                        LOCAL_COLOR_FG_SUBTLE_0
+                        theme.subtle
                     }
                 } else {
-                    LOCAL_COLOR_FG_EMPH_1
+                    theme.emphasis_1
                 };
                 if bit_val {
                     platform.draw_line(
@@ -519,7 +557,7 @@ impl CalcEngine for ProgrammerEngine {
                 222.0,
                 10.0,
                 2.0,
-                LOCAL_COLOR_FG_SUBTLE_0,
+                theme.subtle,
                 FontId::Futural
             );
         }
@@ -595,9 +633,6 @@ impl CalcEngine for ProgrammerEngine {
         }
     }
 
-    fn get_color(&self) -> RGB8 {
-        RGB8::new(40, 41, 35)
-    }
 }
 
 pub struct Calculator {
@@ -627,6 +662,81 @@ impl Calculator {
             engine: Box::new(ProgrammerEngine::default()),
             engine_mode: EngineMode::Programmer,
         }
+    }
+
+    fn current_theme(&self) -> CalculatorTheme {
+        match self.engine_mode {
+            EngineMode::Programmer => PROGRAMMER_THEME,
+            EngineMode::Scientific => SCIENTIFIC_THEME,
+        }
+    }
+
+    fn draw_mode_icon(&self, platform: &mut dyn IcPlatform, theme: CalculatorTheme) {
+        // match self.engine_mode {
+        //     EngineMode::Programmer => {
+        //         let left = 250;
+        //         let top = 28;
+        //         let right = 294;
+        //         let bottom = 72;
+        //         platform.draw_rectangle(
+        //             IVec2::new(left, top),
+        //             IVec2::new(right, bottom),
+        //             theme.icon,
+        //             2,
+        //             None,
+        //         );
+        //         for offset in [8, 18, 28, 38] {
+        //             platform.draw_line(
+        //                 Vec2::new((left + offset) as f32, top as f32),
+        //                 Vec2::new((left + offset) as f32, (top - 6) as f32),
+        //                 theme.icon,
+        //                 2,
+        //             );
+        //             platform.draw_line(
+        //                 Vec2::new((left + offset) as f32, bottom as f32),
+        //                 Vec2::new((left + offset) as f32, (bottom + 6) as f32),
+        //                 theme.icon,
+        //                 2,
+        //             );
+        //         }
+        //         for (row, column) in [(0, 0), (0, 1), (1, 1)] {
+        //             let x = left + 9 + column * 14;
+        //             let y = top + 9 + row * 14;
+        //             platform.draw_rectangle(
+        //                 IVec2::new(x, y),
+        //                 IVec2::new(x + 7, y + 7),
+        //                 theme.icon,
+        //                 1,
+        //                 Some(theme.icon),
+        //             );
+        //         }
+        //     }
+        //     EngineMode::Scientific => {
+        //         platform.draw_line(
+        //             Vec2::new(250.0, 70.0),
+        //             Vec2::new(250.0, 28.0),
+        //             theme.icon,
+        //             2,
+        //         );
+        //         platform.draw_line(
+        //             Vec2::new(250.0, 70.0),
+        //             Vec2::new(296.0, 70.0),
+        //             theme.icon,
+        //             2,
+        //         );
+        //         let curve = [
+        //             Vec2::new(254.0, 62.0),
+        //             Vec2::new(262.0, 58.0),
+        //             Vec2::new(270.0, 45.0),
+        //             Vec2::new(278.0, 39.0),
+        //             Vec2::new(286.0, 43.0),
+        //             Vec2::new(294.0, 58.0),
+        //         ];
+        //         for segment in curve.windows(2) {
+        //             platform.draw_line(segment[0], segment[1], theme.icon, 2);
+        //         }
+        //     }
+        // }
     }
 
     fn ui_nav(&mut self, dir: NavDir) {
@@ -810,7 +920,7 @@ impl Calculator {
         }
     }
 
-    fn draw_history(&self, platform: &mut dyn IcPlatform) {
+    fn draw_history(&self, platform: &mut dyn IcPlatform, theme: CalculatorTheme) {
         // draw_text_f(
         //     platform,
         //     format_args!("{}, b{}", self.focused_ui as u8, self.binary_selection_idx),
@@ -840,8 +950,8 @@ impl Calculator {
             let y = base_y + margin - draw_row * row_height;
             let line_height: u32 = 20;
             let y2 = base_y + line_height + margin - draw_row * row_height;
-            let mut h_exp_col = LOCAL_COLOR_FG_0;
-            let mut h_ans_col = LOCAL_COLOR_FG_EMPH_1;
+            let mut h_exp_col = theme.foreground;
+            let mut h_ans_col = theme.emphasis_1;
             if let Some(selection) = self.history_selection {
                 let y_pos = match selection.part {
                     EqEntryPart::Equation => y,
@@ -854,7 +964,7 @@ impl Calculator {
                         IVec2::new(CANVAS_WIDTH as i32, y_pos as i32 + line_height as i32 - 5),
                         Rgb::new(0, 0, 0),
                         0,
-                        Some(LOCAL_COLOR_FG_EMPH_2),
+                        Some(theme.emphasis_2),
                     );
                     draw_text(
                         platform,
@@ -863,11 +973,11 @@ impl Calculator {
                         y_pos as f32 + 4.0,
                         font_size,
                         2.0,
-                        LOCAL_COLOR_BG_0,
+                        theme.background,
                         FontId::Futural
                     );
-                    h_exp_col = LOCAL_COLOR_FG_0;
-                    h_ans_col = LOCAL_COLOR_FG_0;
+                    h_exp_col = theme.foreground;
+                    h_ans_col = theme.foreground;
                 }
             }
             draw_text(
@@ -889,7 +999,7 @@ impl Calculator {
                 y2 as f32 + 6.0,
                 font_size,
                 2.0,
-                LOCAL_COLOR_FG_SUBTLE_0,
+                theme.subtle,
                 FontId::Futural
             );
             draw_text(
@@ -906,14 +1016,14 @@ impl Calculator {
             platform.draw_line(
                 Vec2::new(margin as f32, (y2 + 16) as f32),
                 Vec2::new((CANVAS_WIDTH - margin) as f32, (y2 + 16) as f32),
-                LOCAL_COLOR_FG_SUBTLE_0,
+                theme.subtle,
                 2,
             );
             draw_row += 1;
         }
     }
 
-    fn draw_editor(&self, platform: &mut dyn IcPlatform) {
+    fn draw_editor(&self, platform: &mut dyn IcPlatform, theme: CalculatorTheme) {
         let margin: u32 = 2;
         let equation_disp = core::str::from_utf8(&self.current_eq.data[..self.current_eq.len])
             .unwrap_or("Invalid UTF-8");
@@ -929,7 +1039,7 @@ impl Calculator {
             eq_y,
             eq_scale,
             3.0,
-            LOCAL_COLOR_FG_0,
+            theme.foreground,
             FontId::Futural
         );
         if self.focused_ui == FocusUi::Equation && self.history_selection.is_none() {
@@ -947,7 +1057,7 @@ impl Calculator {
             platform.draw_line(
                 Vec2::new(cursor_x_pos + 5.0, eq_y - 16.0),
                 Vec2::new(cursor_x_pos + 5.0, eq_y + 13.0),
-                LOCAL_COLOR_FG_EMPH_2,
+                theme.emphasis_2,
                 2,
             );
         }
@@ -967,7 +1077,7 @@ impl Calculator {
             eq_y + 31.0,
             ans_scale,
             2.0,
-            LOCAL_COLOR_FG_EMPH_2,
+            theme.emphasis_2,
             FontId::Futural
         );
         draw_text(
@@ -977,7 +1087,7 @@ impl Calculator {
             eq_y + 31.0,
             ans_scale,
             4.0,
-            LOCAL_COLOR_FG_0,
+            theme.foreground,
             FontId::Futural
         );
     }
@@ -1085,13 +1195,15 @@ impl IcApp for Calculator {
     }
 
     fn update(&mut self, platform: &mut dyn IcPlatform, _ctx: &InputContext, _audio: &mut AudioEngine) {
-        platform.clear(self.engine.get_color());
-        self.draw_history(platform);
-        self.draw_editor(platform);
+        let theme = self.current_theme();
+        platform.clear(theme.background);
+        self.draw_mode_icon(platform, theme);
+        self.draw_history(platform, theme);
+        self.draw_editor(platform, theme);
         let result_str =
             core::str::from_utf8(&self.current_result[..self.current_result_len]).unwrap_or("0");
         self.engine
-            .draw_widgets(platform, result_str, self.focused_ui == FocusUi::Widget);
+            .draw_widgets(platform, result_str, self.focused_ui == FocusUi::Widget, theme);
     }
 
     fn on_enter(&mut self) {
