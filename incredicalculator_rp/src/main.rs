@@ -22,9 +22,9 @@ use embassy_time::{Delay, Instant};
 use embassy_time::Timer;
 use embedded_alloc::LlffHeap as Heap;
 use embedded_graphics::pixelcolor::{Rgb565};
-use embedded_graphics::primitives::{PrimitiveStyle, PrimitiveStyleBuilder};
+use embedded_graphics::primitives::PrimitiveStyleBuilder;
 use embedded_graphics::{prelude::*};
-use incredicalculator_core::input::{self, IcKey};
+use incredicalculator_core::input::IcKey;
 use incredicalculator_core::platform::IcPlatform;
 use incredicalculator_core::shell::IcShell;
 use glam::{IVec2, Vec2};
@@ -39,7 +39,7 @@ use static_cell::{ConstStaticCell, StaticCell};
 use embassy_rp::peripherals::{PIO0, SPI1};
 use embassy_rp::pio::{InterruptHandler, Pio};
 use embassy_rp::pio_programs::i2s::{PioI2sOut, PioI2sOutProgram};
-use embassy_rp::{bind_interrupts, dma};
+use embassy_rp::bind_interrupts;
 use {defmt_rtt as _, panic_probe as _};
 
 
@@ -518,11 +518,6 @@ fn sqrt_fast(x: f32) -> f32 {
 }
 
 #[inline]
-fn hypot_f32(x: f32, y: f32) -> f32 {
-    sqrt_fast(x * x + y * y)
-}
-
-#[inline]
 fn ipart(x: f32) -> i32 {
     floor_f32(x) as i32
 }
@@ -958,7 +953,7 @@ async fn main(spawner: Spawner) {
     // how that goes.
     // If upgrade successful and having audio trouble, look at this discussion:
     // https://github.com/embassy-rs/embassy/pull/5388
-    let mut i2s = PioI2sOut::new(
+    let i2s = PioI2sOut::new(
         &mut pio_common,
         sm0,
         p.DMA_CH0,
@@ -1045,7 +1040,7 @@ async fn main(spawner: Spawner) {
         reboot_into_bootloader();
     }
 
-    let mut led = Output::new(p.PIN_22, Level::Low);
+    let _led = Output::new(p.PIN_22, Level::Low);
     let rst = p.PIN_47;
     let display_cs = p.PIN_45;
     let dcx = p.PIN_42;
@@ -1054,7 +1049,7 @@ async fn main(spawner: Spawner) {
     let module_bl = p.PIN_31;
     let bare_display_bl = p.PIN_41;
     let lcd_spi_bus = p.SPI1;
-    let mut audio_shutdown_n = Output::new(p.PIN_27, Level::High);
+    let _audio_shutdown_n = Output::new(p.PIN_27, Level::High);
 
     // ST7789 datasheet: "If not used, please fix this pin at VDDI or DGND."
     let _tft_unused_d0 = Output::new(p.PIN_33, Level::Low);
@@ -1112,7 +1107,7 @@ async fn main(spawner: Spawner) {
     // set up i2c
     // Default I2C config enables internal pull-up resistors.
     let i2c_cfg = embassy_rp::i2c::Config::default();
-    let mut board_i2c = embassy_rp::i2c::I2c::new_blocking(p.I2C0, p.PIN_25, p.PIN_24, i2c_cfg);
+    let board_i2c = embassy_rp::i2c::I2c::new_blocking(p.I2C0, p.PIN_25, p.PIN_24, i2c_cfg);
 
     let buf0 = AudioBuffer {
         samples: AUDIO_DMA0.init([0; AUDIO_BUFFER_SIZE]),
@@ -1137,7 +1132,7 @@ async fn main(spawner: Spawner) {
     FREE_FRAME_BUFFERS.send(spare_canvas).await;
 
     // This board uses a MAX17048 battery fuel gauge
-    let mut fuel_gauge: Max17048<BoardI2c> = Max17048::new(board_i2c);
+    let fuel_gauge: Max17048<BoardI2c> = Max17048::new(board_i2c);
     unwrap!(spawner.spawn(battery_task(fuel_gauge)));
     unwrap!(spawner.spawn(audio_task(i2s)));
     unwrap!(spawner.spawn(display_task(display)));
