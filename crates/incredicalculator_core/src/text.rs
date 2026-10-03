@@ -222,3 +222,11 @@ pub fn text_to_pos(
     }
     current_x
 }
+
+pub fn text_width(
+    text: &str,
+    scale: f32,
+    font_id: fonts::FontId,
+) -> f32 {
+    text_to_pos(text, 0.0, scale, text.len(), font_id)
+}
