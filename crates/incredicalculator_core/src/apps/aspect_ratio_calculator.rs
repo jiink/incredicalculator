@@ -1,5 +1,5 @@
 use crate::fonts::FontId;
-use crate::ui::{MathInput, MathInputError, MathInputEvent, MathInputMode};
+use crate::ui::{MathInput, MathInputDirection, MathInputError, MathInputEvent, MathInputMode};
 use crate::{audio_engine, input::IcKey};
 use glam::{IVec2, Vec2};
 use num_traits::float::FloatCore;
@@ -41,6 +41,9 @@ enum KeyAction {
 
 impl AspectRatioCalculator {
     pub fn new() -> AspectRatioCalculator {
+        let background = RGB8::new(0x1f, 0x5c, 0x55);
+        let focused_background = RGB8::new(0xe8, 0xf2, 0x7a);
+        let border = Some(RGB8::new(0x1c, 0x3e, 0x3a));
         AspectRatioCalculator {
             focused_ui: FocusUi::Width1,
             input_box_width1: MathInput::new(
@@ -49,6 +52,9 @@ impl AspectRatioCalculator {
                 MathInputMode::Integer,
                 2.0,
                 10.0,
+                background,
+                focused_background,
+                border,
             ),
             input_box_width2: MathInput::new(
                 IVec2::new(174, 39),
@@ -56,6 +62,9 @@ impl AspectRatioCalculator {
                 MathInputMode::Integer,
                 2.0,
                 10.0,
+                background,
+                focused_background,
+                border,
             ),
             input_box_height1: MathInput::new(
                 IVec2::new(17, 107),
@@ -63,6 +72,9 @@ impl AspectRatioCalculator {
                 MathInputMode::Integer,
                 2.0,
                 10.0,
+                background,
+                focused_background,
+                border,
             ),
             input_box_height2: MathInput::new(
                 IVec2::new(174, 107),
@@ -70,6 +82,9 @@ impl AspectRatioCalculator {
                 MathInputMode::Integer,
                 2.0,
                 10.0,
+                background,
+                focused_background,
+                border,
             ),
         }
     }
@@ -109,6 +124,29 @@ impl AspectRatioCalculator {
         };
         let text = alloc::format!("{}", value);
         let _ = target.set_text(&text);
+    }
+
+    fn handle_navigation(&mut self, direction: MathInputDirection) {
+        let next_focus = match (self.focused_ui, direction) {
+            (FocusUi::Width2, MathInputDirection::Left) => Some(FocusUi::Width1),
+            (FocusUi::Height2, MathInputDirection::Left) => Some(FocusUi::Height1),
+            (FocusUi::Width1, MathInputDirection::Right) => Some(FocusUi::Width2),
+            (FocusUi::Height1, MathInputDirection::Right) => Some(FocusUi::Height2),
+            (FocusUi::Height1, MathInputDirection::Up) => Some(FocusUi::Width1),
+            (FocusUi::Height2, MathInputDirection::Up) => Some(FocusUi::Width2),
+            (FocusUi::Width1, MathInputDirection::Down) => Some(FocusUi::Height1),
+            (FocusUi::Width2, MathInputDirection::Down) => Some(FocusUi::Height2),
+            _ => None,
+        };
+
+        if let Some(next_focus) = next_focus {
+            self.focused_ui = next_focus;
+            match direction {
+                MathInputDirection::Left => self.get_focused_input_box().end(),
+                MathInputDirection::Right => self.get_focused_input_box().home(),
+                MathInputDirection::Up | MathInputDirection::Down => {}
+            }
+        }
     }
 
     fn draw_tv_frame(
@@ -231,48 +269,6 @@ impl IcApp for AspectRatioCalculator {
     }
 
     fn on_key(&mut self, key: crate::input::IcKey, ctx: &crate::app::InputContext) {
-        // Super+direction keys navigate between fields in this app, so handle
-        // them before forwarding other keys to MathInput.
-        if ctx.is_super() && !ctx.is_shifted() {
-            match key {
-                IcKey::Num1 | IcKey::Num2 => {
-                    self.focused_ui = match self.focused_ui {
-                        FocusUi::Width1 => FocusUi::Height1,
-                        FocusUi::Height1 => FocusUi::Height1,
-                        FocusUi::Width2 => FocusUi::Height2,
-                        FocusUi::Height2 => FocusUi::Height2,
-                    };
-                    return;
-                }
-                IcKey::Num7 | IcKey::Num8 => {
-                    self.focused_ui = match self.focused_ui {
-                        FocusUi::Width1 | FocusUi::Height1 => FocusUi::Width1,
-                        FocusUi::Width2 | FocusUi::Height2 => FocusUi::Width2,
-                    };
-                    return;
-                }
-                IcKey::Num4 => {
-                    self.focused_ui = match self.focused_ui {
-                        FocusUi::Width1 => FocusUi::Width1,
-                        FocusUi::Height1 => FocusUi::Width2,
-                        FocusUi::Width2 => FocusUi::Width1,
-                        FocusUi::Height2 => FocusUi::Height1,
-                    };
-                    return;
-                }
-                IcKey::Num6 => {
-                    self.focused_ui = match self.focused_ui {
-                        FocusUi::Width1 => FocusUi::Width2,
-                        FocusUi::Height1 => FocusUi::Height2,
-                        FocusUi::Width2 => FocusUi::Height1,
-                        FocusUi::Height2 => FocusUi::Height2,
-                    };
-                    return;
-                }
-                _ => {}
-            }
-        }
-
         let event = self.get_focused_input_box().handle_key(key, ctx);
         match event {
             MathInputEvent::Changed => self.update_math(),
@@ -284,6 +280,7 @@ impl IcApp for AspectRatioCalculator {
                     FocusUi::Height2 => FocusUi::Width1,
                 };
             }
+            MathInputEvent::Navigate(direction) => self.handle_navigation(direction),
             MathInputEvent::Handled | MathInputEvent::Ignored => {}
         }
     }

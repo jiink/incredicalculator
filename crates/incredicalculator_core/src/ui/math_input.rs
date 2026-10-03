@@ -4,11 +4,20 @@ use crate::input::IcKey;
 use crate::platform::{IcPlatform, rgb8_hex};
 use crate::text::{draw_text, text_to_pos};
 use glam::{IVec2, Vec2};
+use rgb::RGB8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MathInputMode {
     Integer,
     Expression,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MathInputDirection {
+    Left,
+    Right,
+    Up,
+    Down,
 }
 
 /// Result of giving a key press to a MathInput.
@@ -22,6 +31,8 @@ pub enum MathInputEvent {
     Changed,
     /// Enter was pressed. An app can use this to move focus.
     Submitted,
+    /// Navigation reached an input boundary or requested a neighboring field.
+    Navigate(MathInputDirection),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -159,6 +170,9 @@ pub struct MathInput<const N: usize> {
     pub size: IVec2,
     min_text_scale: f32,
     max_text_scale: f32,
+    background: RGB8,
+    focused_background: RGB8,
+    border: Option<RGB8>,
 }
 
 impl<const N: usize> MathInput<N> {
@@ -170,6 +184,9 @@ impl<const N: usize> MathInput<N> {
         mode: MathInputMode,
         min_text_scale: f32,
         max_text_scale: f32,
+        background: RGB8,
+        focused_background: RGB8,
+        border: Option<RGB8>,
     ) -> Self {
         Self {
             mode,
@@ -178,6 +195,9 @@ impl<const N: usize> MathInput<N> {
             size,
             min_text_scale,
             max_text_scale,
+            background,
+            focused_background,
+            border,
         }
     }
 
@@ -281,8 +301,7 @@ impl<const N: usize> MathInput<N> {
         self.insert_char((b'0' + digit) as char)
     }
 
-    /// Apps that use keys for focus navigation should intercept them
-    /// before calling this method.
+    /// Navigation that leaves this input is returned for the app to handle.
     pub fn handle_key(&mut self, key: IcKey, ctx: &InputContext) -> MathInputEvent {
         if ctx.is_shifted() {
             return self.handle_shifted_key(key);
@@ -360,13 +379,17 @@ impl<const N: usize> MathInput<N> {
     }
 
     pub fn draw(&self, platform: &mut dyn IcPlatform, has_focus: bool) {
-        let fill_color = rgb8_hex(if has_focus { 0xF1FF5E } else { 0x3A9AFF });
+        let fill_color = if has_focus {
+            self.focused_background
+        } else {
+            self.background
+        };
 
         platform.draw_rectangle(
             self.pos,
             self.pos + self.size,
-            rgb8_hex(0xAD4B27),
-            0,
+            self.border.unwrap_or(fill_color),
+            if self.border.is_some() { 1 } else { 0 },
             Some(fill_color),
         );
 
@@ -382,7 +405,7 @@ impl<const N: usize> MathInput<N> {
                 platform,
                 display_text,
                 text_x,
-                text_y + 12.0,
+                text_y + 13.0,
                 text_scale,
                 2.0,
                 rgb8_hex(if has_focus { 0x000000 } else { 0xffffff }),
@@ -441,11 +464,24 @@ impl<const N: usize> MathInput<N> {
     fn handle_super_key(&mut self, key: IcKey) -> MathInputEvent {
         match key {
             IcKey::Num1 => Self::handled_cursor_move(self.buffer.move_cursor_end()),
-            IcKey::Num4 => Self::handled_cursor_move(self.buffer.move_cursor_left()),
-            IcKey::Num6 => Self::handled_cursor_move(self.buffer.move_cursor_right()),
+            IcKey::Num4 => {
+                if self.buffer.move_cursor_left() {
+                    MathInputEvent::Handled
+                } else {
+                    MathInputEvent::Navigate(MathInputDirection::Left)
+                }
+            }
+            IcKey::Num6 => {
+                if self.buffer.move_cursor_right() {
+                    MathInputEvent::Handled
+                } else {
+                    MathInputEvent::Navigate(MathInputDirection::Right)
+                }
+            }
             IcKey::Num7 => Self::handled_cursor_move(self.buffer.move_cursor_home()),
             IcKey::Num9 => Self::changed_from(self.buffer.clear()),
-            IcKey::Num2 | IcKey::Num8 => MathInputEvent::Ignored,
+            IcKey::Num2 => MathInputEvent::Navigate(MathInputDirection::Down),
+            IcKey::Num8 => MathInputEvent::Navigate(MathInputDirection::Up),
             _ => MathInputEvent::Ignored,
         }
     }
