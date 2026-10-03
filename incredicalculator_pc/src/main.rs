@@ -7,10 +7,9 @@ use embedded_graphics::{
     Drawable,
     pixelcolor::Rgb565,
     prelude::{Primitive, RgbColor},
-    primitives::{PrimitiveStyle, PrimitiveStyleBuilder},
+    primitives::PrimitiveStyleBuilder,
 };
 use embedded_graphics_framebuf::FrameBuf;
-use incredicalculator_core::audio_engine::AudioEngine;
 use raylib::{
     ffi::{SetTextureFilter, RL_TEXTURE_FILTER_LINEAR},
     prelude::*,
@@ -24,7 +23,6 @@ use glam::{IVec2, Vec2};
 
 // Rodio: the only audio dependency now.
 // In Cargo.toml add: rodio = { version = "0.21", features = ["playback"] }
-use rodio::source::{SineWave, Source};
 
 const AUDIO_BUFFER_SIZE: usize = 2048;
 

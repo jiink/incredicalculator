@@ -8,3 +8,23 @@ members = [
 
 [patch.crates-io]
 exp-rs = { path = "crates/exp-rs-patched" }
+
+[profile.bench]
+opt-level = 0
+lto = false
+codegen-units = 16
+debug = 2
+
+[profile.dev]
+opt-level = 2
+lto = true
+codegen-units = 1
+debug = 2
+panic = "abort"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+debug = 2
+panic = "abort"

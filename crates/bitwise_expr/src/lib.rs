@@ -3,8 +3,8 @@
 extern crate alloc;
 
 use alloc::string::{String, ToString};
-use nom::{branch::alt, bytes::complete::tag, character::complete::digit1, combinator::{map, map_res}, multi::many0, sequence::{delimited, pair, preceded}, Err, IResult};
-use core::{fmt, num};
+use nom::{branch::alt, bytes::complete::tag, character::complete::digit1, combinator::{map, map_res}, multi::many0, sequence::{delimited, pair, preceded}, IResult};
+use core::fmt;
 use core::fmt::Write;
 
 struct Writer<'a> {

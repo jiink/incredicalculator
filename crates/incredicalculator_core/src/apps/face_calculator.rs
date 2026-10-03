@@ -15,6 +15,7 @@ pub enum RoboMood {
     Happy,
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum RoboPosition {
     N, 
@@ -47,7 +48,6 @@ pub struct RoboEyes {
     eye_l_open: bool,
     eye_r_open: bool,
 
-    eye_l_width_default: i32,
     eye_l_height_default: i32,
     eye_l_width_current: i32,
     eye_l_height_current: i32,
@@ -56,7 +56,6 @@ pub struct RoboEyes {
     eye_l_border_radius_current: i32,
     eye_l_border_radius_next: i32,
     
-    eye_r_width_default: i32,
     eye_r_height_default: i32,
     eye_r_width_current: i32,
     eye_r_height_current: i32,
@@ -153,12 +152,12 @@ impl RoboEyes {
             tired: false, angry: false, happy: false, curious: false, cyclops: false,
             eye_l_open: true, eye_r_open: true,
 
-            eye_l_width_default: eye_w, eye_l_height_default: eye_h,
+            eye_l_height_default: eye_h,
             eye_l_width_current: eye_w, eye_l_height_current: 1,
             eye_l_width_next: eye_w, eye_l_height_next: eye_h,
             eye_l_border_radius_current: 16, eye_l_border_radius_next: 8,
 
-            eye_r_width_default: eye_w, eye_r_height_default: eye_h,
+            eye_r_height_default: eye_h,
             eye_r_width_current: eye_w, eye_r_height_current: 1,
             eye_r_width_next: eye_w, eye_r_height_next: eye_h,
             eye_r_border_radius_current: 16, eye_r_border_radius_next: 8,

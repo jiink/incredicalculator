@@ -13,12 +13,9 @@
 
 use core::fmt;
 
-use glam::{IVec2, Vec2};
-use num_traits::ToPrimitive;
+use glam::Vec2;
 use rgb::*;
-use num_traits::float::FloatCore;
-use core::cmp;
-use crate::fonts::{HersheyFont, HersheyGlyph, HersheyVertex, HERSHEY_LIFT};
+use crate::fonts::{HersheyFont, HersheyGlyph, HERSHEY_LIFT};
 use crate::fonts;
 
 use crate::platform::IcPlatform;

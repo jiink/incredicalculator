@@ -187,23 +187,3 @@ version = "1.7"
 
 [build-dependencies.cbindgen]
 version = "0.29"
-
-[profile.bench]
-opt-level = 0
-lto = false
-codegen-units = 16
-debug = 2
-
-[profile.dev]
-opt-level = 2
-lto = true
-codegen-units = 1
-debug = 2
-panic = "abort"
-
-[profile.release]
-opt-level = "s"
-lto = true
-codegen-units = 1
-debug = 2
-panic = "abort"

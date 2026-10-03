@@ -1,11 +1,10 @@
 use crate::app::IcApp;
 use crate::app::InputContext;
 use crate::audio_engine::AudioEngine;
-use crate::input::{IcKey};
+use crate::input::IcKey;
 use crate::platform::IcPlatform;
-use crate::platform::debug_log;
-use crate::platform::{CANVAS_WIDTH, CANVAS_HEIGHT};
-use crate::text::{draw_text, draw_text_f, text_to_pos};
+use crate::platform::CANVAS_WIDTH;
+use crate::text::{draw_text, text_to_pos};
 use crate::fonts::FontId;
 use alloc::boxed::Box;
 use alloc::string::ToString;
@@ -46,6 +45,7 @@ struct HistorySelection {
     part: EqEntryPart,
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum KeyAction {
     InsertChar(u8),

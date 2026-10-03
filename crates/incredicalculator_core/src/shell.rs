@@ -6,19 +6,15 @@ use crate::apps::ColorCalculator;
 use crate::apps::SoundTest;
 use crate::apps::{ RangeMapperCalculator, FaceCalculator };
 use crate::audio_engine::AudioEngine;
-use crate::input;
 use crate::input::IcKey;
 use crate::input::KeyState;
 use crate::platform::{IcPlatform, CANVAS_WIDTH, CANVAS_HEIGHT};
 use crate::platform::rgb8_hex;
 use crate::text::*;
 use crate::fonts::FontId;
-use crate::audio_engine;
 use alloc::boxed::Box;
-use alloc::sync::Arc;
 use glam::IVec2;
 use num_traits::clamp;
-use num_traits::clamp_max;
 use num_traits::FromPrimitive;
 use rgb::Rgb;
 use rgb::*;
@@ -215,7 +211,7 @@ impl IcShell {
             );
         }
 
-        let percentage = (value as i32 * 100) / 255;
+        let _percentage = (value as i32 * 100) / 255;
         draw_text_f(
             platform, 
             format_args!("{:?}", adjustable), 

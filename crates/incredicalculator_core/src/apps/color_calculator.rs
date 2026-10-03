@@ -3,7 +3,7 @@ use crate::app::{IcApp, InputContext};
 use crate::audio_engine::AudioEngine;
 use crate::fonts::FontId;
 use crate::input::IcKey;
-use crate::platform::{rgb8_hex, IcPlatform, CANVAS_WIDTH};
+use crate::platform::{IcPlatform, CANVAS_WIDTH};
 use crate::text::{draw_text, draw_text_f};
 use crate::ui::{MathInput, MathInputDirection, MathInputEvent, MathInputMode};
 use alloc::format;

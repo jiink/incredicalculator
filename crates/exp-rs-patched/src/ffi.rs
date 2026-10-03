@@ -226,6 +226,7 @@ mod allocation_tracking {
 
 // When custom_cbindgen_alloc is enabled, use TlsfHeap for embedded targets
 #[cfg(feature = "custom_cbindgen_alloc")]
+#[allow(unused_imports)]
 mod embedded_allocator {
     use super::*;
     use core::alloc::{GlobalAlloc, Layout};

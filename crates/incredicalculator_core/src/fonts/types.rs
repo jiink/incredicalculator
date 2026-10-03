@@ -18,6 +18,7 @@ pub struct HersheyGlyph {
 
 #[derive(Clone, Copy, Debug)]
 pub struct HersheyFont {
+    #[allow(dead_code)]
     pub name: &'static str,
     pub first_char: u8,
     pub glyphs: &'static [HersheyGlyph],
@@ -33,6 +34,7 @@ impl HersheyGlyph {
         self.right - self.left
     }
 
+    #[allow(dead_code)]
     #[inline]
     pub const fn is_empty(&self) -> bool {
         self.vertices.is_empty()

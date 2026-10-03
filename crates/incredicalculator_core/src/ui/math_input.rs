@@ -94,6 +94,7 @@ impl<const N: usize> TextBuffer<N> {
         true
     }
 
+    #[allow(dead_code)]
     fn delete(&mut self) -> bool {
         if self.cursor >= self.len {
             return false;
@@ -176,6 +177,7 @@ pub struct MathInput<const N: usize> {
     border: Option<RGB8>,
 }
 
+#[allow(dead_code)]
 impl<const N: usize> MathInput<N> {
     const TEXT_MARGIN: f32 = 4.0;
 
