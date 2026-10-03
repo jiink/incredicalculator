@@ -1,161 +1,15 @@
 use crate::audio_engine;
-use crate::input::{IcKey};
-use crate::text::text_to_pos;
+use crate::input::IcKey;
 use crate::{
     app::IcApp,
     platform::{IcPlatform, rgb8_hex},
     text::{draw_text, draw_text_f},
 };
 use crate::fonts::FontId;
-use glam::{IVec2, Vec2};
-use rgb::{Rgb};
+use glam::IVec2;
+use crate::ui::{MathInput, MathInputDirection, MathInputEvent, MathInputMode};
 
-// todo put LineBuffer in a common place for both this and calculator.rs to use
-struct LineBuffer<const N: usize> {
-    pub data: [u8; N],
-    pub len: usize,
-    pub cursor: usize,
-}
-
-impl<const N: usize> LineBuffer<N> {
-    pub const MAX_LEN: usize = 24;
-    pub fn default() -> Self {
-        Self {
-            data: [0; N],
-            len: 0,
-            cursor: 0,
-        }
-    }
-
-    pub fn insert_char(&mut self, char_code: u8) {
-        if self.cursor < Self::MAX_LEN {
-            for i in (self.cursor..=(self.len)).rev() {
-                if i == Self::MAX_LEN - 1 {
-                    break;
-                }
-                self.data[i + 1] = self.data[i];
-            }
-            self.data[self.cursor] = char_code;
-            self.cursor += 1;
-            self.len += 1;
-            if self.len > Self::MAX_LEN {
-                self.len = Self::MAX_LEN;
-            }
-        }
-    }
-
-    pub fn move_cursor(&mut self, right: bool) {
-        if right {
-            if self.cursor < self.len {
-                self.cursor += 1;
-            }
-        } else {
-            if self.cursor > 0 {
-                self.cursor -= 1;
-            }
-        }
-    }
-
-    pub fn move_cursor_home(&mut self) {
-        self.cursor = 0;
-    }
-
-    pub fn move_cursor_end(&mut self) {
-        self.cursor = self.len;
-    }
-
-    pub fn backspace(&mut self) {
-        if self.cursor > 0 {
-            for i in self.cursor..self.len {
-                self.data[i - 1] = self.data[i];
-            }
-            self.cursor -= 1;
-            self.len -= 1;
-            self.data[self.len] = 0;
-        }
-    }
-
-    pub fn backspace_del(&mut self) {
-        // delete is the same thing as pressing right and then backspace
-        self.move_cursor(true);
-        self.backspace();
-    }
-
-    pub fn as_str(&self) -> &str {
-        core::str::from_utf8(&self.data[..self.len]).unwrap_or("Invalid UTF-8")
-    }
-
-    pub fn set_content(&mut self, content: &[u8]) {
-        let copy_len = content.len().min(N);
-        self.data[..copy_len].copy_from_slice(&content[..copy_len]);
-        self.len = copy_len;
-        self.cursor = copy_len;
-    }
-
-    pub fn clear(&mut self) {
-        self.data = [0; N];
-        self.len = 0;
-        self.cursor = 0;
-    }
-
-    pub fn evaluate(&self) -> f32 {
-        match exp_rs::interp(self.as_str(), None) {
-            Ok(v) => v as f32,
-            Err(_) => 0.0,
-        }
-    }
-}
-
-struct ExpressionInputBox {
-    expression: LineBuffer<48>,
-    pos: IVec2,
-    size: IVec2,
-}
-
-impl ExpressionInputBox {
-    fn new(pos: IVec2, size: IVec2) -> ExpressionInputBox {
-        ExpressionInputBox {
-            expression: LineBuffer::default(),
-            pos,
-            size,
-        }
-    }
-    fn draw(&mut self, platform: &mut dyn crate::platform::IcPlatform, has_focus: bool) {
-        let fill_color = rgb8_hex(if has_focus { 0xF1FF5E } else { 0x3A9AFF });
-        platform.draw_rectangle(
-            self.pos,
-            self.pos + self.size,
-            rgb8_hex(0xAD4B27),
-            0,
-            Some(fill_color),
-        );
-        let margin = 4;
-        let display_text = core::str::from_utf8(&self.expression.data[..self.expression.len])
-            .unwrap_or("Invalid UTF-8");
-        let text_scale = if self.expression.len > 5 { 6.0 } else { 10.0 };
-        let text_x = (self.pos.x + margin) as f32;
-        let text_y = (self.pos.y + margin) as f32;
-        draw_text(
-            platform,
-            &display_text,
-            text_x,
-            text_y + 16.0,
-            text_scale,
-            2.0,
-            rgb8_hex(if has_focus { 0x000000 } else { 0xffffff }),
-            FontId::Futural
-        );
-        let cursor_x = text_to_pos(&display_text, text_x, text_scale, self.expression.cursor, FontId::Futural);
-        if has_focus {
-            platform.draw_line(
-                Vec2::new(cursor_x - 3.0, text_y - 5.0),
-                Vec2::new(cursor_x - 3.0, text_y + 22.0 * text_scale),
-                Rgb::new(0xff, 0x00, 0x44),
-                2,
-            );
-        }
-    }
-}
+const INPUT_CHAR_LIMIT: usize = 24;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum FocusUi {
@@ -168,112 +22,75 @@ enum FocusUi {
 
 pub struct RangeMapperCalculator {
     focused_ui: FocusUi,
-    input_box_in_val: ExpressionInputBox,
-    input_box_in_min: ExpressionInputBox,
-    input_box_in_max: ExpressionInputBox,
-    input_box_out_min: ExpressionInputBox,
-    input_box_out_max: ExpressionInputBox,
+    input_box_in_val: MathInput<INPUT_CHAR_LIMIT>,
+    input_box_in_min: MathInput<INPUT_CHAR_LIMIT>,
+    input_box_in_max: MathInput<INPUT_CHAR_LIMIT>,
+    input_box_out_min: MathInput<INPUT_CHAR_LIMIT>,
+    input_box_out_max: MathInput<INPUT_CHAR_LIMIT>,
     answer: f32,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum KeyAction {
-    InsertChar(u8),
-    MoveLeft,
-    MoveRight,
-    MoveUp,
-    MoveDown,
-    Backspace,
-    Enter,
-    Clear,
-    Home,
-    End,
 }
 
 impl RangeMapperCalculator {
     pub fn new() -> RangeMapperCalculator {
+        let background = rgb8_hex(0x3A9AFF);
+        let focused_background = rgb8_hex(0xF1FF5E);
         RangeMapperCalculator {
             focused_ui: FocusUi::InValue,
-            input_box_in_val: ExpressionInputBox::new(IVec2::new(50, 7), IVec2::new(122, 36)),
-            input_box_in_min: ExpressionInputBox::new(IVec2::new(50, 56), IVec2::new(122, 36)),
-            input_box_in_max: ExpressionInputBox::new(IVec2::new(188, 56), IVec2::new(122, 36)),
-            input_box_out_min: ExpressionInputBox::new(IVec2::new(50, 105), IVec2::new(122, 36)),
-            input_box_out_max: ExpressionInputBox::new(IVec2::new(188, 105), IVec2::new(122, 36)),
+            input_box_in_val: MathInput::new(
+                IVec2::new(50, 7),
+                IVec2::new(122, 36),
+                MathInputMode::Expression,
+                2.0,
+                10.0,
+                background,
+                focused_background,
+                None,
+            ),
+            input_box_in_min: MathInput::new(
+                IVec2::new(50, 56),
+                IVec2::new(122, 36),
+                MathInputMode::Expression,
+                2.0,
+                10.0,
+                background,
+                focused_background,
+                None,
+            ),
+            input_box_in_max: MathInput::new(
+                IVec2::new(188, 56),
+                IVec2::new(122, 36),
+                MathInputMode::Expression,
+                2.0,
+                10.0,
+                background,
+                focused_background,
+                None,
+            ),
+            input_box_out_min: MathInput::new(
+                IVec2::new(50, 105),
+                IVec2::new(122, 36),
+                MathInputMode::Expression,
+                2.0,
+                10.0,
+                background,
+                focused_background,
+                None,
+            ),
+            input_box_out_max: MathInput::new(
+                IVec2::new(188, 105),
+                IVec2::new(122, 36),
+                MathInputMode::Expression,
+                2.0,
+                10.0,
+                background,
+                focused_background,
+                None,
+            ),
             answer: 0.0,
         }
     }
 
-    fn get_action(&self, key: IcKey, is_shifted: bool, is_super: bool) -> Option<KeyAction> {
-        if is_shifted {
-            match key {
-                IcKey::Num0 => None,
-                IcKey::Num1 => None,
-                IcKey::Num2 => None,
-                IcKey::Num3 => None,
-                IcKey::Num4 => None,
-                IcKey::Num5 => None,
-                IcKey::Num6 => Some(KeyAction::InsertChar(b'.')),
-                IcKey::Num7 => Some(KeyAction::InsertChar(b'(')),
-                IcKey::Num8 => Some(KeyAction::InsertChar(b')')),
-                IcKey::Num9 => None,
-                IcKey::Func1 => None,
-                IcKey::Func2 => None,
-                IcKey::Func3 => None,
-                IcKey::Func4 => None,
-                IcKey::Func5 => None,
-                IcKey::Func6 => Some(KeyAction::InsertChar(b'^')),
-                IcKey::Shift => None,
-                IcKey::Super => None,
-                IcKey::_Max => None,
-            }
-        } else if is_super {
-            match key {
-                IcKey::Num0 => None,
-                IcKey::Num1 => Some(KeyAction::End),
-                IcKey::Num2 => Some(KeyAction::MoveDown),
-                IcKey::Num3 => None,
-                IcKey::Num4 => Some(KeyAction::MoveLeft),
-                IcKey::Num5 => None,
-                IcKey::Num6 => Some(KeyAction::MoveRight),
-                IcKey::Num7 => Some(KeyAction::Home),
-                IcKey::Num8 => Some(KeyAction::MoveUp),
-                IcKey::Num9 => Some(KeyAction::Clear),
-                IcKey::Func1 => None,
-                IcKey::Func2 => None,
-                IcKey::Func3 => None,
-                IcKey::Func4 => None,
-                IcKey::Func5 => None,
-                IcKey::Func6 => None,
-                IcKey::Shift => None,
-                IcKey::Super => None,
-                IcKey::_Max => None,
-            }
-        } else {
-            match key {
-                IcKey::Num0 => Some(KeyAction::InsertChar(b'0')),
-                IcKey::Num1 => Some(KeyAction::InsertChar(b'1')),
-                IcKey::Num2 => Some(KeyAction::InsertChar(b'2')),
-                IcKey::Num3 => Some(KeyAction::InsertChar(b'3')),
-                IcKey::Num4 => Some(KeyAction::InsertChar(b'4')),
-                IcKey::Num5 => Some(KeyAction::InsertChar(b'5')),
-                IcKey::Num6 => Some(KeyAction::InsertChar(b'6')),
-                IcKey::Num7 => Some(KeyAction::InsertChar(b'7')),
-                IcKey::Num8 => Some(KeyAction::InsertChar(b'8')),
-                IcKey::Num9 => Some(KeyAction::InsertChar(b'9')),
-                IcKey::Func1 => Some(KeyAction::Backspace),
-                IcKey::Func2 => Some(KeyAction::InsertChar(b'/')),
-                IcKey::Func3 => Some(KeyAction::InsertChar(b'*')),
-                IcKey::Func4 => Some(KeyAction::InsertChar(b'-')),
-                IcKey::Func5 => Some(KeyAction::InsertChar(b'+')),
-                IcKey::Func6 => Some(KeyAction::Enter),
-                IcKey::Shift => None,
-                IcKey::Super => None,
-                IcKey::_Max => None,
-            }
-        }
-    }
-
-    fn get_focused_input_box(&mut self) -> &mut ExpressionInputBox {
+    fn get_focused_input_box(&mut self) -> &mut MathInput<INPUT_CHAR_LIMIT> {
         match self.focused_ui {
             FocusUi::InValue => &mut self.input_box_in_val,
             FocusUi::InMin => &mut self.input_box_in_min,
@@ -291,12 +108,40 @@ impl RangeMapperCalculator {
         if !self.has_valid_inputs() {
             self.answer = 0.0;
         }
-        let x = self.input_box_in_val.expression.evaluate();
-        let a = self.input_box_in_min.expression.evaluate();
-        let b = self.input_box_in_max.expression.evaluate();
-        let c = self.input_box_out_min.expression.evaluate();
-        let d = self.input_box_out_max.expression.evaluate();
+        let x = self.input_box_in_val.evaluate().unwrap_or(0.0);
+        let a = self.input_box_in_min.evaluate().unwrap_or(0.0);
+        let b = self.input_box_in_max.evaluate().unwrap_or(0.0);
+        let c = self.input_box_out_min.evaluate().unwrap_or(0.0);
+        let d = self.input_box_out_max.evaluate().unwrap_or(0.0);
         self.answer = c + ((x - a) * (d - c) / (b - a));
+    }
+
+    fn handle_navigation(&mut self, direction: MathInputDirection) {
+        let next_focus = match (self.focused_ui, direction) {
+            (FocusUi::InValue, MathInputDirection::Right) => Some(FocusUi::InMax),
+            (FocusUi::InValue, MathInputDirection::Down) => Some(FocusUi::InMin),
+            (FocusUi::InMin, MathInputDirection::Left) => Some(FocusUi::InValue),
+            (FocusUi::InMin, MathInputDirection::Right) => Some(FocusUi::InMax),
+            (FocusUi::InMin, MathInputDirection::Up) => Some(FocusUi::InValue),
+            (FocusUi::InMin, MathInputDirection::Down) => Some(FocusUi::OutMin),
+            (FocusUi::InMax, MathInputDirection::Left) => Some(FocusUi::InMin),
+            (FocusUi::InMax, MathInputDirection::Up) => Some(FocusUi::InValue),
+            (FocusUi::InMax, MathInputDirection::Down) => Some(FocusUi::OutMax),
+            (FocusUi::OutMin, MathInputDirection::Right) => Some(FocusUi::OutMax),
+            (FocusUi::OutMin, MathInputDirection::Up) => Some(FocusUi::InMin),
+            (FocusUi::OutMax, MathInputDirection::Left) => Some(FocusUi::OutMin),
+            (FocusUi::OutMax, MathInputDirection::Up) => Some(FocusUi::InMax),
+            _ => None,
+        };
+
+        if let Some(next_focus) = next_focus {
+            self.focused_ui = next_focus;
+            match direction {
+                MathInputDirection::Left => self.get_focused_input_box().end(),
+                MathInputDirection::Right => self.get_focused_input_box().home(),
+                MathInputDirection::Up | MathInputDirection::Down => {}
+            }
+        }
     }
 }
 
@@ -314,59 +159,29 @@ impl IcApp for RangeMapperCalculator {
     }
 
     fn on_key(&mut self, key: IcKey, ctx: &crate::app::InputContext) {
-        let action = self.get_action(key, ctx.is_shifted(), ctx.is_super());
-        match action {
-            Some(KeyAction::InsertChar(d)) => {
-                self.get_focused_input_box().expression.insert_char(d as u8);
-                self.update_math();
-            }
-            Some(KeyAction::MoveUp) => (),
-            Some(KeyAction::MoveDown) => (),
-            Some(KeyAction::MoveLeft) => {
-                self.get_focused_input_box().expression.move_cursor(false);
-            }
-            Some(KeyAction::MoveRight) => {
-                self.get_focused_input_box().expression.move_cursor(true);
-            }
-            Some(KeyAction::Backspace) => {
-                self.get_focused_input_box().expression.backspace();
-                self.update_math();
-            }
-            Some(KeyAction::Clear) => {
-                self.get_focused_input_box().expression.clear();
-                self.update_math();
-            }
-            Some(KeyAction::Enter) => {
+        match self.get_focused_input_box().handle_key(key, ctx) {
+            MathInputEvent::Changed => self.update_math(),
+            MathInputEvent::Submitted => {
                 self.focused_ui = match self.focused_ui {
                     FocusUi::InValue => FocusUi::InMin,
                     FocusUi::InMin => FocusUi::InMax,
                     FocusUi::InMax => FocusUi::OutMin,
                     FocusUi::OutMin => FocusUi::OutMax,
                     FocusUi::OutMax => FocusUi::InValue,
-                }
+                };
             }
-            Some(KeyAction::Home) => {
-                self.get_focused_input_box().expression.move_cursor_home();
-            }
-            Some(KeyAction::End) => {
-                self.get_focused_input_box().expression.move_cursor_end();
-            }
-            None => (),
+            MathInputEvent::Navigate(direction) => self.handle_navigation(direction),
+            MathInputEvent::Handled | MathInputEvent::Ignored => {}
         }
     }
 
     fn update(&mut self, platform: &mut dyn IcPlatform, _ctx: &crate::app::InputContext, _audio: &mut audio_engine::AudioEngine) {
         platform.clear(rgb8_hex(0x1C0770));
-        self.input_box_in_val
-            .draw(platform, self.focused_ui == FocusUi::InValue);
-        self.input_box_in_min
-            .draw(platform, self.focused_ui == FocusUi::InMin);
-        self.input_box_in_max
-            .draw(platform, self.focused_ui == FocusUi::InMax);
-        self.input_box_out_min
-            .draw(platform, self.focused_ui == FocusUi::OutMin);
-        self.input_box_out_max
-            .draw(platform, self.focused_ui == FocusUi::OutMax);
+        self.input_box_in_val.draw(platform, self.focused_ui == FocusUi::InValue);
+        self.input_box_in_min.draw(platform, self.focused_ui == FocusUi::InMin);
+        self.input_box_in_max.draw(platform, self.focused_ui == FocusUi::InMax);
+        self.input_box_out_min.draw(platform, self.focused_ui == FocusUi::OutMin);
+        self.input_box_out_max.draw(platform, self.focused_ui == FocusUi::OutMax);
         draw_text_f(
             platform,
             format_args!("{}", self.answer),
