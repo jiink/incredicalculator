@@ -217,7 +217,7 @@ impl CalcEngine for ScientificEngine {
             "Scientific",
             2.0,
             222.0,
-            2.0,
+            10.0,
             2.0,
             LOCAL_COLOR_FG_SUBTLE_0,
             FontId::Futural
@@ -705,6 +705,13 @@ impl Calculator {
         }
     }
 
+    fn clear_history(&mut self) {
+        self.eq_history = [EqEntry::default(); EQ_HISTORY_MAX];
+        self.eq_history_len = 0;
+        self.eq_history_write_idx = 0;
+        self.history_selection = None;
+    }
+
     fn history_nav(&mut self, up: bool) {
         if self.eq_history_len == 0 {
             self.history_selection = None;
@@ -833,7 +840,7 @@ impl Calculator {
             let y = base_y + margin - draw_row * row_height;
             let line_height: u32 = 20;
             let y2 = base_y + line_height + margin - draw_row * row_height;
-            let mut h_exp_col = LOCAL_COLOR_FG_SUBTLE_0;
+            let mut h_exp_col = LOCAL_COLOR_FG_0;
             let mut h_ans_col = LOCAL_COLOR_FG_EMPH_1;
             if let Some(selection) = self.history_selection {
                 let y_pos = match selection.part {
@@ -882,7 +889,7 @@ impl Calculator {
                 y2 as f32 + 6.0,
                 font_size,
                 2.0,
-                h_exp_col,
+                LOCAL_COLOR_FG_SUBTLE_0,
                 FontId::Futural
             );
             draw_text(
@@ -1038,7 +1045,13 @@ impl IcApp for Calculator {
                         self.delete_current_history_entry()
                     }
                 }
-                KeyAction::Clear => self.current_eq.clear(),
+                KeyAction::Clear => {
+                    if self.current_eq.len == 0 {
+                        self.clear_history();
+                    } else {
+                        self.current_eq.clear();
+                    }
+                }
                 KeyAction::Delete => self.current_eq.backspace_del(),
                 KeyAction::Enter => {
                     if self.history_selection.is_none() {
