@@ -46,8 +46,8 @@ impl NumInputBox {
             platform,
             format_args!("{}", self.value),
             (self.pos.x + margin) as f32,
-            (self.pos.y + margin) as f32,
-            4.0,
+            (self.pos.y + self.size.y / 2 + 3) as f32,
+            10.0,
             2.0,
             RGB8::new(0, 0, 0),
             FontId::Futural
@@ -400,10 +400,10 @@ impl IcApp for AspectRatioCalculator {
         platform.clear(RGB8::new(0xff, 0xb3, 0x3f));
         draw_text(
             platform,
-            "ASPECT RATIO CALCULATOR",
-            10.0,
-            10.0,
-            2.0,
+            "Aspect Ratio Calculator",
+            5.0,
+            12.0,
+            6.0,
             2.0,
             RGB8::new(0, 0, 0),
             FontId::Futural

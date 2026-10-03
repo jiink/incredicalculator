@@ -531,8 +531,9 @@ fn main() {
         m.insert(KeyboardKey::KEY_EIGHT, IcKey::Num8);
         m.insert(KeyboardKey::KEY_NINE, IcKey::Num9);
         m.insert(KeyboardKey::KEY_A, IcKey::Func1);
+        m.insert(KeyboardKey::KEY_BACKSPACE, IcKey::Func1);
         m.insert(KeyboardKey::KEY_LEFT_SHIFT, IcKey::Shift);
-        m.insert(KeyboardKey::KEY_Z, IcKey::Super);
+        m.insert(KeyboardKey::KEY_LEFT_CONTROL, IcKey::Super);
         m
     };
 

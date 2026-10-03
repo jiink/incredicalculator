@@ -132,14 +132,14 @@ impl ExpressionInputBox {
         let margin = 4;
         let display_text = core::str::from_utf8(&self.expression.data[..self.expression.len])
             .unwrap_or("Invalid UTF-8");
-        let text_scale = if self.expression.len > 5 { 2.0 } else { 4.0 };
+        let text_scale = if self.expression.len > 5 { 6.0 } else { 10.0 };
         let text_x = (self.pos.x + margin) as f32;
         let text_y = (self.pos.y + margin) as f32;
         draw_text(
             platform,
             &display_text,
             text_x,
-            text_y,
+            text_y + 16.0,
             text_scale,
             2.0,
             rgb8_hex(if has_focus { 0x000000 } else { 0xffffff }),
@@ -149,7 +149,7 @@ impl ExpressionInputBox {
         if has_focus {
             platform.draw_line(
                 Vec2::new(cursor_x - 3.0, text_y - 5.0),
-                Vec2::new(cursor_x - 3.0, text_y + 8.0 * text_scale),
+                Vec2::new(cursor_x - 3.0, text_y + 22.0 * text_scale),
                 Rgb::new(0xff, 0x00, 0x44),
                 2,
             );
@@ -371,22 +371,22 @@ impl IcApp for RangeMapperCalculator {
             platform,
             format_args!("{}", self.answer),
             49.0,
-            155.0,
-            4.0,
+            175.0,
+            10.0,
             2.0,
             rgb8_hex(0xffffff),
             FontId::Futural
         );
-        draw_text(platform, "Map", 7.0, 19.0, 2.0, 2.0, rgb8_hex(0xffffff), FontId::Futural);
-        draw_text(platform, "from", 6.0, 68.0, 2.0, 2.0, rgb8_hex(0xffffff), FontId::Futural);
-        draw_text(platform, "to", 28.0, 114.0, 2.0, 2.0, rgb8_hex(0xffffff), FontId::Futural);
-        draw_text(platform, "=", 32.0, 162.0, 2.0, 2.0, rgb8_hex(0xffffff), FontId::Futural);
+        draw_text(platform, "Map", 3.0, 24.0, 6.0, 2.0, rgb8_hex(0xffffff), FontId::Futural);
+        draw_text(platform, "from", 3.0, 73.0, 6.0, 2.0, rgb8_hex(0xffffff), FontId::Futural);
+        draw_text(platform, "to", 3.0, 119.0, 6.0, 2.0, rgb8_hex(0xffffff), FontId::Futural);
+        draw_text(platform, "=", 32.0, 167.0, 6.0, 2.0, rgb8_hex(0xffffff), FontId::Futural);
         draw_text(
             platform,
             "X = C + ((X-A)*(D-C) / B-A)",
-            36.0,
-            207.0,
-            2.0,
+            3.0,
+            227.0,
+            6.0,
             2.0,
             rgb8_hex(0x3A9AFF),
             FontId::Futural
