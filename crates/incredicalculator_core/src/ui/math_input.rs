@@ -10,6 +10,7 @@ use rgb::RGB8;
 pub enum MathInputMode {
     Integer,
     Expression,
+    Hexadecimal,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -251,6 +252,14 @@ impl<const N: usize> MathInput<N> {
                     }
                 }
             }
+            MathInputMode::Hexadecimal => {
+                for byte in text.bytes() {
+                    let ch = byte as char;
+                    if !Self::mode_char_allowed(self.mode, ch) {
+                        return Err(MathInputError::InvalidCharacter(ch));
+                    }
+                }
+            }
         }
 
         self.buffer.set_bytes(text.as_bytes());
@@ -345,6 +354,10 @@ impl<const N: usize> MathInput<N> {
             MathInputMode::Expression => exp_rs::interp(self.text(), None)
                 .map(|v| v as f32)
                 .map_err(|_| MathInputError::InvalidValue)?,
+
+            MathInputMode::Hexadecimal => u32::from_str_radix(self.text(), 16)
+                .map(|v| v as f32)
+                .map_err(|_| MathInputError::InvalidValue)?,
         };
 
         if !value.is_finite() {
@@ -423,7 +436,7 @@ impl<const N: usize> MathInput<N> {
             );
 
             let text_center_y = text_y + 12.0;
-            let cursor_height = 4.0 * text_scale;
+            let cursor_height = (4.0 * text_scale).min(self.size.y as f32 - Self::TEXT_MARGIN * 2.0);
 
             platform.draw_line(
                 Vec2::new(cursor_x, text_center_y - cursor_height * 0.5),
@@ -448,6 +461,12 @@ impl<const N: usize> MathInput<N> {
 
     fn handle_shifted_key(&mut self, key: IcKey) -> MathInputEvent {
         let ch = match key {
+            IcKey::Num0 if self.mode == MathInputMode::Hexadecimal => Some('A'),
+            IcKey::Num1 if self.mode == MathInputMode::Hexadecimal => Some('B'),
+            IcKey::Num2 if self.mode == MathInputMode::Hexadecimal => Some('C'),
+            IcKey::Num3 if self.mode == MathInputMode::Hexadecimal => Some('D'),
+            IcKey::Num4 if self.mode == MathInputMode::Hexadecimal => Some('E'),
+            IcKey::Num5 if self.mode == MathInputMode::Hexadecimal => Some('F'),
             IcKey::Num6 if self.mode == MathInputMode::Expression => Some('.'),
             IcKey::Num7 if self.mode == MathInputMode::Expression => Some('('),
             IcKey::Num8 if self.mode == MathInputMode::Expression => Some(')'),
@@ -495,6 +514,7 @@ impl<const N: usize> MathInput<N> {
                         && !self.text().as_bytes().contains(&b'-'))
             }
             MathInputMode::Expression => Self::mode_char_allowed(self.mode, ch),
+            MathInputMode::Hexadecimal => Self::mode_char_allowed(self.mode, ch),
         }
     }
 
@@ -507,6 +527,7 @@ impl<const N: usize> MathInput<N> {
                     '0'..='9' | '.' | '(' | ')' | '^' | '/' | '*' | '-' | '+'
                 )
             }
+            MathInputMode::Hexadecimal => ch.is_ascii_hexdigit(),
         }
     }
 }
