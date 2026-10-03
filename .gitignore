@@ -44,3 +44,5 @@ CACHEDIR.TAG
 **/*.out
 **/*.log
 **/*.txt
+
+AGENTS.md
