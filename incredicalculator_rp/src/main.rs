@@ -399,46 +399,42 @@ impl<'d> IcPlatform for IcRpPlatform<'d> {
     }
 }
 
-
+#[inline(always)]
 fn blend_rgb565(dst_be: Rgb565, src_native: Rgb565, alpha: u8) -> Rgb565 {
-    if alpha == 0 { return dst_be; }
-
-    let alpha = alpha as u32;
-    let inv_alpha = 255u32 - alpha;
-    let dst_u16 = u16::from_be(unsafe { core::mem::transmute::<Rgb565, u16>(dst_be) });
+    if alpha == 0 {
+        return dst_be;
+    }
     let src_u16 = unsafe { core::mem::transmute::<Rgb565, u16>(src_native) };
     if alpha == 255 {
         let out_be = src_u16.to_be();
         return unsafe { core::mem::transmute::<u16, Rgb565>(out_be) };
     }
-    let dst_r = ((dst_u16 >> 11) & 0x1F) as u32;
-    let dst_g = ((dst_u16 >> 5) & 0x3F) as u32;
-    let dst_b = (dst_u16 & 0x1F) as u32;
 
-    let src_r = ((src_u16 >> 11) & 0x1F) as u32;
-    let src_g = ((src_u16 >> 5) & 0x3F) as u32;
-    let src_b = (src_u16 & 0x1F) as u32;
-    
-    let dst_r8 = (dst_r << 3) | (dst_r >> 2);
-    let dst_g8 = (dst_g << 2) | (dst_g >> 4);
-    let dst_b8 = (dst_b << 3) | (dst_b >> 2);
-    
-    let src_r8 = (src_r << 3) | (src_r >> 2);
-    let src_g8 = (src_g << 2) | (src_g >> 4);
-    let src_b8 = (src_b << 3) | (src_b >> 2);
-    
-    let r8 = (dst_r8 * inv_alpha + src_r8 * alpha) / 255;
-    let g8 = (dst_g8 * inv_alpha + src_g8 * alpha) / 255;
-    let b8 = (dst_b8 * inv_alpha + src_b8 * alpha) / 255;
+    let dst_u16 = u16::from_be(unsafe { core::mem::transmute::<Rgb565, u16>(dst_be) });
 
-    let blended_u16 = (((r8 >> 3) as u16) << 11) 
-                    | (((g8 >> 2) as u16) << 5) 
-                    | ((b8 >> 3) as u16);
+    let a = ((alpha as u32) + 2) >> 2;
+    if a == 0 {
+        return dst_be;
+    }
+    if a >= 64 {
+        let out_be = src_u16.to_be();
+        return unsafe { core::mem::transmute::<u16, Rgb565>(out_be) };
+    }
+    let inv_a = 64 - a;
 
-    // be stands for big endian
-    let out_be = blended_u16.to_be();
+    let d = dst_u16 as u32;
+    let s = src_u16 as u32;
+
+    // Mask Red (15:11) & Blue (4:0) together: 0b11111_000000_11111 = 0xF81F
+    let rb = ((s & 0xF81F) * a + (d & 0xF81F) * inv_a) >> 6;
+    // Mask Green (10:5): 0b00000_111111_00000 = 0x07E0
+    let g = ((s & 0x07E0) * a + (d & 0x07E0) * inv_a) >> 6;
+
+    let blended = ((rb & 0xF81F) | (g & 0x07E0)) as u16;
+    let out_be = blended.to_be();
     unsafe { core::mem::transmute::<u16, Rgb565>(out_be) }
 }
+
 
 
 #[inline]
@@ -481,26 +477,49 @@ fn round_f32(x: f32) -> f32 {
     if x < 0.0 { -rounded } else { rounded }
 }
 
-#[inline]
-fn sqrt_f32(x: f32) -> f32 {
+#[inline(always)]
+fn sqrt_fast(x: f32) -> f32 {
     if x <= 0.0 {
         return 0.0;
     }
-    let mut guess = if x < 1.0 { 1.0 } else { x };
-    for _ in 0..8 {
-        let next = 0.5 * (guess + x / guess);
-        if (next - guess).abs() < 1e-6 {
-            guess = next;
-            break;
-        }
-        guess = next;
+    #[cfg(all(target_arch = "arm", target_abi = "eabihf", target_feature = "vfp2"))]
+    unsafe {
+        let res: f32;
+        core::arch::asm!(
+            "vsqrt.f32 {0}, {1}",
+            out(sreg) res,
+            in(sreg) x,
+            options(nomem, nostack, preserves_flags)
+        );
+        res
     }
-    guess
+    #[cfg(all(target_arch = "riscv32", target_feature = "f"))]
+    unsafe {
+        let res: f32;
+        core::arch::asm!(
+            "fsqrt.s {0}, {1}",
+            out(freg) res,
+            in(freg) x,
+            options(nomem, nostack, preserves_flags)
+        );
+        res
+    }
+    #[cfg(not(any(
+        all(target_arch = "arm", target_abi = "eabihf", target_feature = "vfp2"),
+        all(target_arch = "riscv32", target_feature = "f")
+    )))]
+    {
+        let i = x.to_bits();
+        let i = 0x5f3759df - (i >> 1);
+        let y = f32::from_bits(i);
+        let y = y * (1.5 - 0.5 * x * y * y);
+        x * y
+    }
 }
 
 #[inline]
 fn hypot_f32(x: f32, y: f32) -> f32 {
-    sqrt_f32(x * x + y * y)
+    sqrt_fast(x * x + y * y)
 }
 
 #[inline]
@@ -625,46 +644,119 @@ fn draw_line_aa_distance(
     let vy = y2 - y1;
     let len2 = vx * vx + vy * vy;
     let radius = thickness * 0.5;
+    let max_dist = radius + 0.5;
+    let max_dist2 = max_dist * max_dist;
+    let min_dist = (radius - 0.5).max(0.0);
+    let min_dist2 = min_dist * min_dist;
 
+    // Zero-length line (single point dot)
     if len2 < 1e-6 {
-        let min_x = (floor_f32(x1 - radius - 1.0) as i32).max(0);
-        let max_x = (ceil_f32(x1 + radius + 1.0) as i32).min(RENDER_W as i32 - 1);
-        let min_y = (floor_f32(y1 - radius - 1.0) as i32).max(0);
-        let max_y = (ceil_f32(y1 + radius + 1.0) as i32).min(RENDER_H as i32 - 1);
+        let min_x = (floor_f32(x1 - max_dist) as i32).max(0);
+        let max_x = (ceil_f32(x1 + max_dist) as i32).min(RENDER_W as i32 - 1);
+        let min_y = (floor_f32(y1 - max_dist) as i32).max(0);
+        let max_y = (ceil_f32(y1 + max_dist) as i32).min(RENDER_H as i32 - 1);
 
         for py in min_y..=max_y {
             let cy = py as f32 + 0.5;
+            let dy = cy - y1;
+            let dy2 = dy * dy;
+            let row_idx = (py as usize) * (RENDER_W as usize);
+
             for px in min_x..=max_x {
                 let cx = px as f32 + 0.5;
-                let dist = hypot_f32(cx - x1, cy - y1);
-                let alpha = (radius + 0.5 - dist).clamp(0.0, 1.0);
-                plot_pixel(buf, px, py, color, alpha);
+                let dx = cx - x1;
+                let dist2 = dx * dx + dy2;
+
+                if dist2 >= max_dist2 {
+                    continue;
+                }
+
+                let alpha = if dist2 <= min_dist2 {
+                    255
+                } else {
+                    let dist = sqrt_fast(dist2);
+                    let a = max_dist - dist;
+                    ((a * a) * 255.0 + 0.5) as u8
+                };
+
+                let idx = row_idx + (px as usize);
+                buf[idx] = blend_rgb565(buf[idx], color, alpha);
             }
         }
         return;
     }
 
-    let min_x = (floor_f32(x1.min(x2) - radius - 1.0) as i32).max(0);
-    let max_x = (ceil_f32(x1.max(x2) + radius + 1.0) as i32).min(RENDER_W as i32 - 1);
-    let min_y = (floor_f32(y1.min(y2) - radius - 1.0) as i32).max(0);
-    let max_y = (ceil_f32(y1.max(y2) + radius + 1.0) as i32).min(RENDER_H as i32 - 1);
+    let len = sqrt_fast(len2);
+    let inv_len2 = 1.0 / len2;
+
+    let min_x = (floor_f32(x1.min(x2) - max_dist) as i32).max(0);
+    let max_x = (ceil_f32(x1.max(x2) + max_dist) as i32).min(RENDER_W as i32 - 1);
+    let min_y = (floor_f32(y1.min(y2) - max_dist) as i32).max(0);
+    let max_y = (ceil_f32(y1.max(y2) + max_dist) as i32).min(RENDER_H as i32 - 1);
+
+    if min_x > max_x || min_y > max_y {
+        return;
+    }
+
+    // Conservative scanline slab bounds:
+    // Slashes horizontal scanning width to a narrow strip along diagonal/slanted lines.
+    let use_slab = vy.abs() > 1e-4;
+    let (x_step, x_half_span) = if use_slab {
+        let inv_vy = 1.0 / vy;
+        let step = vx * inv_vy;
+        let half = (max_dist * len * inv_vy).abs() + 0.5;
+        (step, half)
+    } else {
+        (0.0, 0.0)
+    };
 
     for py in min_y..=max_y {
         let cy = py as f32 + 0.5;
         let wy = cy - y1;
+        let wy_vy = wy * vy;
+        let row_idx = (py as usize) * (RENDER_W as usize);
 
-        for px in min_x..=max_x {
+        // Calculate clamped X-extent for this specific scanline
+        let (row_min_x, row_max_x) = if use_slab {
+            let x_center = x1 + wy * x_step;
+            let r_min = (floor_f32(x_center - x_half_span) as i32).max(min_x);
+            let r_max = (ceil_f32(x_center + x_half_span) as i32).min(max_x);
+            (r_min, r_max)
+        } else {
+            (min_x, max_x)
+        };
+
+        for px in row_min_x..=row_max_x {
             let cx = px as f32 + 0.5;
             let wx = cx - x1;
 
-            let t = ((wx * vx + wy * vy) / len2).clamp(0.0, 1.0);
+            // Clamped projection using precomputed inv_len2 (multiplication instead of division)
+            let dot = wx * vx + wy_vy;
+            let t = (dot * inv_len2).clamp(0.0, 1.0);
             let qx = x1 + t * vx;
             let qy = y1 + t * vy;
 
-            let dist = hypot_f32(cx - qx, cy - qy);
+            let dx = cx - qx;
+            let dy = cy - qy;
+            let dist2 = dx * dx + dy * dy;
 
-            let alpha = (radius + 0.5 - dist).clamp(0.0, 1.0);
-            plot_pixel(buf, px, py, color, alpha);
+            // 1. FAST REJECTION: Skip outside pixels in ~10 cycles without taking a square root
+            if dist2 >= max_dist2 {
+                continue;
+            }
+
+            // 2. OPAQUE SHORTCUT: Full opacity core skips sqrt completely
+            let alpha = if dist2 <= min_dist2 {
+                255
+            } else {
+                // 3. AA FRINGE: Hardware sqrt for only the 1px edge fringe
+                let dist = sqrt_fast(dist2);
+                let a = max_dist - dist;
+                ((a * a) * 255.0 + 0.5) as u8
+            };
+
+            let idx = row_idx + (px as usize);
+            buf[idx] = blend_rgb565(buf[idx], color, alpha);
         }
     }
 }

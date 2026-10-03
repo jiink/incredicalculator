@@ -117,10 +117,10 @@ impl AspectRatioCalculator {
         }
 
         let (target, value) = match self.focused_ui {
-            FocusUi::Width1 => (&mut self.input_box_width2, ((w1 / h1) * h2).round() as i32),
-            FocusUi::Height1 => (&mut self.input_box_height2, ((h1 / w1) * w2).round() as i32),
-            FocusUi::Width2 => (&mut self.input_box_height2, ((h1 / w1) * w2).round() as i32),
-            FocusUi::Height2 => (&mut self.input_box_width2, ((w1 / h1) * h2).round() as i32),
+            FocusUi::Width1 => (&mut self.input_box_width2, (((w1 / h1) * h2) + 0.5) as i32),
+            FocusUi::Height1 => (&mut self.input_box_height2, (((h1 / w1) * w2) + 0.5) as i32),
+            FocusUi::Width2 => (&mut self.input_box_height2, (((h1 / w1) * w2) + 0.5) as i32),
+            FocusUi::Height2 => (&mut self.input_box_width2, (((w1 / h1) * h2) + 0.5) as i32),
         };
         let text = alloc::format!("{}", value);
         let _ = target.set_text(&text);
