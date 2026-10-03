@@ -11,6 +11,12 @@ use glam::IVec2;
 use rgb::RGB8;
 
 const INPUT_CAPACITY: usize = 6;
+const LOCAL_COLOR_BG_0: RGB8 = RGB8::new(0x20, 0x2a, 0x2d);
+const LOCAL_COLOR_BG_1: RGB8 = RGB8::new(0x1f, 0x5c, 0x55);
+const LOCAL_COLOR_BG_FOCUS_0: RGB8 = RGB8::new(0xe8, 0xf2, 0x7a);
+const LOCAL_COLOR_BORDER_0: RGB8 = RGB8::new(0x12, 0x3b, 0x38);
+const LOCAL_COLOR_FG_0: RGB8 = RGB8::new(0xf4, 0xf1, 0xdf);
+const LOCAL_COLOR_FG_SUBTLE_0: RGB8 = RGB8::new(0x91, 0xd8, 0xca);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum EntryMode {
@@ -38,9 +44,9 @@ impl ColorCalculator {
             mode,
             4.0,
             8.0,
-            rgb8_hex(0x1f5c55),
-            rgb8_hex(0xe8f27a),
-            Some(rgb8_hex(0x123b38)),
+            LOCAL_COLOR_BG_1,
+            LOCAL_COLOR_BG_FOCUS_0,
+            Some(LOCAL_COLOR_BORDER_0),
         )
     }
 
@@ -128,7 +134,7 @@ impl ColorCalculator {
                     let _ = self.unit_inputs[self.focused_channel]
                         .set_text(&format!("{clamped_value:.3}"));
                 }
-                let channel = (clamped_value * 255.0).round() as u8;
+                let channel = (clamped_value * 255.0 + 0.5) as u8;
                 match self.focused_channel {
                     0 => self.color.r = channel,
                     1 => self.color.g = channel,
@@ -191,7 +197,7 @@ impl ColorCalculator {
         platform.draw_rectangle(
             IVec2::new(0, y_offset as i32 + 12),
             IVec2::new(CANVAS_WIDTH as i32 - 1, y_offset as i32 + 44),
-            rgb8_hex(0xf4f1df),
+            LOCAL_COLOR_FG_0,
             2,
             Some(self.color),
         );
@@ -201,7 +207,7 @@ impl ColorCalculator {
             EntryMode::Hex => "HEX 0x",
             EntryMode::Rgb565 => "RGB565 0x",
         };
-        draw_text(platform, mode_label, 8.0, y_offset, 6.0, 2.0, rgb8_hex(0xf4f1df), FontId::Futural);
+        draw_text(platform, mode_label, 8.0, y_offset, 6.0, 2.0, LOCAL_COLOR_FG_0, FontId::Futural);
 
         match self.mode {
             EntryMode::Rgb => {
@@ -260,8 +266,8 @@ impl IcApp for ColorCalculator {
     }
 
     fn update(&mut self, platform: &mut dyn IcPlatform, _ctx: &InputContext, _audio: &mut AudioEngine) {
-        platform.clear(rgb8_hex(0x202a2d));
-        draw_text(platform, self.name(), 8.0, 15.0, 6.0, 2.0, rgb8_hex(0xf4f1df), FontId::Futural);
+        platform.clear(LOCAL_COLOR_BG_0);
+        draw_text(platform, self.name(), 8.0, 15.0, 6.0, 2.0, LOCAL_COLOR_FG_0, FontId::Futural);
         draw_text(
             platform,
             "Press F1-F4",
@@ -269,7 +275,7 @@ impl IcApp for ColorCalculator {
             35.0,
             6.0,
             2.0,
-            rgb8_hex(0x91d8ca),
+            LOCAL_COLOR_FG_SUBTLE_0,
             FontId::Futural,
         );
         self.draw_input(platform);
@@ -281,7 +287,7 @@ impl IcApp for ColorCalculator {
             conv_y_offset,
             6.0,
             2.0,
-            rgb8_hex(0xf4f1df),
+            LOCAL_COLOR_FG_0,
             FontId::Futural,
         );
         draw_text_f(
@@ -291,7 +297,7 @@ impl IcApp for ColorCalculator {
             conv_y_offset + 20.0,
             6.0,
             2.0,
-            rgb8_hex(0xf4f1df),
+            LOCAL_COLOR_FG_0,
             FontId::Futural,
         );
         draw_text_f(
@@ -306,7 +312,7 @@ impl IcApp for ColorCalculator {
             conv_y_offset + 40.0,
             6.0,
             2.0,
-            rgb8_hex(0xf4f1df),
+            LOCAL_COLOR_FG_0,
             FontId::Futural,
         );
         draw_text_f(
@@ -316,7 +322,7 @@ impl IcApp for ColorCalculator {
             conv_y_offset + 60.0,
             6.0,
             2.0,
-            rgb8_hex(0xf4f1df),
+            LOCAL_COLOR_FG_0,
             FontId::Futural,
         );
     }
