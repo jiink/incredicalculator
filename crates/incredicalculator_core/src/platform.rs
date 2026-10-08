@@ -1,13 +1,23 @@
+use core::fmt;
 use glam::{IVec2, Vec2};
 use rgb::*;
-use core::fmt;
 
 pub const CANVAS_WIDTH: u32 = 320;
 pub const CANVAS_HEIGHT: u32 = 240;
 
 pub trait IcPlatform {
     fn draw_line(&mut self, start: Vec2, end: Vec2, color: RGB8, width: u32);
-    fn draw_rectangle(&mut self, start: IVec2, end: IVec2, stroke_color: RGB8, stroke_width: u32, fill_color: Option<RGB8>);
+    /// Fills a simple polygon. Points may be clockwise or counterclockwise;
+    /// concave must be supported, but not holes nor self-intersections.
+    fn draw_polygon(&mut self, points: &[Vec2], fill_color: RGB8);
+    fn draw_rectangle(
+        &mut self,
+        start: IVec2,
+        end: IVec2,
+        stroke_color: RGB8,
+        stroke_width: u32,
+        fill_color: Option<RGB8>,
+    );
     fn draw_rectangle_rounded(
         &mut self,
         start: IVec2,
@@ -17,13 +27,19 @@ pub trait IcPlatform {
         fill_color: Option<rgb::RGB8>,
         corner_radius: u32,
     );
-    fn draw_triangle(&mut self, vertex1: IVec2, vertex2: IVec2, vertex3: IVec2, stroke_color: RGB8, stroke_width: u32, fill_color: Option<RGB8>);
+    fn draw_triangle(
+        &mut self,
+        vertex1: IVec2,
+        vertex2: IVec2,
+        vertex3: IVec2,
+        stroke_color: RGB8,
+        stroke_width: u32,
+        fill_color: Option<RGB8>,
+    );
     fn clear(&mut self, color: RGB8);
     fn log(&mut self, arg: fmt::Arguments);
     fn millis(&self) -> u64;
     fn get_battery_soc(&self) -> Option<i32>;
-    // fn get_audio_vacancy(&self) -> usize;
-    // fn push_audio_samples(&mut self, samples: &[i16]);
     fn get_brightness(&self) -> u8;
     fn set_brightness(&mut self, value: u8);
     fn get_volume(&self) -> u8;

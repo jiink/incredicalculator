@@ -1568,6 +1568,7 @@ dependencies = [
  "num-derive",
  "num-traits",
  "rgb",
+ "serde_json",
 ]
 
 [[package]]

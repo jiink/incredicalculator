@@ -10,6 +10,9 @@ pub mod input;
 pub mod platform;
 pub mod shell;
 pub mod audio_engine;
+pub mod graphics {
+    include!(concat!(env!("OUT_DIR"), "/generated_graphics.rs"));
+}
 mod text;
 mod fonts;
 mod ui;

@@ -10,38 +10,37 @@ use defmt::*;
 use embassy_embedded_hal::shared_bus::asynch::spi::SpiDeviceWithConfig;
 use embassy_executor::{Executor, Spawner};
 use embassy_futures::select::{Either, Either3, select, select3, select4};
+use embassy_rp::bind_interrupts;
 use embassy_rp::gpio::{Input, Level, Output, Pull};
 use embassy_rp::multicore::{Stack, spawn_core1};
-use embassy_rp::spi;
-use embassy_rp::spi::Spi;
-use embassy_rp::pwm::{Config as PwmConfig, Pwm}; 
-use embassy_sync::blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex};
-use embassy_sync::channel::{Channel, DynamicSender};
-use embassy_sync::mutex::Mutex as AsyncMutex;
-use embassy_time::{Delay, Instant};
-use embassy_time::Timer;
-use embedded_alloc::LlffHeap as Heap;
-use embedded_graphics::pixelcolor::{Rgb565};
-use embedded_graphics::primitives::PrimitiveStyleBuilder;
-use embedded_graphics::{prelude::*};
-use incredicalculator_core::input::IcKey;
-use incredicalculator_core::platform::IcPlatform;
-use incredicalculator_core::shell::IcShell;
-use glam::{IVec2, Vec2};
-use max170xx::Max17048;
-use lcd_async::interface::SpiInterface;
-use lcd_async::raw_framebuf::RawFrameBuf;
-use rgb::RGB8;
-use lcd_async::{Builder, Display};
-use lcd_async::models::ST7789;
-use lcd_async::options::{ColorInversion, Orientation, Rotation};
-use static_cell::{ConstStaticCell, StaticCell};
 use embassy_rp::peripherals::{PIO0, SPI1};
 use embassy_rp::pio::{InterruptHandler, Pio};
 use embassy_rp::pio_programs::i2s::{PioI2sOut, PioI2sOutProgram};
-use embassy_rp::bind_interrupts;
+use embassy_rp::pwm::{Config as PwmConfig, Pwm};
+use embassy_rp::spi;
+use embassy_rp::spi::Spi;
+use embassy_sync::blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex};
+use embassy_sync::channel::{Channel, DynamicSender};
+use embassy_sync::mutex::Mutex as AsyncMutex;
+use embassy_time::Timer;
+use embassy_time::{Delay, Instant};
+use embedded_alloc::LlffHeap as Heap;
+use embedded_graphics::pixelcolor::Rgb565;
+use embedded_graphics::prelude::*;
+use embedded_graphics::primitives::PrimitiveStyleBuilder;
+use glam::{IVec2, Vec2};
+use incredicalculator_core::input::IcKey;
+use incredicalculator_core::platform::IcPlatform;
+use incredicalculator_core::shell::IcShell;
+use lcd_async::interface::SpiInterface;
+use lcd_async::models::ST7789;
+use lcd_async::options::{ColorInversion, Orientation, Rotation};
+use lcd_async::raw_framebuf::RawFrameBuf;
+use lcd_async::{Builder, Display};
+use max170xx::Max17048;
+use rgb::RGB8;
+use static_cell::{ConstStaticCell, StaticCell};
 use {defmt_rtt as _, panic_probe as _};
-
 
 const DISPLAY_FREQ: u32 = 60_000_000;
 
@@ -66,27 +65,26 @@ struct FrameBuffer {
 // `ConstStaticCell` keeps these large zeroed arrays in `.bss`. Do not use
 // `StaticCell::init([0; FRAME_BUFFER_SIZE])` here: that would create a 150 KiB
 // temporary on the core-0 stack before moving it into the cell.
-static CANVAS_DATA0: ConstStaticCell<[u8; FRAME_BUFFER_SIZE]> = ConstStaticCell::new([0; FRAME_BUFFER_SIZE]);
-static CANVAS_DATA1: ConstStaticCell<[u8; FRAME_BUFFER_SIZE]> = ConstStaticCell::new([0; FRAME_BUFFER_SIZE]);
+static CANVAS_DATA0: ConstStaticCell<[u8; FRAME_BUFFER_SIZE]> =
+    ConstStaticCell::new([0; FRAME_BUFFER_SIZE]);
+static CANVAS_DATA1: ConstStaticCell<[u8; FRAME_BUFFER_SIZE]> =
+    ConstStaticCell::new([0; FRAME_BUFFER_SIZE]);
 static FREE_FRAME_BUFFERS: Channel<CriticalSectionRawMutex, FrameBuffer, 2> = Channel::new();
 static READY_FRAME_BUFFERS: Channel<CriticalSectionRawMutex, FrameBuffer, 2> = Channel::new();
 
 static DISPLAY_SPI_BUS: StaticCell<AsyncMutex<NoopRawMutex, Spi<'static, SPI1, spi::Async>>> =
     StaticCell::new();
 
-type DisplaySpiDevice = SpiDeviceWithConfig<
-    'static,
-    NoopRawMutex,
-    Spi<'static, SPI1, spi::Async>,
-    Output<'static>,
->;
+type DisplaySpiDevice =
+    SpiDeviceWithConfig<'static, NoopRawMutex, Spi<'static, SPI1, spi::Async>, Output<'static>>;
 type LcdDisplay = Display<SpiInterface<DisplaySpiDevice, Output<'static>>, ST7789, Output<'static>>;
 
 static mut CORE1_STACK: Stack<4096> = Stack::new();
 static EXECUTOR1: StaticCell<Executor> = StaticCell::new();
 static INPUT_BUFFER: Channel<CriticalSectionRawMutex, InputBufferEvent, 32> = Channel::new();
 
-type BoardI2c = embassy_rp::i2c::I2c<'static, embassy_rp::peripherals::I2C0, embassy_rp::i2c::Blocking>;
+type BoardI2c =
+    embassy_rp::i2c::I2c<'static, embassy_rp::peripherals::I2C0, embassy_rp::i2c::Blocking>;
 static BATTERY_SOC: AtomicI32 = AtomicI32::new(-1);
 
 bind_interrupts!(struct Irqs {
@@ -95,8 +93,7 @@ bind_interrupts!(struct Irqs {
 const AUDIO_SAMPLE_RATE: u32 = 48_000;
 const AUDIO_BIT_DEPTH: u32 = 16;
 const AUDIO_BUFFER_SIZE: usize = 2048;
-const AUDIO_BUFFER_DURATION_US: u32 =
-    (AUDIO_BUFFER_SIZE as u32 * 1_000_000) / AUDIO_SAMPLE_RATE;
+const AUDIO_BUFFER_DURATION_US: u32 = (AUDIO_BUFFER_SIZE as u32 * 1_000_000) / AUDIO_SAMPLE_RATE;
 // The PIO FIFO is only a few samples deep. Any synchronous operation longer
 // than this can prevent the executor from queuing the next DMA transfer.
 const AUDIO_FIFO_COVERAGE_US: u32 = 200;
@@ -164,9 +161,7 @@ fn report_audio_diagnostics() {
     if late_dma_completions != 0 {
         warn!(
             "I2S DMA completion was serviced late {} times; expected buffer duration is {}us, observed maximum {}us",
-            late_dma_completions,
-            AUDIO_BUFFER_DURATION_US,
-            dma_max_us,
+            late_dma_completions, AUDIO_BUFFER_DURATION_US, dma_max_us,
         );
     }
 }
@@ -174,29 +169,20 @@ fn report_audio_diagnostics() {
 struct AudioBuffer {
     samples: &'static mut [u32; AUDIO_BUFFER_SIZE],
 }
-static EMPTY_BUFFERS: Channel<
-    CriticalSectionRawMutex,
-    AudioBuffer,
-    2,
-> = Channel::new();
+static EMPTY_BUFFERS: Channel<CriticalSectionRawMutex, AudioBuffer, 2> = Channel::new();
 
-static FILLED_BUFFERS: Channel<
-    CriticalSectionRawMutex,
-    AudioBuffer,
-    2,
-> = Channel::new();
+static FILLED_BUFFERS: Channel<CriticalSectionRawMutex, AudioBuffer, 2> = Channel::new();
 static AUDIO_DMA0: StaticCell<[u32; AUDIO_BUFFER_SIZE]> = StaticCell::new();
 static AUDIO_DMA1: StaticCell<[u32; AUDIO_BUFFER_SIZE]> = StaticCell::new();
 
-
 enum KeyMovement {
     Up,
-    Down
+    Down,
 }
 
 struct InputBufferEvent {
     key: IcKey,
-    movement: KeyMovement
+    movement: KeyMovement,
 }
 
 pub struct IcRpPlatform<'d> {
@@ -208,11 +194,7 @@ pub struct IcRpPlatform<'d> {
 }
 
 impl<'d> IcRpPlatform<'d> {
-    fn new(
-        backlight: Pwm<'d>,
-        backlight2: Pwm<'d>,
-        canvas: FrameBuffer,
-    ) -> Self {
+    fn new(backlight: Pwm<'d>, backlight2: Pwm<'d>, canvas: FrameBuffer) -> Self {
         Self {
             canvas: Some(canvas),
             backlight,
@@ -231,7 +213,9 @@ impl<'d> IcRpPlatform<'d> {
     }
 
     fn take_canvas(&mut self) -> FrameBuffer {
-        self.canvas.take().expect("UI tried to submit a missing canvas")
+        self.canvas
+            .take()
+            .expect("UI tried to submit a missing canvas")
     }
 
     fn canvas_data_mut(&mut self) -> &mut [u8; FRAME_BUFFER_SIZE] {
@@ -274,7 +258,22 @@ impl<'d> IcPlatform for IcRpPlatform<'d> {
         }
     }
 
-    fn draw_rectangle(&mut self, start: IVec2, end: IVec2, stroke_color: RGB8, stroke_width: u32, fill_color: Option<RGB8>) {
+    fn draw_polygon(&mut self, points: &[Vec2], fill_color: RGB8) {
+        fill_simple_polygon(
+            self.canvas_rgb565_mut(),
+            points,
+            rgbu8_to_rgb565(fill_color),
+        );
+    }
+
+    fn draw_rectangle(
+        &mut self,
+        start: IVec2,
+        end: IVec2,
+        stroke_color: RGB8,
+        stroke_width: u32,
+        fill_color: Option<RGB8>,
+    ) {
         let mut fbuf = RawFrameBuf::<Rgb565, _>::new(
             &mut self.canvas_data_mut()[..],
             RENDER_W as usize,
@@ -331,7 +330,15 @@ impl<'d> IcPlatform for IcRpPlatform<'d> {
         .unwrap();
     }
 
-    fn draw_triangle(&mut self, vertex1: IVec2, vertex2: IVec2, vertex3: IVec2, stroke_color: RGB8, stroke_width: u32, fill_color: Option<RGB8>) {
+    fn draw_triangle(
+        &mut self,
+        vertex1: IVec2,
+        vertex2: IVec2,
+        vertex3: IVec2,
+        stroke_color: RGB8,
+        stroke_width: u32,
+        fill_color: Option<RGB8>,
+    ) {
         let mut fbuf = RawFrameBuf::<Rgb565, _>::new(
             &mut self.canvas_data_mut()[..],
             RENDER_W as usize,
@@ -350,7 +357,9 @@ impl<'d> IcPlatform for IcRpPlatform<'d> {
             embedded_graphics::prelude::Point::new(vertex2.x, vertex2.y),
             embedded_graphics::prelude::Point::new(vertex3.x, vertex3.y),
         )
-        .into_styled(style).draw(&mut fbuf).unwrap();
+        .into_styled(style)
+        .draw(&mut fbuf)
+        .unwrap();
     }
 
     fn clear(&mut self, color: RGB8) {
@@ -367,19 +376,19 @@ impl<'d> IcPlatform for IcRpPlatform<'d> {
     fn millis(&self) -> u64 {
         Instant::now().as_millis()
     }
-    
+
     fn get_battery_soc(&self) -> Option<i32> {
         let s = BATTERY_SOC.load(core::sync::atomic::Ordering::Relaxed);
         match s {
             0.. => Some(s),
-            _ => None
+            _ => None,
         }
     }
-    
+
     fn get_brightness(&self) -> u8 {
         self.brightness
     }
-    
+
     fn set_brightness(&mut self, value: u8) {
         self.brightness = value;
         let duty = ((value as u32 * 0xffff) / 255) as u16;
@@ -389,11 +398,11 @@ impl<'d> IcPlatform for IcRpPlatform<'d> {
         self.backlight.set_config(&config);
         self.backlight2.set_config(&config);
     }
-    
+
     fn get_volume(&self) -> u8 {
         self.volume
     }
-    
+
     fn set_volume(&mut self, value: u8) {
         self.volume = value;
     }
@@ -434,8 +443,6 @@ fn blend_rgb565(dst_be: Rgb565, src_native: Rgb565, alpha: u8) -> Rgb565 {
     let out_be = blended.to_be();
     unsafe { core::mem::transmute::<u16, Rgb565>(out_be) }
 }
-
-
 
 #[inline]
 fn trunc_f32(x: f32) -> f32 {
@@ -545,6 +552,49 @@ fn plot_pixel(buf: &mut [Rgb565], x: i32, y: i32, color: Rgb565, alpha: f32) {
     buf[idx] = blend_rgb565(buf[idx], color, a);
 }
 
+fn fill_simple_polygon(buf: &mut [Rgb565], points: &[Vec2], color: Rgb565) {
+    if points.len() < 3 {
+        return;
+    }
+
+    let mut min_x = RENDER_W as i32;
+    let mut max_x = -1;
+    let mut min_y = RENDER_H as i32;
+    let mut max_y = -1;
+    for point in points {
+        min_x = min_x.min(point.x as i32 - 1);
+        max_x = max_x.max(point.x as i32 + 1);
+        min_y = min_y.min(point.y as i32 - 1);
+        max_y = max_y.max(point.y as i32 + 1);
+    }
+    min_x = min_x.max(0);
+    max_x = max_x.min(RENDER_W as i32 - 1);
+    min_y = min_y.max(0);
+    max_y = max_y.min(RENDER_H as i32 - 1);
+
+    for y in min_y..=max_y {
+        for x in min_x..=max_x {
+            let sample = Vec2::new(x as f32 + 0.5, y as f32 + 0.5);
+            let mut inside = false;
+            let mut previous = points[points.len() - 1];
+            for &current in points {
+                if (current.y > sample.y) != (previous.y > sample.y)
+                    && sample.x
+                        < (previous.x - current.x) * (sample.y - current.y)
+                            / (previous.y - current.y)
+                            + current.x
+                {
+                    inside = !inside;
+                }
+                previous = current;
+            }
+            if inside {
+                buf[y as usize * RENDER_W as usize + x as usize] = color;
+            }
+        }
+    }
+}
+
 fn draw_line_wu(
     buf: &mut [Rgb565],
     mut x1: f32,
@@ -575,8 +625,8 @@ fn draw_line_wu(
         let gap1 = rfpart(x1 + 0.5);
         let ix1 = x_end1 as i32;
         let iy1 = ipart(y_end1);
-        plot_pixel(buf, ix1, iy1,     color, rfpart(y_end1) * gap1);
-        plot_pixel(buf, ix1, iy1 + 1, color,  fpart(y_end1) * gap1);
+        plot_pixel(buf, ix1, iy1, color, rfpart(y_end1) * gap1);
+        plot_pixel(buf, ix1, iy1 + 1, color, fpart(y_end1) * gap1);
         let mut inter_y = y_end1 + gradient;
 
         let x_end2 = round_f32(x2);
@@ -584,12 +634,12 @@ fn draw_line_wu(
         let gap2 = fpart(x2 + 0.5);
         let ix2 = x_end2 as i32;
         let iy2 = ipart(y_end2);
-        plot_pixel(buf, ix2, iy2,     color, rfpart(y_end2) * gap2);
-        plot_pixel(buf, ix2, iy2 + 1, color,  fpart(y_end2) * gap2);
+        plot_pixel(buf, ix2, iy2, color, rfpart(y_end2) * gap2);
+        plot_pixel(buf, ix2, iy2 + 1, color, fpart(y_end2) * gap2);
 
         for x in (ix1 + 1)..ix2 {
-            plot_pixel(buf, x, ipart(inter_y),     color, rfpart(inter_y));
-            plot_pixel(buf, x, ipart(inter_y) + 1, color,  fpart(inter_y));
+            plot_pixel(buf, x, ipart(inter_y), color, rfpart(inter_y));
+            plot_pixel(buf, x, ipart(inter_y) + 1, color, fpart(inter_y));
             inter_y += gradient;
         }
     } else {
@@ -606,8 +656,8 @@ fn draw_line_wu(
         let gap1 = rfpart(y1 + 0.5);
         let iy1 = y_end1 as i32;
         let ix1 = ipart(x_end1);
-        plot_pixel(buf, ix1,     iy1, color, rfpart(x_end1) * gap1);
-        plot_pixel(buf, ix1 + 1, iy1, color,  fpart(x_end1) * gap1);
+        plot_pixel(buf, ix1, iy1, color, rfpart(x_end1) * gap1);
+        plot_pixel(buf, ix1 + 1, iy1, color, fpart(x_end1) * gap1);
         let mut inter_x = x_end1 + gradient;
 
         let y_end2 = round_f32(y2);
@@ -615,12 +665,12 @@ fn draw_line_wu(
         let gap2 = fpart(y2 + 0.5);
         let iy2 = y_end2 as i32;
         let ix2 = ipart(x_end2);
-        plot_pixel(buf, ix2,     iy2, color, rfpart(x_end2) * gap2);
-        plot_pixel(buf, ix2 + 1, iy2, color,  fpart(x_end2) * gap2);
+        plot_pixel(buf, ix2, iy2, color, rfpart(x_end2) * gap2);
+        plot_pixel(buf, ix2 + 1, iy2, color, fpart(x_end2) * gap2);
 
         for y in (iy1 + 1)..iy2 {
-            plot_pixel(buf, ipart(inter_x),     y, color, rfpart(inter_x));
-            plot_pixel(buf, ipart(inter_x) + 1, y, color,  fpart(inter_x));
+            plot_pixel(buf, ipart(inter_x), y, color, rfpart(inter_x));
+            plot_pixel(buf, ipart(inter_x) + 1, y, color, fpart(inter_x));
             inter_x += gradient;
         }
     }
@@ -768,10 +818,30 @@ struct KeyMatrix<'d> {
 impl<'d> KeyMatrix<'d> {
     const MAP: [[Option<IcKey>; MATRIX_COLS]; MATRIX_ROWS] = [
         [None, None, Some(IcKey::Func1), Some(IcKey::Func2)],
-        [Some(IcKey::Num7), Some(IcKey::Num8), Some(IcKey::Num9), Some(IcKey::Func3)],
-        [Some(IcKey::Num4), Some(IcKey::Num5), Some(IcKey::Num6), Some(IcKey::Func4)],
-        [Some(IcKey::Num1), Some(IcKey::Num2), Some(IcKey::Num3), Some(IcKey::Func5)],
-        [Some(IcKey::Num0), Some(IcKey::Shift), Some(IcKey::Super), Some(IcKey::Func6)],
+        [
+            Some(IcKey::Num7),
+            Some(IcKey::Num8),
+            Some(IcKey::Num9),
+            Some(IcKey::Func3),
+        ],
+        [
+            Some(IcKey::Num4),
+            Some(IcKey::Num5),
+            Some(IcKey::Num6),
+            Some(IcKey::Func4),
+        ],
+        [
+            Some(IcKey::Num1),
+            Some(IcKey::Num2),
+            Some(IcKey::Num3),
+            Some(IcKey::Func5),
+        ],
+        [
+            Some(IcKey::Num0),
+            Some(IcKey::Shift),
+            Some(IcKey::Super),
+            Some(IcKey::Func6),
+        ],
     ];
 
     pub fn new(rows: [Output<'d>; MATRIX_ROWS], cols: [Input<'d>; MATRIX_COLS]) -> Self {
@@ -808,7 +878,7 @@ impl<'d> KeyMatrix<'d> {
 
         for row in 0..MATRIX_ROWS {
             self.select_row(row);
-            // if this delay isn't here, theres lots of weird inputs that 
+            // if this delay isn't here, theres lots of weird inputs that
             // happen with the key on the next row
             cortex_m::asm::delay(100);
             for col in 0..MATRIX_COLS {
@@ -837,7 +907,7 @@ impl<'d> KeyMatrix<'d> {
                             KeyMovement::Down
                         } else {
                             KeyMovement::Up
-                        }
+                        },
                     }) {
                         warn!("Input buffer overflowed");
                     };
@@ -912,7 +982,10 @@ fn reboot_into_bootloader() {
     let led_gpio_num = 22;
     embassy_rp::rom_data::reboot(
         reboot_type_bootsel | no_return_on_success,
-        MS_BEFORE_BOOT, gpio_pin_enabled, led_gpio_num);
+        MS_BEFORE_BOOT,
+        gpio_pin_enabled,
+        led_gpio_num,
+    );
 }
 
 #[embassy_executor::main]
@@ -940,15 +1013,18 @@ async fn main(spawner: Spawner) {
     );
 
     // I2S audio init -----
-    let Pio { common: mut pio_common, sm0, .. } = 
-        Pio::new(p.PIO0, Irqs);
+    let Pio {
+        common: mut pio_common,
+        sm0,
+        ..
+    } = Pio::new(p.PIO0, Irqs);
     let audio_bit_clock_pin = p.PIN_29; // AKA BCLK or SCK
     let audio_lr_clock_pin = p.PIN_30; // AKA LRCLK or WS
     let audio_data_pin = p.PIN_28; // AKA DIN or SD
     let audio_pio_program = PioI2sOutProgram::new(&mut pio_common);
     // todo: in latest embassy-rp version 0.10.0, Irqs gets passed
     // (see https://github.com/embassy-rs/embassy/pull/5338). Also
-    // makes it so you have to call i2c.start(). Try 
+    // makes it so you have to call i2c.start(). Try
     // updating embassy-rp to that version, and seeing
     // how that goes.
     // If upgrade successful and having audio trouble, look at this discussion:
@@ -962,14 +1038,11 @@ async fn main(spawner: Spawner) {
         audio_lr_clock_pin,
         AUDIO_SAMPLE_RATE,
         AUDIO_BIT_DEPTH,
-        &audio_pio_program
+        &audio_pio_program,
     );
     info!(
         "I2S configured: {} Hz, {}-bit stereo, {} frames/buffer ({} us/buffer)",
-        AUDIO_SAMPLE_RATE,
-        AUDIO_BIT_DEPTH,
-        AUDIO_BUFFER_SIZE,
-        AUDIO_BUFFER_DURATION_US,
+        AUDIO_SAMPLE_RATE, AUDIO_BIT_DEPTH, AUDIO_BUFFER_SIZE, AUDIO_BUFFER_DURATION_US,
     );
     // --------------------
 
@@ -1064,11 +1137,11 @@ async fn main(spawner: Spawner) {
     // PWM backlight
     let mut pwm_config = PwmConfig::default();
     pwm_config.top = 0xFFFF;
-    pwm_config.compare_b = 0xFFFF/2;
+    pwm_config.compare_b = 0xFFFF / 2;
     let backlight = Pwm::new_output_b(p.PWM_SLICE7, module_bl, pwm_config);
     let mut pwm_config2 = PwmConfig::default();
     pwm_config2.top = 0xFFFF;
-    pwm_config2.compare_b = 0xFFFF/2;
+    pwm_config2.compare_b = 0xFFFF / 2;
     let backlight2 = Pwm::new_output_b(p.PWM_SLICE8, bare_display_bl, pwm_config2);
 
     // create SPI
@@ -1145,19 +1218,16 @@ async fn main(spawner: Spawner) {
         },
         move || {
             let exec1 = EXECUTOR1.init(Executor::new());
-            exec1.run(
-                |spawner|
-                {
-                    unwrap!(spawner.spawn(inputs_core1_task(matrix_rows, matrix_cols)));
-                }
-            );
-        }
+            exec1.run(|spawner| {
+                unwrap!(spawner.spawn(inputs_core1_task(matrix_rows, matrix_cols)));
+            });
+        },
     );
 
     let mut icalc: IcShell = IcShell::new();
     let mut pcm_buffer = [0i16; AUDIO_BUFFER_SIZE];
     let mut ic_rp_platform = IcRpPlatform::new(backlight, backlight2, initial_canvas);
-    
+
     // render the first frame
     icalc.update(&mut ic_rp_platform);
     READY_FRAME_BUFFERS.send(ic_rp_platform.take_canvas()).await;
@@ -1171,31 +1241,33 @@ async fn main(spawner: Spawner) {
         // wake for either fresh input or a DMA buffer that needs rendering.
         // The executor can therefore enter WFI instead of waking every 1 ms
         // to generate silence.
-        let (first_input, mut audio_buffer, realtime_tick) = match (
-            icalc.has_active_audio(),
-            icalc.requires_realtime_updates(),
-        ) {
-            (true, true) => match select3(
-                INPUT_BUFFER.receive(),
-                EMPTY_BUFFERS.receive(),
-                Timer::after_millis(16),
-            )
-            .await
-            {
-                Either3::First(event) => (Some(event), None, false),
-                Either3::Second(buffer) => (None, Some(buffer), false),
-                Either3::Third(()) => (None, None, true),
-            },
-            (true, false) => match select(INPUT_BUFFER.receive(), EMPTY_BUFFERS.receive()).await {
-                Either::First(event) => (Some(event), None, false),
-                Either::Second(buffer) => (None, Some(buffer), false),
-            },
-            (false, true) => match select(INPUT_BUFFER.receive(), Timer::after_millis(16)).await {
-                Either::First(event) => (Some(event), None, false),
-                Either::Second(()) => (None, None, true),
-            },
-            (false, false) => (Some(INPUT_BUFFER.receive().await), None, false),
-        };
+        let (first_input, mut audio_buffer, realtime_tick) =
+            match (icalc.has_active_audio(), icalc.requires_realtime_updates()) {
+                (true, true) => match select3(
+                    INPUT_BUFFER.receive(),
+                    EMPTY_BUFFERS.receive(),
+                    Timer::after_millis(16),
+                )
+                .await
+                {
+                    Either3::First(event) => (Some(event), None, false),
+                    Either3::Second(buffer) => (None, Some(buffer), false),
+                    Either3::Third(()) => (None, None, true),
+                },
+                (true, false) => {
+                    match select(INPUT_BUFFER.receive(), EMPTY_BUFFERS.receive()).await {
+                        Either::First(event) => (Some(event), None, false),
+                        Either::Second(buffer) => (None, Some(buffer), false),
+                    }
+                }
+                (false, true) => {
+                    match select(INPUT_BUFFER.receive(), Timer::after_millis(16)).await {
+                        Either::First(event) => (Some(event), None, false),
+                        Either::Second(()) => (None, None, true),
+                    }
+                }
+                (false, false) => (Some(INPUT_BUFFER.receive().await), None, false),
+            };
 
         let mut inputs_changed = false;
         if let Some(event) = first_input {
@@ -1265,7 +1337,7 @@ async fn main(spawner: Spawner) {
             icalc.fill_audio(&mut pcm_buffer);
             for (dst, &pcm_sample) in buf.samples.iter_mut().zip(pcm_buffer.iter()) {
                 let sample_u16 = pcm_sample as u16 as u32;
-                *dst = (sample_u16 << 16) | sample_u16;    
+                *dst = (sample_u16 << 16) | sample_u16;
             }
             let render_us = elapsed_us(render_start);
             AUDIO_BUFFERS_RENDERED.fetch_add(1, Ordering::Relaxed);
@@ -1273,8 +1345,7 @@ async fn main(spawner: Spawner) {
             if render_us > AUDIO_BUFFER_DURATION_US {
                 warn!(
                     "audio render took {}us (buffer duration {}us)",
-                    render_us,
-                    AUDIO_BUFFER_DURATION_US,
+                    render_us, AUDIO_BUFFER_DURATION_US,
                 );
             }
 
@@ -1284,9 +1355,8 @@ async fn main(spawner: Spawner) {
         }
 
         if icalc.has_active_audio() {
-            let next_report = next_audio_report.get_or_insert_with(|| {
-                Instant::now() + embassy_time::Duration::from_secs(1)
-            });
+            let next_report = next_audio_report
+                .get_or_insert_with(|| Instant::now() + embassy_time::Duration::from_secs(1));
             if Instant::now() >= *next_report {
                 report_audio_diagnostics();
                 *next_report = Instant::now() + embassy_time::Duration::from_secs(1);
@@ -1298,7 +1368,6 @@ async fn main(spawner: Spawner) {
                 audio_is_running = false;
             }
         }
-
     }
 }
 
@@ -1308,13 +1377,7 @@ async fn display_task(mut display: LcdDisplay) {
         let canvas = READY_FRAME_BUFFERS.receive().await;
         let display_start = Instant::now();
         display
-            .show_raw_data(
-                0,
-                0,
-                RENDER_W as u16,
-                RENDER_H as u16,
-                &canvas.pixels[..],
-            )
+            .show_raw_data(0, 0, RENDER_W as u16, RENDER_H as u16, &canvas.pixels[..])
             .await
             .unwrap();
         let display_us = elapsed_us(display_start);
@@ -1330,10 +1393,7 @@ async fn display_task(mut display: LcdDisplay) {
 async fn battery_task(mut fuel_gauge: Max17048<BoardI2c>) {
     loop {
         if let Ok(soc) = fuel_gauge.soc() {
-            BATTERY_SOC.store(
-                soc as i32,
-                core::sync::atomic::Ordering::Relaxed
-            );
+            BATTERY_SOC.store(soc as i32, core::sync::atomic::Ordering::Relaxed);
         } else {
             warn!("Error getting battery soc from fuel gauge");
         }
@@ -1373,7 +1433,7 @@ async fn audio_task(mut i2s: PioI2sOut<'static, PIO0, 0>) {
             AUDIO_LATE_DMA_COMPLETIONS.fetch_add(1, Ordering::Relaxed);
         }
         has_started = true;
-        // ok now you have like 100 uS to start a new DMA transfer before 
+        // ok now you have like 100 uS to start a new DMA transfer before
         // there's a pop (since the PIO only holds like 8 samples in its FIFO)
         EMPTY_BUFFERS.send(buf).await;
     }

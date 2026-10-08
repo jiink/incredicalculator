@@ -1,8 +1,11 @@
 use crate::app::{IcApp, InputContext};
 use crate::audio_engine::{AudioEngine, AudioPatch, NoteId};
+use crate::fonts::FontId;
+use crate::graphics::GRAPHICS;
 use crate::input::IcKey;
 use crate::text;
-use crate::fonts::FontId;
+use alloc::vec::Vec;
+use glam::Vec2;
 use rgb::RGB8;
 
 const SOUND_TEST_SOURCE_BASE: u32 = 0x534f_0000;
@@ -38,8 +41,7 @@ impl SoundTest {
     }
 
     fn adjust_square_mix(&mut self, amount: i16) {
-        let square = (self.patch.square_mix as i16 + amount)
-            .clamp(0, WAVE_MIX_TOTAL as i16) as u8;
+        let square = (self.patch.square_mix as i16 + amount).clamp(0, WAVE_MIX_TOTAL as i16) as u8;
         self.patch.square_mix = square;
         self.patch.triangle_mix = WAVE_MIX_TOTAL - square;
     }
@@ -99,6 +101,7 @@ impl IcApp for SoundTest {
         }
 
         platform.clear(RGB8::new(200, 200, 200));
+        draw_test_graphic(platform);
         text::draw_text_f(
             platform,
             format_args!("Held: {} / {}", held_notes, crate::audio_engine::MAX_VOICES),
@@ -107,20 +110,24 @@ impl IcApp for SoundTest {
             3.0,
             2.0,
             RGB8::new(0, 0, 0),
-            FontId::Futural
+            FontId::Futural,
         );
         text::draw_text_f(
             platform,
             format_args!(
                 "F2 Vibrato: {}",
-                if self.patch.vibrato_depth_cents == 0 { "Off" } else { "On" },
+                if self.patch.vibrato_depth_cents == 0 {
+                    "Off"
+                } else {
+                    "On"
+                },
             ),
             4.0,
             28.0,
             2.0,
             2.0,
             RGB8::new(0, 0, 0),
-            FontId::Futural
+            FontId::Futural,
         );
         text::draw_text_f(
             platform,
@@ -130,7 +137,7 @@ impl IcApp for SoundTest {
             2.0,
             2.0,
             RGB8::new(0, 0, 0),
-            FontId::Futural
+            FontId::Futural,
         );
         text::draw_text_f(
             platform,
@@ -140,26 +147,74 @@ impl IcApp for SoundTest {
             2.0,
             2.0,
             RGB8::new(0, 0, 0),
-            FontId::Futural
+            FontId::Futural,
         );
         text::draw_text_f(
             platform,
             format_args!(
                 "F5/F6 Triangle/Square: {}/{}",
-                self.patch.triangle_mix,
-                self.patch.square_mix,
+                self.patch.triangle_mix, self.patch.square_mix,
             ),
             4.0,
             88.0,
             2.0,
             2.0,
             RGB8::new(0, 0, 0),
-            FontId::Futural
+            FontId::Futural,
         );
     }
 
     fn name(&self) -> &str {
         "Sound test"
+    }
+}
+
+fn draw_test_graphic(platform: &mut dyn crate::platform::IcPlatform) {
+    // Keep the sample graphic to the right of the sound-test controls.
+    const CENTER: Vec2 = Vec2::new(250.0, 180.0);
+    const SCALE: f32 = 4.0;
+
+    let Some(frame) = GRAPHICS.first().and_then(|action| action.frames.first()) else {
+        return;
+    };
+
+    for polygon in frame.shapes {
+        let points = polygon.points;
+        if points.len() < 2 {
+            continue;
+        }
+
+        let screen_point = |point: crate::graphics::Point| {
+            Vec2::new(CENTER.x + point.x * SCALE, CENTER.y + point.y * SCALE)
+        };
+        let fill_color = RGB8::new(polygon.color.r, polygon.color.g, polygon.color.b);
+        if !polygon.open && points.len() >= 3 {
+            let screen_points: Vec<Vec2> = points.iter().copied().map(screen_point).collect();
+            platform.draw_polygon(&screen_points, fill_color);
+        }
+
+        let border_width = if polygon.border_width > 0.0 {
+            (polygon.border_width as u32).max(1)
+        } else {
+            0
+        };
+        if border_width > 0 {
+            let border_color = RGB8::new(
+                polygon.border_color.r,
+                polygon.border_color.g,
+                polygon.border_color.b,
+            );
+            let edge_count = if polygon.open {
+                points.len() - 1
+            } else {
+                points.len()
+            };
+            for index in 0..edge_count {
+                let start = screen_point(points[index]);
+                let end = screen_point(points[(index + 1) % points.len()]);
+                platform.draw_line(start, end, border_color, border_width);
+            }
+        }
     }
 }
 

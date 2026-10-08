@@ -1,7 +1,6 @@
 use ::core::fmt;
-use std::{collections::HashMap, num::NonZero};
 use std::time::Instant;
-
+use std::{collections::HashMap, num::NonZero};
 
 use embedded_graphics::{
     Drawable,
@@ -11,15 +10,15 @@ use embedded_graphics::{
 };
 use embedded_graphics_framebuf::FrameBuf;
 use raylib::{
-    ffi::{SetTextureFilter, RL_TEXTURE_FILTER_LINEAR},
+    ffi::{RL_TEXTURE_FILTER_LINEAR, SetTextureFilter},
     prelude::*,
 };
 use std::sync::{Arc, Mutex};
 
+use glam::{IVec2, Vec2};
 use incredicalculator_core::input::IcKey;
 use incredicalculator_core::platform::IcPlatform;
 use incredicalculator_core::shell::IcShell;
-use glam::{IVec2, Vec2};
 
 // Rodio: the only audio dependency now.
 // In Cargo.toml add: rodio = { version = "0.21", features = ["playback"] }
@@ -39,10 +38,10 @@ struct ShellAudioSource {
 
 impl ShellAudioSource {
     fn new(shared: Arc<Mutex<SharedAudioState>>) -> Self {
-        ShellAudioSource { 
+        ShellAudioSource {
             front_buffer: vec![0; AUDIO_BUFFER_SIZE],
             read_idx: 0,
-            shared, 
+            shared,
         }
     }
 }
@@ -72,10 +71,18 @@ impl Iterator for ShellAudioSource {
 }
 
 impl rodio::Source for ShellAudioSource {
-    fn current_span_len(&self) -> Option<usize> { None }
-    fn channels(&self)          -> NonZero<u16>  { NonZero::new(1).unwrap() }
-    fn sample_rate(&self)       -> NonZero<u32>  { NonZero::new(48000).unwrap() }
-    fn total_duration(&self)    -> Option<std::time::Duration> { None }
+    fn current_span_len(&self) -> Option<usize> {
+        None
+    }
+    fn channels(&self) -> NonZero<u16> {
+        NonZero::new(1).unwrap()
+    }
+    fn sample_rate(&self) -> NonZero<u32> {
+        NonZero::new(48000).unwrap()
+    }
+    fn total_duration(&self) -> Option<std::time::Duration> {
+        None
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -150,6 +157,10 @@ impl IcPlatform for IcRaylibPlatform {
                 c565,
             );
         }
+    }
+
+    fn draw_polygon(&mut self, points: &[Vec2], fill_color: rgb::RGB8) {
+        fill_simple_polygon(&mut self.canvas_data, points, rgbu8_to_rgb565(fill_color));
     }
 
     fn log(&mut self, arg: fmt::Arguments) {
@@ -244,20 +255,20 @@ impl IcPlatform for IcRaylibPlatform {
     fn get_battery_soc(&self) -> Option<i32> {
         None
     }
-    
+
     fn get_brightness(&self) -> u8 {
         self.fake_brightness
     }
-    
+
     fn set_brightness(&mut self, value: u8) {
         println!("omg, setting fake brightness to {}", value);
         self.fake_brightness = value;
     }
-    
+
     fn get_volume(&self) -> u8 {
         self.fake_volume
     }
-    
+
     fn set_volume(&mut self, value: u8) {
         println!("omg, setting fake volume to {}", value);
         self.fake_volume = value;
@@ -287,7 +298,6 @@ fn blend_rgb565(dst: Rgb565, src: Rgb565, alpha: u8) -> Rgb565 {
     Rgb565::new(r >> 3, g >> 2, b >> 3)
 }
 
-
 #[inline]
 fn ipart(x: f32) -> i32 {
     x.floor() as i32
@@ -316,6 +326,52 @@ fn plot_pixel(buf: &mut [Rgb565], x: i32, y: i32, color: Rgb565, alpha: f32) {
     let a = (gamma_alpha.min(1.0) * 255.0).round() as u8;
 
     buf[idx] = blend_rgb565(buf[idx], color, a);
+}
+
+/// Fills a non-self-intersecting polygon using the even-odd rule. Testing
+/// pixel centres makes its result independent of winding direction and works
+/// for concave outlines without allocating triangulation scratch space.
+fn fill_simple_polygon(buf: &mut [Rgb565], points: &[Vec2], color: Rgb565) {
+    if points.len() < 3 {
+        return;
+    }
+
+    let mut min_x = RENDER_W as i32;
+    let mut max_x = -1;
+    let mut min_y = RENDER_H as i32;
+    let mut max_y = -1;
+    for point in points {
+        min_x = min_x.min(point.x as i32 - 1);
+        max_x = max_x.max(point.x as i32 + 1);
+        min_y = min_y.min(point.y as i32 - 1);
+        max_y = max_y.max(point.y as i32 + 1);
+    }
+    min_x = min_x.max(0);
+    max_x = max_x.min(RENDER_W as i32 - 1);
+    min_y = min_y.max(0);
+    max_y = max_y.min(RENDER_H as i32 - 1);
+
+    for y in min_y..=max_y {
+        for x in min_x..=max_x {
+            let sample = Vec2::new(x as f32 + 0.5, y as f32 + 0.5);
+            let mut inside = false;
+            let mut previous = points[points.len() - 1];
+            for &current in points {
+                if (current.y > sample.y) != (previous.y > sample.y)
+                    && sample.x
+                        < (previous.x - current.x) * (sample.y - current.y)
+                            / (previous.y - current.y)
+                            + current.x
+                {
+                    inside = !inside;
+                }
+                previous = current;
+            }
+            if inside {
+                buf[y as usize * RENDER_W as usize + x as usize] = color;
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -354,8 +410,8 @@ fn draw_line_wu(
         let gap1 = rfpart(x1 + 0.5);
         let ix1 = x_end1 as i32;
         let iy1 = ipart(y_end1);
-        plot_pixel(buf, ix1, iy1,     color, rfpart(y_end1) * gap1);
-        plot_pixel(buf, ix1, iy1 + 1, color,  fpart(y_end1) * gap1);
+        plot_pixel(buf, ix1, iy1, color, rfpart(y_end1) * gap1);
+        plot_pixel(buf, ix1, iy1 + 1, color, fpart(y_end1) * gap1);
         let mut inter_y = y_end1 + gradient;
 
         // Endpoint 2
@@ -364,13 +420,13 @@ fn draw_line_wu(
         let gap2 = fpart(x2 + 0.5);
         let ix2 = x_end2 as i32;
         let iy2 = ipart(y_end2);
-        plot_pixel(buf, ix2, iy2,     color, rfpart(y_end2) * gap2);
-        plot_pixel(buf, ix2, iy2 + 1, color,  fpart(y_end2) * gap2);
+        plot_pixel(buf, ix2, iy2, color, rfpart(y_end2) * gap2);
+        plot_pixel(buf, ix2, iy2 + 1, color, fpart(y_end2) * gap2);
 
         // Main span
         for x in (ix1 + 1)..ix2 {
-            plot_pixel(buf, x, ipart(inter_y),     color, rfpart(inter_y));
-            plot_pixel(buf, x, ipart(inter_y) + 1, color,  fpart(inter_y));
+            plot_pixel(buf, x, ipart(inter_y), color, rfpart(inter_y));
+            plot_pixel(buf, x, ipart(inter_y) + 1, color, fpart(inter_y));
             inter_y += gradient;
         }
     } else {
@@ -389,8 +445,8 @@ fn draw_line_wu(
         let gap1 = rfpart(y1 + 0.5);
         let iy1 = y_end1 as i32;
         let ix1 = ipart(x_end1);
-        plot_pixel(buf, ix1,     iy1, color, rfpart(x_end1) * gap1);
-        plot_pixel(buf, ix1 + 1, iy1, color,  fpart(x_end1) * gap1);
+        plot_pixel(buf, ix1, iy1, color, rfpart(x_end1) * gap1);
+        plot_pixel(buf, ix1 + 1, iy1, color, fpart(x_end1) * gap1);
         let mut inter_x = x_end1 + gradient;
 
         // Endpoint 2
@@ -399,13 +455,13 @@ fn draw_line_wu(
         let gap2 = fpart(y2 + 0.5);
         let iy2 = y_end2 as i32;
         let ix2 = ipart(x_end2);
-        plot_pixel(buf, ix2,     iy2, color, rfpart(x_end2) * gap2);
-        plot_pixel(buf, ix2 + 1, iy2, color,  fpart(x_end2) * gap2);
+        plot_pixel(buf, ix2, iy2, color, rfpart(x_end2) * gap2);
+        plot_pixel(buf, ix2 + 1, iy2, color, fpart(x_end2) * gap2);
 
         // Main span
         for y in (iy1 + 1)..iy2 {
-            plot_pixel(buf, ipart(inter_x),     y, color, rfpart(inter_x));
-            plot_pixel(buf, ipart(inter_x) + 1, y, color,  fpart(inter_x));
+            plot_pixel(buf, ipart(inter_x), y, color, rfpart(inter_x));
+            plot_pixel(buf, ipart(inter_x) + 1, y, color, fpart(inter_x));
             inter_x += gradient;
         }
     }
@@ -481,7 +537,12 @@ fn draw_line_aa_distance(
 // ---------------------------------------------------------------------------
 
 fn rgb565_to_rl_color(c: Rgb565) -> Color {
-    Color { r: c.r() << 3, g: c.g() << 2, b: c.b() << 3, a: 255 }
+    Color {
+        r: c.r() << 3,
+        g: c.g() << 2,
+        b: c.b() << 3,
+        a: 255,
+    }
 }
 
 fn rgbu8_to_rgb565(c: rgb::Rgb<u8>) -> Rgb565 {
@@ -502,8 +563,8 @@ fn main() {
         back_ready: false,
     }));
 
-    let audio_handle = rodio::DeviceSinkBuilder::open_default_sink()
-        .expect("Failed to open audio device");
+    let audio_handle =
+        rodio::DeviceSinkBuilder::open_default_sink().expect("Failed to open audio device");
     let audio_player = rodio::Player::connect_new(&audio_handle.mixer());
     audio_player.append(ShellAudioSource::new(shared_audio.clone()));
     println!("Audio: culsynth double-buffer source started");
@@ -539,25 +600,204 @@ fn main() {
     // Virtual on-screen keyboard
     // -----------------------------------------------------------------------
     let mut virtual_keys = [
-        
-        VirtualKey { key: IcKey::Func1,  x: 7 + 69 * 3, y: 9 + 69 * 0, pressed: false, hovered: false, label: "Bk", shlabel: "&",   sulabel: "F1", sticky: false },
-        VirtualKey { key: IcKey::Func2,  x: 7 + 69 * 3, y: 9 + 69 * 1, pressed: false, hovered: false, label: "/", shlabel: "|",   sulabel: "F2", sticky: false },
-        VirtualKey { key: IcKey::Num7,   x: 7 + 69 * 0, y: 9 + 69 * 2, pressed: false, hovered: false, label: "7", shlabel: "(",  sulabel: "Hm", sticky: false },
-        VirtualKey { key: IcKey::Num8,   x: 7 + 69 * 1, y: 9 + 69 * 2, pressed: false, hovered: false, label: "8", shlabel: ")",  sulabel: "^", sticky: false },
-        VirtualKey { key: IcKey::Num9,   x: 7 + 69 * 2, y: 9 + 69 * 2, pressed: false, hovered: false, label: "9", shlabel: "0x", sulabel: "Clr", sticky: false },
-        VirtualKey { key: IcKey::Func3,  x: 7 + 69 * 3, y: 9 + 69 * 2, pressed: false, hovered: false, label: "*", shlabel: "%",   sulabel: "F3", sticky: false },
-        VirtualKey { key: IcKey::Num4,   x: 7 + 69 * 0, y: 9 + 69 * 3, pressed: false, hovered: false, label: "4", shlabel: "E",   sulabel: "<", sticky: false },
-        VirtualKey { key: IcKey::Num5,   x: 7 + 69 * 1, y: 9 + 69 * 3, pressed: false, hovered: false, label: "5", shlabel: "F",   sulabel: "Sel", sticky: false },
-        VirtualKey { key: IcKey::Num6,   x: 7 + 69 * 2, y: 9 + 69 * 3, pressed: false, hovered: false, label: "6", shlabel: "~",   sulabel: ">", sticky: false },
-        VirtualKey { key: IcKey::Func4,  x: 7 + 69 * 3, y: 9 + 69 * 3, pressed: false, hovered: false, label: "-", shlabel: "<<",  sulabel: "F4", sticky: false },
-        VirtualKey { key: IcKey::Num1,   x: 7 + 69 * 0, y: 9 + 69 * 4, pressed: false, hovered: false, label: "1", shlabel: "B",   sulabel: "End", sticky: false },
-        VirtualKey { key: IcKey::Num2,   x: 7 + 69 * 1, y: 9 + 69 * 4, pressed: false, hovered: false, label: "2", shlabel: "C",   sulabel: "v", sticky: false },
-        VirtualKey { key: IcKey::Num3,   x: 7 + 69 * 2, y: 9 + 69 * 4, pressed: false, hovered: false, label: "3", shlabel: "D",   sulabel: "Und", sticky: false },
-        VirtualKey { key: IcKey::Func5,  x: 7 + 69 * 3, y: 9 + 69 * 4, pressed: false, hovered: false, label: "+", shlabel: ">>",   sulabel: "F5", sticky: false },
-        VirtualKey { key: IcKey::Num0,   x: 7 + 69 * 0, y: 9 + 69 * 5, pressed: false, hovered: false, label: "0", shlabel: "A",   sulabel: ".", sticky: false },
-        VirtualKey { key: IcKey::Shift,  x: 7 + 69 * 1, y: 9 + 69 * 5, pressed: false, hovered: false, label: "Shft", shlabel: "",    sulabel: "", sticky: true },
-        VirtualKey { key: IcKey::Super,  x: 7 + 69 * 2, y: 9 + 69 * 5, pressed: false, hovered: false, label: "§", shlabel: "",    sulabel: "", sticky: true },
-        VirtualKey { key: IcKey::Func6,  x: 7 + 69 * 3, y: 9 + 69 * 5, pressed: false, hovered: false, label: "=", shlabel: "^",   sulabel: "F6", sticky: false },
+        VirtualKey {
+            key: IcKey::Func1,
+            x: 7 + 69 * 3,
+            y: 9 + 69 * 0,
+            pressed: false,
+            hovered: false,
+            label: "Bk",
+            shlabel: "&",
+            sulabel: "F1",
+            sticky: false,
+        },
+        VirtualKey {
+            key: IcKey::Func2,
+            x: 7 + 69 * 3,
+            y: 9 + 69 * 1,
+            pressed: false,
+            hovered: false,
+            label: "/",
+            shlabel: "|",
+            sulabel: "F2",
+            sticky: false,
+        },
+        VirtualKey {
+            key: IcKey::Num7,
+            x: 7 + 69 * 0,
+            y: 9 + 69 * 2,
+            pressed: false,
+            hovered: false,
+            label: "7",
+            shlabel: "(",
+            sulabel: "Hm",
+            sticky: false,
+        },
+        VirtualKey {
+            key: IcKey::Num8,
+            x: 7 + 69 * 1,
+            y: 9 + 69 * 2,
+            pressed: false,
+            hovered: false,
+            label: "8",
+            shlabel: ")",
+            sulabel: "^",
+            sticky: false,
+        },
+        VirtualKey {
+            key: IcKey::Num9,
+            x: 7 + 69 * 2,
+            y: 9 + 69 * 2,
+            pressed: false,
+            hovered: false,
+            label: "9",
+            shlabel: "0x",
+            sulabel: "Clr",
+            sticky: false,
+        },
+        VirtualKey {
+            key: IcKey::Func3,
+            x: 7 + 69 * 3,
+            y: 9 + 69 * 2,
+            pressed: false,
+            hovered: false,
+            label: "*",
+            shlabel: "%",
+            sulabel: "F3",
+            sticky: false,
+        },
+        VirtualKey {
+            key: IcKey::Num4,
+            x: 7 + 69 * 0,
+            y: 9 + 69 * 3,
+            pressed: false,
+            hovered: false,
+            label: "4",
+            shlabel: "E",
+            sulabel: "<",
+            sticky: false,
+        },
+        VirtualKey {
+            key: IcKey::Num5,
+            x: 7 + 69 * 1,
+            y: 9 + 69 * 3,
+            pressed: false,
+            hovered: false,
+            label: "5",
+            shlabel: "F",
+            sulabel: "Sel",
+            sticky: false,
+        },
+        VirtualKey {
+            key: IcKey::Num6,
+            x: 7 + 69 * 2,
+            y: 9 + 69 * 3,
+            pressed: false,
+            hovered: false,
+            label: "6",
+            shlabel: "~",
+            sulabel: ">",
+            sticky: false,
+        },
+        VirtualKey {
+            key: IcKey::Func4,
+            x: 7 + 69 * 3,
+            y: 9 + 69 * 3,
+            pressed: false,
+            hovered: false,
+            label: "-",
+            shlabel: "<<",
+            sulabel: "F4",
+            sticky: false,
+        },
+        VirtualKey {
+            key: IcKey::Num1,
+            x: 7 + 69 * 0,
+            y: 9 + 69 * 4,
+            pressed: false,
+            hovered: false,
+            label: "1",
+            shlabel: "B",
+            sulabel: "End",
+            sticky: false,
+        },
+        VirtualKey {
+            key: IcKey::Num2,
+            x: 7 + 69 * 1,
+            y: 9 + 69 * 4,
+            pressed: false,
+            hovered: false,
+            label: "2",
+            shlabel: "C",
+            sulabel: "v",
+            sticky: false,
+        },
+        VirtualKey {
+            key: IcKey::Num3,
+            x: 7 + 69 * 2,
+            y: 9 + 69 * 4,
+            pressed: false,
+            hovered: false,
+            label: "3",
+            shlabel: "D",
+            sulabel: "Und",
+            sticky: false,
+        },
+        VirtualKey {
+            key: IcKey::Func5,
+            x: 7 + 69 * 3,
+            y: 9 + 69 * 4,
+            pressed: false,
+            hovered: false,
+            label: "+",
+            shlabel: ">>",
+            sulabel: "F5",
+            sticky: false,
+        },
+        VirtualKey {
+            key: IcKey::Num0,
+            x: 7 + 69 * 0,
+            y: 9 + 69 * 5,
+            pressed: false,
+            hovered: false,
+            label: "0",
+            shlabel: "A",
+            sulabel: ".",
+            sticky: false,
+        },
+        VirtualKey {
+            key: IcKey::Shift,
+            x: 7 + 69 * 1,
+            y: 9 + 69 * 5,
+            pressed: false,
+            hovered: false,
+            label: "Shft",
+            shlabel: "",
+            sulabel: "",
+            sticky: true,
+        },
+        VirtualKey {
+            key: IcKey::Super,
+            x: 7 + 69 * 2,
+            y: 9 + 69 * 5,
+            pressed: false,
+            hovered: false,
+            label: "§",
+            shlabel: "",
+            sulabel: "",
+            sticky: true,
+        },
+        VirtualKey {
+            key: IcKey::Func6,
+            x: 7 + 69 * 3,
+            y: 9 + 69 * 5,
+            pressed: false,
+            hovered: false,
+            label: "=",
+            shlabel: "^",
+            sulabel: "F6",
+            sticky: false,
+        },
     ];
 
     // -----------------------------------------------------------------------
@@ -604,15 +844,17 @@ fn main() {
             }
 
             // --- Virtual keyboard (mouse) ---
-            
+
             let mouse_pos = rl_handle.get_mouse_position();
             let mouse_down = rl_handle.is_mouse_button_down(MouseButton::MOUSE_BUTTON_LEFT);
             let mouse_pressed_this_frame =
                 rl_handle.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT);
             for vk in virtual_keys.iter_mut() {
                 let key_rect = Rectangle::new(
-                    vk.x as f32, vk.y as f32,
-                    virtual_key_size as f32, virtual_key_size as f32,
+                    vk.x as f32,
+                    vk.y as f32,
+                    virtual_key_size as f32,
+                    virtual_key_size as f32,
                 );
                 vk.hovered = key_rect.check_collision_point_rec(mouse_pos);
 
@@ -645,13 +887,11 @@ fn main() {
                 icalc.fill_audio(&mut shared.back_buffer);
                 shared.back_ready = true;
             }
-
         } // drop lock on shell
 
         // --- Upload pixel data to GPU ---
         let fps = rl_handle.get_fps();
-        let mut raw_pixels: Vec<u8> =
-            Vec::with_capacity((RENDER_W * RENDER_H * 4) as usize);
+        let mut raw_pixels: Vec<u8> = Vec::with_capacity((RENDER_W * RENDER_H * 4) as usize);
         for &pixel in ic_rl_platform.canvas_data.iter() {
             let c = rgb565_to_rl_color(pixel);
             raw_pixels.push(c.r);
@@ -674,14 +914,39 @@ fn main() {
             } else {
                 Color::LIGHTGRAY
             };
-            d.draw_rectangle(vk.x as i32, vk.y as i32, virtual_key_size, virtual_key_size, c);
-            d.draw_text(vk.label,   vk.x as i32 + 16, vk.y as i32 + 16, 20, Color::BLACK);
-            d.draw_text(vk.shlabel, vk.x as i32 + 46, vk.y as i32 + 46, 20, Color::BLUE);
-            d.draw_text(vk.sulabel, vk.x as i32 +  6, vk.y as i32 + 46, 20, Color::RED);
+            d.draw_rectangle(
+                vk.x as i32,
+                vk.y as i32,
+                virtual_key_size,
+                virtual_key_size,
+                c,
+            );
+            d.draw_text(
+                vk.label,
+                vk.x as i32 + 16,
+                vk.y as i32 + 16,
+                20,
+                Color::BLACK,
+            );
+            d.draw_text(
+                vk.shlabel,
+                vk.x as i32 + 46,
+                vk.y as i32 + 46,
+                20,
+                Color::BLUE,
+            );
+            d.draw_text(
+                vk.sulabel,
+                vk.x as i32 + 6,
+                vk.y as i32 + 46,
+                20,
+                Color::RED,
+            );
         }
 
         let source_rec = Rectangle::new(
-            0.0, 0.0,
+            0.0,
+            0.0,
             target_tex.texture.width as f32,
             target_tex.texture.height as f32,
         );
@@ -689,15 +954,32 @@ fn main() {
 
         // Small preview (fits in the calculator bezel)
         let dest_rec_small = Rectangle::new(23.0, 10.0, 160.0, 120.0);
-        d.draw_texture_pro(&target_tex, source_rec, dest_rec_small, origin, 0.0, Color::WHITE);
+        d.draw_texture_pro(
+            &target_tex,
+            source_rec,
+            dest_rec_small,
+            origin,
+            0.0,
+            Color::WHITE,
+        );
 
         // Full-size view on the right
         let dest_rec_zoom = Rectangle::new(300.0, 10.0, RENDER_W as f32, RENDER_H as f32);
-        d.draw_texture_pro(&target_tex, source_rec, dest_rec_zoom, origin, 0.0, Color::WHITE);
+        d.draw_texture_pro(
+            &target_tex,
+            source_rec,
+            dest_rec_zoom,
+            origin,
+            0.0,
+            Color::WHITE,
+        );
 
         d.draw_text(
             format!("What! {fps} FPS").as_str(),
-            12, 435, 24, Color::WHITE,
+            12,
+            435,
+            24,
+            Color::WHITE,
         );
     }
 
