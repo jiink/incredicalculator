@@ -1,7 +1,7 @@
 use crate::app::{IcApp, InputContext};
 use crate::audio_engine::{AudioEngine, AudioPatch, NoteId};
 use crate::fonts::FontId;
-use crate::graphics::{GRAPHICS, draw_vitmap};
+use crate::graphics::{SAMPLE_GRAPHIC, draw_vitmap};
 use crate::input::IcKey;
 use crate::text;
 use glam::Vec2;
@@ -100,16 +100,14 @@ impl IcApp for SoundTest {
         }
 
         platform.clear(RGB8::new(200, 200, 200));
-        if let Some(vitmap) = GRAPHICS.first() {
-            draw_vitmap(
-                platform,
-                vitmap,
-                0,
-                Vec2::new(250.0, 180.0),
-                0.0,
-                Vec2::splat(4.0),
-            );
-        }
+        draw_vitmap(
+            platform,
+            &SAMPLE_GRAPHIC,
+            0,
+            Vec2::new(250.0, 180.0),
+            0.0,
+            Vec2::splat(4.0),
+        );
         text::draw_text_f(
             platform,
             format_args!("Held: {} / {}", held_notes, crate::audio_engine::MAX_VOICES),

@@ -15,16 +15,17 @@ To run the RP2350 project:
 
 ## Vector graphics JSON
 
-`incredicalculator_core` converts `crates/incredicalculator_core/assets/graphics.json` into static Rust data at build time. Both apps can access it through `incredicalculator_core::graphics::GRAPHICS`; the firmware does not parse JSON at runtime. Each action contains frames, and each frame contains polygon shapes with point coordinates, fill and border colors, border width, and an `open` flag. Color components are integers from 0 to 255; alpha defaults to 255 when omitted.
+`incredicalculator_core` converts every `*.json` file in `crates/incredicalculator_core/assets/` into static Rust data at build time. The file stem becomes an uppercase Rust constant: `red-line.json` becomes `graphics::RED_LINE`. The firmware does not parse JSON at runtime. Each action contains frames, and each frame contains polygon shapes with point coordinates, fill and border colors, border width, and an `open` flag. Color components are integers from 0 to 255; alpha defaults to 255 when omitted.
 
-To build from a different JSON file, set `IC_GRAPHICS_JSON` before building. For example in PowerShell:
+For example, after adding `assets/player-idle.json`, draw its first frame with:
 
-```powershell
-$env:IC_GRAPHICS_JSON = "C:\path\to\graphics.json"
-cargo build --release --manifest-path incredicalculator_rp/Cargo.toml --target thumbv8m.main-none-eabihf
+```rust
+use incredicalculator_core::graphics::{PLAYER_IDLE, draw_vitmap};
+
+draw_vitmap(platform, &PLAYER_IDLE, 0, position, rotation, scale);
 ```
 
-The generated public types are `Action`, `Frame`, `Polygon`, `Point`, and `Color`. Coordinates and border widths are stored as `f32`.
+The generated public types are `Vitmap`, `Action`, `Frame`, `Polygon`, `Point`, and `Color`. Coordinates and border widths are stored as `f32`. Use `draw_vitmap_action` when a file contains more than one action.
 
 To get a .uf2 file:
 - edit incredicalculator-rp/.cargo/config.toml and uncomment the line that talks about outputting a uf2 file

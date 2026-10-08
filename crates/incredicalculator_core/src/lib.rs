@@ -19,10 +19,8 @@ pub mod graphics {
 
     include!(concat!(env!("OUT_DIR"), "/generated_graphics.rs"));
 
-    /// A vitmap is a vector sprite with one or more animation frames.
-    pub type Vitmap = Action;
-
-    /// Draws one vitmap frame after applying its local-to-screen transform.
+    /// Draws a frame from the vitmap's default action after applying its
+    /// local-to-screen transform.
     ///
     /// `position` is the screen position of the vitmap origin, `rotation` is
     /// in radians, and `scale` is applied independently on each local axis.
@@ -35,7 +33,27 @@ pub mod graphics {
         rotation: f32,
         scale: Vec2,
     ) -> bool {
-        let Some(frame) = vitmap.frames.get(frame) else {
+        draw_vitmap_action(platform, vitmap, 0, frame, position, rotation, scale)
+    }
+
+    /// Draws a frame from a selected vitmap action.
+    ///
+    /// `position` is the screen position of the vitmap origin, `rotation` is
+    /// in radians, and `scale` is applied independently on each local axis.
+    /// Returns `false` when `action` or `frame` is outside the vitmap data.
+    pub fn draw_vitmap_action(
+        platform: &mut dyn IcPlatform,
+        vitmap: &Vitmap,
+        action: usize,
+        frame: usize,
+        position: Vec2,
+        rotation: f32,
+        scale: Vec2,
+    ) -> bool {
+        let Some(action) = vitmap.actions.get(action) else {
+            return false;
+        };
+        let Some(frame) = action.frames.get(frame) else {
             return false;
         };
         let rotation = Mat2::from_angle(rotation);

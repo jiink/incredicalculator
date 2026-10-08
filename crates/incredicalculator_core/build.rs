@@ -1,59 +1,65 @@
 use serde_json::Value;
+use std::collections::BTreeSet;
 use std::env;
 use std::fmt::Write as _;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 fn main() {
     let manifest_dir = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
+    let assets_dir = manifest_dir.join("assets");
+    println!("cargo:rerun-if-changed={}", assets_dir.display());
+
+    let mut graphics_files = fs::read_dir(&assets_dir)
+        .unwrap_or_else(|error| panic!("could not read {}: {error}", assets_dir.display()))
+        .map(|entry| {
+            entry
+                .expect("could not read an asset directory entry")
+                .path()
+        })
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("json"))
+        })
+        .collect::<Vec<_>>();
+    graphics_files.sort();
+    if graphics_files.is_empty() {
+        panic!("no vitmap JSON files found in {}", assets_dir.display());
+    }
+
+    let mut generated = generated_header();
+    let mut identifiers = BTreeSet::new();
+    let mut vitmaps = Vec::new();
+    for path in graphics_files {
+        println!("cargo:rerun-if-changed={}", path.display());
+        let identifier = rust_identifier(&path)
+            .unwrap_or_else(|error| panic!("cannot name vitmap from {}: {error}", path.display()));
+        if !identifiers.insert(identifier.clone()) {
+            panic!("multiple vitmap files map to the Rust name `{identifier}`");
+        }
+
+        let source = fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("could not read {}: {error}", path.display()));
+        let json: Value = serde_json::from_str(&source)
+            .unwrap_or_else(|error| panic!("invalid vitmap JSON at {}: {error}", path.display()));
+        generate_vitmap(&mut generated, &identifier, &json)
+            .unwrap_or_else(|error| panic!("invalid vitmap JSON at {}: {error}", path.display()));
+        vitmaps.push(identifier);
+    }
+    generated.push_str("pub static VITMAPS: &[&Vitmap] = &[\n");
+    for vitmap in vitmaps {
+        writeln!(generated, "    &{vitmap},").unwrap();
+    }
+    generated.push_str("];\n");
+
     let out_dir = PathBuf::from(env::var_os("OUT_DIR").unwrap());
-
-    let graphics_path = match env::var_os("IC_GRAPHICS_JSON") {
-        Some(path) => PathBuf::from(path),
-        None => manifest_dir.join("assets").join("graphics.json"),
-    };
-    let graphics_path = if graphics_path.is_absolute() {
-        graphics_path
-    } else {
-        manifest_dir.join(graphics_path)
-    };
-    println!("cargo:rerun-if-env-changed=IC_GRAPHICS_JSON");
-    println!("cargo:rerun-if-changed={}", graphics_path.display());
-
-    let source = fs::read_to_string(&graphics_path).unwrap_or_else(|error| {
-        panic!(
-            "could not read graphics JSON at {}: {error}",
-            graphics_path.display()
-        )
-    });
-    let json: Value = serde_json::from_str(&source).unwrap_or_else(|error| {
-        panic!(
-            "invalid graphics JSON at {}: {error}",
-            graphics_path.display()
-        )
-    });
-    let generated = generate(&json).unwrap_or_else(|error| {
-        panic!(
-            "invalid graphics JSON at {}: {error}",
-            graphics_path.display()
-        )
-    });
     fs::write(out_dir.join("generated_graphics.rs"), generated)
         .expect("could not write generated_graphics.rs");
 }
 
-fn generate(root: &Value) -> Result<String, String> {
-    let actions = field(root, "actions")?
-        .as_array()
-        .ok_or("actions must be an array")?;
-    let version = root
-        .get("meta")
-        .and_then(|meta| meta.get("version"))
-        .and_then(Value::as_str)
-        .unwrap_or("");
-
-    let mut output = String::from(
-        "// Generated from graphics JSON by incredicalculator_core/build.rs.\n\
+fn generated_header() -> String {
+    String::from(
+        "// Generated from assets/*.json by incredicalculator_core/build.rs.\n\
          #[derive(Clone, Copy, Debug)]\n\
          pub struct Color { pub r: u8, pub g: u8, pub b: u8, pub a: u8 }\n\
          #[derive(Clone, Copy, Debug)]\n\
@@ -64,10 +70,53 @@ fn generate(root: &Value) -> Result<String, String> {
          pub struct Frame { pub shapes: &'static [Polygon] }\n\
          #[derive(Clone, Copy, Debug)]\n\
          pub struct Action { pub name: &'static str, pub frames: &'static [Frame], pub looped: bool }\n\
-         pub const GRAPHICS_VERSION: &str = ",
-    );
-    writeln!(output, "{version:?};").unwrap();
-    output.push_str("pub const GRAPHICS: &[Action] = &[\n");
+         #[derive(Clone, Copy, Debug)]\n\
+         pub struct Vitmap { pub name: &'static str, pub version: &'static str, pub actions: &'static [Action] }\n",
+    )
+}
+
+fn rust_identifier(path: &Path) -> Result<String, String> {
+    let stem = path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .ok_or("file name must be valid Unicode")?;
+    let mut identifier = String::new();
+    let mut needs_separator = false;
+    for character in stem.chars() {
+        if character.is_ascii_alphanumeric() {
+            if needs_separator && !identifier.is_empty() {
+                identifier.push('_');
+            }
+            identifier.push(character.to_ascii_uppercase());
+            needs_separator = false;
+        } else {
+            needs_separator = true;
+        }
+    }
+    if identifier.is_empty() {
+        return Err("file name has no letters or digits".into());
+    }
+    if identifier.as_bytes()[0].is_ascii_digit() {
+        identifier.insert_str(0, "VITMAP_");
+    }
+    Ok(identifier)
+}
+
+fn generate_vitmap(output: &mut String, identifier: &str, root: &Value) -> Result<(), String> {
+    let actions = field(root, "actions")?
+        .as_array()
+        .ok_or("actions must be an array")?;
+    let version = root
+        .get("meta")
+        .and_then(|meta| meta.get("version"))
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let name = identifier.to_ascii_lowercase();
+    writeln!(
+        output,
+        "pub static {identifier}: Vitmap = Vitmap {{ name: {name:?}, version: {version:?}, actions: &["
+    )
+    .unwrap();
 
     for action in actions {
         let name = field(action, "name")?
@@ -81,7 +130,7 @@ fn generate(root: &Value) -> Result<String, String> {
             .ok_or("action frames must be an array")?;
         writeln!(
             output,
-            "    Action {{ name: {name:?}, looped: {looped}, frames: &[ "
+            "    Action {{ name: {name:?}, looped: {looped}, frames: &["
         )
         .unwrap();
 
@@ -129,8 +178,8 @@ fn generate(root: &Value) -> Result<String, String> {
         }
         output.push_str("    ] },\n");
     }
-    output.push_str("];\n");
-    Ok(output)
+    output.push_str("] };\n\n");
+    Ok(())
 }
 
 fn field<'a>(value: &'a Value, name: &str) -> Result<&'a Value, String> {
