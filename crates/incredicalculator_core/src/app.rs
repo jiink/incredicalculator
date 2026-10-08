@@ -1,9 +1,9 @@
 use crate::audio_engine::AudioEngine;
-use crate::platform::IcPlatform;
 use crate::input::{IcKey, KeyState};
+use crate::platform::IcPlatform;
 
 pub struct InputContext<'a> {
-    pub key_states: &'a [KeyState; IcKey::COUNT]
+    pub key_states: &'a [KeyState; IcKey::COUNT],
 }
 
 impl<'a> InputContext<'a> {
@@ -24,6 +24,10 @@ pub trait IcApp {
     fn requires_realtime_updates(&self) -> bool;
     fn on_enter(&mut self);
     fn on_key(&mut self, key: IcKey, ctx: &InputContext);
-    fn update(&mut self, platform: &mut dyn IcPlatform, ctx: &InputContext, audio: &mut AudioEngine);
+    fn update(
+        &mut self,
+        platform: &mut dyn IcPlatform,
+        ctx: &InputContext,
+        audio: &mut AudioEngine,
+    );
 }
-

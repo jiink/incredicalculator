@@ -1,15 +1,15 @@
 use crate::app::IcApp;
 use crate::app::InputContext;
 use crate::audio_engine::AudioEngine;
-use crate::input::IcKey;
-use crate::platform::IcPlatform;
-use crate::platform::CANVAS_WIDTH;
-use crate::text::{draw_text, text_to_pos};
 use crate::fonts::FontId;
+use crate::input::IcKey;
+use crate::platform::CANVAS_WIDTH;
+use crate::platform::IcPlatform;
+use crate::text::{draw_text, text_to_pos};
 use alloc::boxed::Box;
 use alloc::string::ToString;
 use alloc::{format, string::String};
-use core::{num::ParseIntError};
+use core::num::ParseIntError;
 use glam::{IVec2, Vec2};
 use rgb::*;
 
@@ -99,23 +99,79 @@ struct CalculatorTheme {
 }
 
 const PROGRAMMER_THEME: CalculatorTheme = CalculatorTheme {
-    background: Rgb { r: 40, g: 41, b: 35 },
-    foreground: Rgb { r: 255, g: 255, b: 255 },
-    subtle: Rgb { r: 116, g: 112, b: 93 },
-    emphasis_0: Rgb { r: 103, g: 216, b: 239 },
-    emphasis_1: Rgb { r: 231, g: 219, b: 116 },
-    emphasis_2: Rgb { r: 249, g: 36, b: 114 },
-    icon: Rgb { r: 52, g: 54, b: 46 },
+    background: Rgb {
+        r: 40,
+        g: 41,
+        b: 35,
+    },
+    foreground: Rgb {
+        r: 255,
+        g: 255,
+        b: 255,
+    },
+    subtle: Rgb {
+        r: 116,
+        g: 112,
+        b: 93,
+    },
+    emphasis_0: Rgb {
+        r: 103,
+        g: 216,
+        b: 239,
+    },
+    emphasis_1: Rgb {
+        r: 231,
+        g: 219,
+        b: 116,
+    },
+    emphasis_2: Rgb {
+        r: 249,
+        g: 36,
+        b: 114,
+    },
+    icon: Rgb {
+        r: 52,
+        g: 54,
+        b: 46,
+    },
 };
 
 const SCIENTIFIC_THEME: CalculatorTheme = CalculatorTheme {
-    background: Rgb { r: 245, g: 246, b: 239 },
-    foreground: Rgb { r: 39, g: 45, b: 42 },
-    subtle: Rgb { r: 139, g: 148, b: 137 },
-    emphasis_0: Rgb { r: 20, g: 116, b: 132 },
-    emphasis_1: Rgb { r: 157, g: 112, b: 28 },
-    emphasis_2: Rgb { r: 207, g: 69, b: 91 },
-    icon: Rgb { r: 229, g: 232, b: 222 },
+    background: Rgb {
+        r: 245,
+        g: 246,
+        b: 239,
+    },
+    foreground: Rgb {
+        r: 39,
+        g: 45,
+        b: 42,
+    },
+    subtle: Rgb {
+        r: 139,
+        g: 148,
+        b: 137,
+    },
+    emphasis_0: Rgb {
+        r: 20,
+        g: 116,
+        b: 132,
+    },
+    emphasis_1: Rgb {
+        r: 157,
+        g: 112,
+        b: 28,
+    },
+    emphasis_2: Rgb {
+        r: 207,
+        g: 69,
+        b: 91,
+    },
+    icon: Rgb {
+        r: 229,
+        g: 232,
+        b: 222,
+    },
 };
 
 struct LineBuffer<const N: usize> {
@@ -256,7 +312,7 @@ impl CalcEngine for ScientificEngine {
             10.0,
             2.0,
             theme.subtle,
-            FontId::Futural
+            FontId::Futural,
         );
     }
 
@@ -357,7 +413,7 @@ impl ProgrammerEngine {
     fn binary_widget_set_bit(
         &self,
         bit_idx: u8,
-        buffer: &mut LineBuffer<{EqEntry::EQUATION_MAX_SIZE}>,
+        buffer: &mut LineBuffer<{ EqEntry::EQUATION_MAX_SIZE }>,
         current_result: &str,
     ) {
         let current_val = match current_result.parse::<i32>() {
@@ -377,7 +433,7 @@ impl ProgrammerEngine {
     ) {
         let current_val = current_result.parse::<i32>().unwrap_or(0);
         let is_set = (current_val & (1 << self.binary_selection_idx)) != 0;
-        
+
         if target_state != is_set {
             self.binary_widget_set_bit(self.binary_selection_idx, buffer, current_result);
         }
@@ -496,7 +552,7 @@ impl CalcEngine for ProgrammerEngine {
                     7.0,
                     2.0,
                     theme.emphasis_0,
-                    FontId::Futural
+                    FontId::Futural,
                 );
             }
             // draw bin form of ans
@@ -558,7 +614,7 @@ impl CalcEngine for ProgrammerEngine {
                 10.0,
                 2.0,
                 theme.subtle,
-                FontId::Futural
+                FontId::Futural,
             );
         }
     }
@@ -632,7 +688,6 @@ impl CalcEngine for ProgrammerEngine {
             }
         }
     }
-
 }
 
 pub struct Calculator {
@@ -875,7 +930,7 @@ impl Calculator {
             self.current_eq.move_cursor_end();
             let to_append = match hs.part {
                 EqEntryPart::Equation => &entry.equation[..entry.equation_len],
-                EqEntryPart::Result => &entry.result[..entry.result_len]
+                EqEntryPart::Result => &entry.result[..entry.result_len],
             };
             for &b in to_append {
                 self.current_eq.insert_char(b);
@@ -974,7 +1029,7 @@ impl Calculator {
                         font_size,
                         2.0,
                         theme.background,
-                        FontId::Futural
+                        FontId::Futural,
                     );
                     h_exp_col = theme.foreground;
                     h_ans_col = theme.foreground;
@@ -988,7 +1043,7 @@ impl Calculator {
                 font_size,
                 2.0,
                 h_exp_col,
-                FontId::Futural
+                FontId::Futural,
             );
             let ans_disp =
                 core::str::from_utf8(&entry.result[..entry.result_len]).unwrap_or("Invalid UTF-8");
@@ -1000,7 +1055,7 @@ impl Calculator {
                 font_size,
                 2.0,
                 theme.subtle,
-                FontId::Futural
+                FontId::Futural,
             );
             draw_text(
                 platform,
@@ -1010,7 +1065,7 @@ impl Calculator {
                 font_size,
                 2.0,
                 h_ans_col,
-                FontId::Futural
+                FontId::Futural,
             );
 
             platform.draw_line(
@@ -1040,7 +1095,7 @@ impl Calculator {
             eq_scale,
             3.0,
             theme.foreground,
-            FontId::Futural
+            FontId::Futural,
         );
         if self.focused_ui == FocusUi::Equation && self.history_selection.is_none() {
             let mut cursor_x_pos = text_to_pos(
@@ -1048,7 +1103,7 @@ impl Calculator {
                 margin as f32,
                 eq_scale,
                 self.current_eq.cursor,
-                FontId::Futural
+                FontId::Futural,
             );
             cursor_x_pos -= 2.0;
             if cursor_x_pos < 2.0 {
@@ -1078,7 +1133,7 @@ impl Calculator {
             ans_scale,
             2.0,
             theme.emphasis_2,
-            FontId::Futural
+            FontId::Futural,
         );
         draw_text(
             platform,
@@ -1088,7 +1143,7 @@ impl Calculator {
             ans_scale,
             4.0,
             theme.foreground,
-            FontId::Futural
+            FontId::Futural,
         );
     }
 }
@@ -1194,7 +1249,12 @@ impl IcApp for Calculator {
         }
     }
 
-    fn update(&mut self, platform: &mut dyn IcPlatform, _ctx: &InputContext, _audio: &mut AudioEngine) {
+    fn update(
+        &mut self,
+        platform: &mut dyn IcPlatform,
+        _ctx: &InputContext,
+        _audio: &mut AudioEngine,
+    ) {
         let theme = self.current_theme();
         platform.clear(theme.background);
         self.draw_mode_icon(platform, theme);
@@ -1202,8 +1262,12 @@ impl IcApp for Calculator {
         self.draw_editor(platform, theme);
         let result_str =
             core::str::from_utf8(&self.current_result[..self.current_result_len]).unwrap_or("0");
-        self.engine
-            .draw_widgets(platform, result_str, self.focused_ui == FocusUi::Widget, theme);
+        self.engine.draw_widgets(
+            platform,
+            result_str,
+            self.focused_ui == FocusUi::Widget,
+            theme,
+        );
     }
 
     fn on_enter(&mut self) {

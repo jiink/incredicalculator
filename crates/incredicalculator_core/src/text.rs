@@ -13,10 +13,10 @@
 
 use core::fmt;
 
+use crate::fonts;
+use crate::fonts::{HERSHEY_LIFT, HersheyFont, HersheyGlyph};
 use glam::Vec2;
 use rgb::*;
-use crate::fonts::{HersheyFont, HersheyGlyph, HERSHEY_LIFT};
-use crate::fonts;
 
 use crate::platform::IcPlatform;
 
@@ -40,22 +40,12 @@ fn glyph_advance(font: &'static HersheyFont, c: u8, glyph: &'static HersheyGlyph
         font.space_advance as f32
     } else {
         let advance = glyph.advance();
-        if advance > 0 {
-            advance as f32
-        } else {
-            1.0
-        }
+        if advance > 0 { advance as f32 } else { 1.0 }
     }
 }
 
 #[inline]
-fn draw_stroke_point(
-    platform: &mut dyn IcPlatform,
-    sx: f32,
-    sy: f32,
-    color: RGB8,
-    thickness: u32,
-) {
+fn draw_stroke_point(platform: &mut dyn IcPlatform, sx: f32, sy: f32, color: RGB8, thickness: u32) {
     // IcPlatform exposes draw_line but not a point primitive in the code
     // supplied. A tiny line gives standalone Hershey points visible output.
     let half = (thickness.max(1) as f32) * 0.5;
@@ -141,8 +131,7 @@ pub fn draw_text(
                 // Draw isolated points only when this vertex is a one-point
                 // stroke (next item is LIFT or this is the final item).
                 let is_last = index + 1 >= glyph.vertices.len();
-                let next_is_lift =
-                    !is_last && glyph.vertices[index + 1] == HERSHEY_LIFT;
+                let next_is_lift = !is_last && glyph.vertices[index + 1] == HERSHEY_LIFT;
 
                 if glyph.vertices.len() == 1 || is_last || next_is_lift {
                     draw_stroke_point(platform, sx, sy, color, thickness as u32);
@@ -179,13 +168,7 @@ pub fn draw_text_f(
 ///
 /// This follows the behavior of your existing text_to_pos helper and treats
 /// newline/carriage-return as line-control characters.
-pub fn text_to_pos(
-    text: &str,
-    x: f32,
-    scale: f32,
-    cursor: usize,
-    font_id: fonts::FontId,
-) -> f32 {
+pub fn text_to_pos(text: &str, x: f32, scale: f32, cursor: usize, font_id: fonts::FontId) -> f32 {
     let font = fonts::get_font(font_id);
     let font_scale = scale / font.units_per_em;
 
@@ -220,10 +203,6 @@ pub fn text_to_pos(
     current_x
 }
 
-pub fn text_width(
-    text: &str,
-    scale: f32,
-    font_id: fonts::FontId,
-) -> f32 {
+pub fn text_width(text: &str, scale: f32, font_id: fonts::FontId) -> f32 {
     text_to_pos(text, 0.0, scale, text.len(), font_id)
 }

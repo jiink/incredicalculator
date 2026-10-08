@@ -1,10 +1,8 @@
-use culsynth::{
-    EnvParamFxP, LfoFreqFxP, NoteFxP, SampleFxP, ScalarFxP, SignedNoteFxP,
-};
 use culsynth::context::ContextFxP;
 use culsynth::devices::{
     Amp, Device, Env, EnvParams, Lfo, LfoOptions, LfoParams, LfoWave, Osc, OscParams,
 };
+use culsynth::{EnvParamFxP, LfoFreqFxP, NoteFxP, SampleFxP, ScalarFxP, SignedNoteFxP};
 
 pub const MAX_VOICES: usize = 3;
 const SAMPLE_RATE_HZ: u32 = 48_000;
@@ -268,9 +266,8 @@ impl SynthVoice {
         let mixed_wave_bits = ((oscillator.tri.to_bits() as i32 * triangle_mix as i32)
             + (oscillator.sq.to_bits() as i32 * square_mix as i32))
             / u8::MAX as i32;
-        let mixed_wave = SampleFxP::from_bits(
-            mixed_wave_bits.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
-        );
+        let mixed_wave =
+            SampleFxP::from_bits(mixed_wave_bits.clamp(i16::MIN as i32, i16::MAX as i32) as i16);
         let amplitude = self
             .amp_env
             .next(context, self.gate, amp_env_params.clone());
@@ -292,8 +289,7 @@ fn sanitize_patch(mut patch: AudioPatch) -> AudioPatch {
     patch.release_ms = patch.release_ms.clamp(MIN_ENV_MS, MAX_ENV_MS);
     let total_mix = patch.triangle_mix as u16 + patch.square_mix as u16;
     if total_mix > u8::MAX as u16 {
-        patch.triangle_mix =
-            ((patch.triangle_mix as u16 * u8::MAX as u16) / total_mix) as u8;
+        patch.triangle_mix = ((patch.triangle_mix as u16 * u8::MAX as u16) / total_mix) as u8;
         patch.square_mix = u8::MAX - patch.triangle_mix;
     }
     patch

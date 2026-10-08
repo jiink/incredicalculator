@@ -1,9 +1,7 @@
-use crate::fonts::{HersheyGlyph, HersheyVertex, HersheyFont};
 use crate::fonts::types::HERSHEY_LIFT;
+use crate::fonts::{HersheyFont, HersheyGlyph, HersheyVertex};
 
-static FUTURAL_GLYPH_0_VERTICES: [HersheyVertex; 1] = [
-    HERSHEY_LIFT,
-];
+static FUTURAL_GLYPH_0_VERTICES: [HersheyVertex; 1] = [HERSHEY_LIFT];
 
 pub const FUTURAL_GLYPH_0: HersheyGlyph = HersheyGlyph {
     left: -8,
@@ -281,10 +279,8 @@ pub const FUTURAL_GLYPH_12: HersheyGlyph = HersheyGlyph {
     vertices: &FUTURAL_GLYPH_12_VERTICES,
 };
 
-static FUTURAL_GLYPH_13_VERTICES: [HersheyVertex; 2] = [
-    HersheyVertex { x: -9, y: 0 },
-    HersheyVertex { x: 9, y: 0 },
-];
+static FUTURAL_GLYPH_13_VERTICES: [HersheyVertex; 2] =
+    [HersheyVertex { x: -9, y: 0 }, HersheyVertex { x: 9, y: 0 }];
 
 pub const FUTURAL_GLYPH_13: HersheyGlyph = HersheyGlyph {
     left: -13,
@@ -918,10 +914,8 @@ pub const FUTURAL_GLYPH_40: HersheyGlyph = HersheyGlyph {
     vertices: &FUTURAL_GLYPH_40_VERTICES,
 };
 
-static FUTURAL_GLYPH_41_VERTICES: [HersheyVertex; 2] = [
-    HersheyVertex { x: 0, y: -12 },
-    HersheyVertex { x: 0, y: 9 },
-];
+static FUTURAL_GLYPH_41_VERTICES: [HersheyVertex; 2] =
+    [HersheyVertex { x: 0, y: -12 }, HersheyVertex { x: 0, y: 9 }];
 
 pub const FUTURAL_GLYPH_41: HersheyGlyph = HersheyGlyph {
     left: -4,
@@ -1608,10 +1602,8 @@ pub const FUTURAL_GLYPH_75: HersheyGlyph = HersheyGlyph {
     vertices: &FUTURAL_GLYPH_75_VERTICES,
 };
 
-static FUTURAL_GLYPH_76_VERTICES: [HersheyVertex; 2] = [
-    HersheyVertex { x: 0, y: -12 },
-    HersheyVertex { x: 0, y: 9 },
-];
+static FUTURAL_GLYPH_76_VERTICES: [HersheyVertex; 2] =
+    [HersheyVertex { x: 0, y: -12 }, HersheyVertex { x: 0, y: 9 }];
 
 pub const FUTURAL_GLYPH_76: HersheyGlyph = HersheyGlyph {
     left: -4,
@@ -2193,5 +2185,5 @@ pub static FONT_FUTURAL: HersheyFont = HersheyFont {
     space_advance: 10,
     line_height: 25,
     missing_glyph: &FUTURAL_GLYPH_10,
-    units_per_em: 10.0
+    units_per_em: 10.0,
 };

@@ -1,10 +1,9 @@
 use crate::app::{IcApp, InputContext};
 use crate::audio_engine::{AudioEngine, AudioPatch, NoteId};
 use crate::fonts::FontId;
-use crate::graphics::GRAPHICS;
+use crate::graphics::{GRAPHICS, draw_vitmap};
 use crate::input::IcKey;
 use crate::text;
-use alloc::vec::Vec;
 use glam::Vec2;
 use rgb::RGB8;
 
@@ -101,7 +100,16 @@ impl IcApp for SoundTest {
         }
 
         platform.clear(RGB8::new(200, 200, 200));
-        draw_test_graphic(platform);
+        if let Some(vitmap) = GRAPHICS.first() {
+            draw_vitmap(
+                platform,
+                vitmap,
+                0,
+                Vec2::new(250.0, 180.0),
+                0.0,
+                Vec2::splat(4.0),
+            );
+        }
         text::draw_text_f(
             platform,
             format_args!("Held: {} / {}", held_notes, crate::audio_engine::MAX_VOICES),
@@ -166,55 +174,6 @@ impl IcApp for SoundTest {
 
     fn name(&self) -> &str {
         "Sound test"
-    }
-}
-
-fn draw_test_graphic(platform: &mut dyn crate::platform::IcPlatform) {
-    // Keep the sample graphic to the right of the sound-test controls.
-    const CENTER: Vec2 = Vec2::new(250.0, 180.0);
-    const SCALE: f32 = 4.0;
-
-    let Some(frame) = GRAPHICS.first().and_then(|action| action.frames.first()) else {
-        return;
-    };
-
-    for polygon in frame.shapes {
-        let points = polygon.points;
-        if points.len() < 2 {
-            continue;
-        }
-
-        let screen_point = |point: crate::graphics::Point| {
-            Vec2::new(CENTER.x + point.x * SCALE, CENTER.y + point.y * SCALE)
-        };
-        let fill_color = RGB8::new(polygon.color.r, polygon.color.g, polygon.color.b);
-        if !polygon.open && points.len() >= 3 {
-            let screen_points: Vec<Vec2> = points.iter().copied().map(screen_point).collect();
-            platform.draw_polygon(&screen_points, fill_color);
-        }
-
-        let border_width = if polygon.border_width > 0.0 {
-            (polygon.border_width as u32).max(1)
-        } else {
-            0
-        };
-        if border_width > 0 {
-            let border_color = RGB8::new(
-                polygon.border_color.r,
-                polygon.border_color.g,
-                polygon.border_color.b,
-            );
-            let edge_count = if polygon.open {
-                points.len() - 1
-            } else {
-                points.len()
-            };
-            for index in 0..edge_count {
-                let start = screen_point(points[index]);
-                let end = screen_point(points[(index + 1) % points.len()]);
-                platform.draw_line(start, end, border_color, border_width);
-            }
-        }
     }
 }
 

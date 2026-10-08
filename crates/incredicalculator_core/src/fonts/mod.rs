@@ -1,12 +1,11 @@
 mod types;
-pub use types::{HersheyFont, HersheyGlyph, HersheyVertex, HERSHEY_LIFT};
+pub use types::{HERSHEY_LIFT, HersheyFont, HersheyGlyph, HersheyVertex};
 mod font_futural;
 pub use font_futural::FONT_FUTURAL;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FontId {
     Futural,
-
     // Later:
     // Simplex,
     // Duplex,

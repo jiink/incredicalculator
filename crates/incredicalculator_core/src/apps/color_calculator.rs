@@ -1,9 +1,8 @@
-
 use crate::app::{IcApp, InputContext};
 use crate::audio_engine::AudioEngine;
 use crate::fonts::FontId;
 use crate::input::IcKey;
-use crate::platform::{IcPlatform, CANVAS_WIDTH};
+use crate::platform::{CANVAS_WIDTH, IcPlatform};
 use crate::text::{draw_text, draw_text_f};
 use crate::ui::{MathInput, MathInputDirection, MathInputEvent, MathInputMode};
 use alloc::format;
@@ -58,13 +57,33 @@ impl ColorCalculator {
             focused_channel: 0,
             channel_inputs: [
                 Self::make_input(IVec2::new(8, y), IVec2::new(50, 28), MathInputMode::Integer),
-                Self::make_input(IVec2::new(66, y), IVec2::new(50, 28), MathInputMode::Integer),
-                Self::make_input(IVec2::new(124, y), IVec2::new(50, 28), MathInputMode::Integer),
+                Self::make_input(
+                    IVec2::new(66, y),
+                    IVec2::new(50, 28),
+                    MathInputMode::Integer,
+                ),
+                Self::make_input(
+                    IVec2::new(124, y),
+                    IVec2::new(50, 28),
+                    MathInputMode::Integer,
+                ),
             ],
             unit_inputs: [
-                Self::make_input(IVec2::new(8, y), IVec2::new(50, 28), MathInputMode::Expression),
-                Self::make_input(IVec2::new(66, y), IVec2::new(50, 28), MathInputMode::Expression),
-                Self::make_input(IVec2::new(124, y), IVec2::new(50, 28), MathInputMode::Expression),
+                Self::make_input(
+                    IVec2::new(8, y),
+                    IVec2::new(50, 28),
+                    MathInputMode::Expression,
+                ),
+                Self::make_input(
+                    IVec2::new(66, y),
+                    IVec2::new(50, 28),
+                    MathInputMode::Expression,
+                ),
+                Self::make_input(
+                    IVec2::new(124, y),
+                    IVec2::new(50, 28),
+                    MathInputMode::Expression,
+                ),
             ],
             hex_input: Self::make_input(
                 IVec2::new(8, y),
@@ -98,7 +117,9 @@ impl ColorCalculator {
             let _ = self.unit_inputs[index].set_text(&format!("{:.3}", channel as f32 / 255.0));
         }
         let _ = self.hex_input.set_text(&format!("{:06X}", self.rgb24()));
-        let _ = self.rgb565_input.set_text(&format!("{:04X}", self.to_rgb565()));
+        let _ = self
+            .rgb565_input
+            .set_text(&format!("{:04X}", self.to_rgb565()));
     }
 
     fn set_mode(&mut self, mode: EntryMode) {
@@ -143,11 +164,7 @@ impl ColorCalculator {
             }
             EntryMode::Hex => {
                 let value = u32::from_str_radix(self.hex_input.text(), 16).unwrap_or(0);
-                self.color = RGB8::new(
-                    (value >> 16) as u8,
-                    (value >> 8) as u8,
-                    value as u8,
-                );
+                self.color = RGB8::new((value >> 16) as u8, (value >> 8) as u8, value as u8);
             }
             EntryMode::Rgb565 => {
                 let value = u32::from_str_radix(self.rgb565_input.text(), 16).unwrap_or(0);
@@ -207,7 +224,16 @@ impl ColorCalculator {
             EntryMode::Hex => "HEX 0x",
             EntryMode::Rgb565 => "RGB565 0x",
         };
-        draw_text(platform, mode_label, 8.0, y_offset, 6.0, 2.0, LOCAL_COLOR_FG_0, FontId::Futural);
+        draw_text(
+            platform,
+            mode_label,
+            8.0,
+            y_offset,
+            6.0,
+            2.0,
+            LOCAL_COLOR_FG_0,
+            FontId::Futural,
+        );
 
         match self.mode {
             EntryMode::Rgb => {
@@ -265,9 +291,23 @@ impl IcApp for ColorCalculator {
         }
     }
 
-    fn update(&mut self, platform: &mut dyn IcPlatform, _ctx: &InputContext, _audio: &mut AudioEngine) {
+    fn update(
+        &mut self,
+        platform: &mut dyn IcPlatform,
+        _ctx: &InputContext,
+        _audio: &mut AudioEngine,
+    ) {
         platform.clear(LOCAL_COLOR_BG_0);
-        draw_text(platform, self.name(), 8.0, 15.0, 6.0, 2.0, LOCAL_COLOR_FG_0, FontId::Futural);
+        draw_text(
+            platform,
+            self.name(),
+            8.0,
+            15.0,
+            6.0,
+            2.0,
+            LOCAL_COLOR_FG_0,
+            FontId::Futural,
+        );
         draw_text(
             platform,
             "Press F1-F4",
@@ -327,4 +367,3 @@ impl IcApp for ColorCalculator {
         );
     }
 }
-

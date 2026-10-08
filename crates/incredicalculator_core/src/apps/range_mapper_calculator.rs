@@ -1,13 +1,13 @@
 use crate::audio_engine;
+use crate::fonts::FontId;
 use crate::input::IcKey;
+use crate::ui::{MathInput, MathInputDirection, MathInputEvent, MathInputMode};
 use crate::{
     app::IcApp,
     platform::{IcPlatform, rgb8_hex},
     text::{draw_text, draw_text_f},
 };
-use crate::fonts::FontId;
 use glam::IVec2;
-use crate::ui::{MathInput, MathInputDirection, MathInputEvent, MathInputMode};
 
 const INPUT_CHAR_LIMIT: usize = 24;
 
@@ -175,13 +175,23 @@ impl IcApp for RangeMapperCalculator {
         }
     }
 
-    fn update(&mut self, platform: &mut dyn IcPlatform, _ctx: &crate::app::InputContext, _audio: &mut audio_engine::AudioEngine) {
+    fn update(
+        &mut self,
+        platform: &mut dyn IcPlatform,
+        _ctx: &crate::app::InputContext,
+        _audio: &mut audio_engine::AudioEngine,
+    ) {
         platform.clear(rgb8_hex(0x1C0770));
-        self.input_box_in_val.draw(platform, self.focused_ui == FocusUi::InValue);
-        self.input_box_in_min.draw(platform, self.focused_ui == FocusUi::InMin);
-        self.input_box_in_max.draw(platform, self.focused_ui == FocusUi::InMax);
-        self.input_box_out_min.draw(platform, self.focused_ui == FocusUi::OutMin);
-        self.input_box_out_max.draw(platform, self.focused_ui == FocusUi::OutMax);
+        self.input_box_in_val
+            .draw(platform, self.focused_ui == FocusUi::InValue);
+        self.input_box_in_min
+            .draw(platform, self.focused_ui == FocusUi::InMin);
+        self.input_box_in_max
+            .draw(platform, self.focused_ui == FocusUi::InMax);
+        self.input_box_out_min
+            .draw(platform, self.focused_ui == FocusUi::OutMin);
+        self.input_box_out_max
+            .draw(platform, self.focused_ui == FocusUi::OutMax);
         draw_text_f(
             platform,
             format_args!("{}", self.answer),
@@ -190,12 +200,48 @@ impl IcApp for RangeMapperCalculator {
             10.0,
             2.0,
             rgb8_hex(0xffffff),
-            FontId::Futural
+            FontId::Futural,
         );
-        draw_text(platform, "Map", 3.0, 24.0, 6.0, 2.0, rgb8_hex(0xffffff), FontId::Futural);
-        draw_text(platform, "from", 3.0, 73.0, 6.0, 2.0, rgb8_hex(0xffffff), FontId::Futural);
-        draw_text(platform, "to", 3.0, 119.0, 6.0, 2.0, rgb8_hex(0xffffff), FontId::Futural);
-        draw_text(platform, "=", 32.0, 167.0, 6.0, 2.0, rgb8_hex(0xffffff), FontId::Futural);
+        draw_text(
+            platform,
+            "Map",
+            3.0,
+            24.0,
+            6.0,
+            2.0,
+            rgb8_hex(0xffffff),
+            FontId::Futural,
+        );
+        draw_text(
+            platform,
+            "from",
+            3.0,
+            73.0,
+            6.0,
+            2.0,
+            rgb8_hex(0xffffff),
+            FontId::Futural,
+        );
+        draw_text(
+            platform,
+            "to",
+            3.0,
+            119.0,
+            6.0,
+            2.0,
+            rgb8_hex(0xffffff),
+            FontId::Futural,
+        );
+        draw_text(
+            platform,
+            "=",
+            32.0,
+            167.0,
+            6.0,
+            2.0,
+            rgb8_hex(0xffffff),
+            FontId::Futural,
+        );
         draw_text(
             platform,
             "X = C + ((X-A)*(D-C) / B-A)",
@@ -204,7 +250,7 @@ impl IcApp for RangeMapperCalculator {
             6.0,
             2.0,
             rgb8_hex(0x3A9AFF),
-            FontId::Futural
+            FontId::Futural,
         )
     }
 }

@@ -34,8 +34,6 @@ pub struct KeyState {
     pub just_released: bool,
 }
 
-
-
 impl Default for KeyState {
     fn default() -> Self {
         KeyState {

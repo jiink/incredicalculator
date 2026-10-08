@@ -1,14 +1,11 @@
+use crate::audio_engine;
 use crate::fonts::FontId;
 use crate::ui::{MathInput, MathInputDirection, MathInputEvent, MathInputMode};
-use crate::audio_engine;
 use glam::{IVec2, Vec2};
 use num_traits::{abs, clamp_max};
 use rgb::RGB8;
 
-use crate::{
-    app::IcApp,
-    text::draw_text,
-};
+use crate::{app::IcApp, text::draw_text};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum FocusUi {

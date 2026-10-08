@@ -438,7 +438,8 @@ impl<const N: usize> MathInput<N> {
             );
 
             let text_center_y = text_y + 12.0;
-            let cursor_height = (4.0 * text_scale).min(self.size.y as f32 - Self::TEXT_MARGIN * 2.0);
+            let cursor_height =
+                (4.0 * text_scale).min(self.size.y as f32 - Self::TEXT_MARGIN * 2.0);
 
             platform.draw_line(
                 Vec2::new(cursor_x, text_center_y - cursor_height * 0.5),
