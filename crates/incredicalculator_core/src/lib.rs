@@ -12,7 +12,7 @@ pub mod platform;
 pub mod shell;
 pub mod graphics {
     use alloc::vec::Vec;
-    use glam::{Mat2, Vec2};
+    use glam::{Affine2, Vec2};
     use rgb::RGB8;
 
     use crate::platform::IcPlatform;
@@ -22,33 +22,27 @@ pub mod graphics {
     /// Draws a frame from the vitmap's default action after applying its
     /// local-to-screen transform.
     ///
-    /// `position` is the screen position of the vitmap origin, `rotation` is
-    /// in radians, and `scale` is applied independently on each local axis.
+    /// `transform` maps coordinates from vitmap-local space to screen space.
     /// Returns `false` when `frame` is outside the vitmap's frame list.
     pub fn draw_vitmap(
         platform: &mut dyn IcPlatform,
         vitmap: &Vitmap,
         frame: usize,
-        position: Vec2,
-        rotation: f32,
-        scale: Vec2,
+        transform: Affine2,
     ) -> bool {
-        draw_vitmap_action(platform, vitmap, 0, frame, position, rotation, scale)
+        draw_vitmap_action(platform, vitmap, 0, frame, transform)
     }
 
     /// Draws a frame from a selected vitmap action.
     ///
-    /// `position` is the screen position of the vitmap origin, `rotation` is
-    /// in radians, and `scale` is applied independently on each local axis.
+    /// `transform` maps coordinates from vitmap-local space to screen space.
     /// Returns `false` when `action` or `frame` is outside the vitmap data.
     pub fn draw_vitmap_action(
         platform: &mut dyn IcPlatform,
         vitmap: &Vitmap,
         action: usize,
         frame: usize,
-        position: Vec2,
-        rotation: f32,
-        scale: Vec2,
+        transform: Affine2,
     ) -> bool {
         let Some(action) = vitmap.actions.get(action) else {
             return false;
@@ -56,13 +50,17 @@ pub mod graphics {
         let Some(frame) = action.frames.get(frame) else {
             return false;
         };
-        let rotation = Mat2::from_angle(rotation);
-        let transform =
-            |point: Point| position + rotation * Vec2::new(point.x * scale.x, point.y * scale.y);
+        let transform_point =
+            |point: Point| transform.transform_point2(Vec2::new(point.x, point.y));
 
         for polygon in frame.shapes {
             if !polygon.open && polygon.points.len() >= 3 {
-                let points: Vec<Vec2> = polygon.points.iter().copied().map(transform).collect();
+                let points: Vec<Vec2> = polygon
+                    .points
+                    .iter()
+                    .copied()
+                    .map(transform_point)
+                    .collect();
                 platform.draw_polygon(
                     &points,
                     RGB8::new(polygon.color.r, polygon.color.g, polygon.color.b),
@@ -89,8 +87,8 @@ pub mod graphics {
                 polygon.points.len()
             };
             for index in 0..edge_count {
-                let start = transform(polygon.points[index]);
-                let end = transform(polygon.points[(index + 1) % polygon.points.len()]);
+                let start = transform_point(polygon.points[index]);
+                let end = transform_point(polygon.points[(index + 1) % polygon.points.len()]);
                 platform.draw_line(start, end, border_color, border_width);
             }
         }

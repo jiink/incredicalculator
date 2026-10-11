@@ -19,13 +19,6 @@ To run the RP2350 project:
 
 For example, after adding `assets/player-idle.json`, draw its first frame with:
 
-```rust
-use incredicalculator_core::graphics::{PLAYER_IDLE, draw_vitmap};
-
-draw_vitmap(platform, &PLAYER_IDLE, 0, position, rotation, scale);
-```
-
-The generated public types are `Vitmap`, `Action`, `Frame`, `Polygon`, `Point`, and `Color`. Coordinates and border widths are stored as `f32`. Use `draw_vitmap_action` when a file contains more than one action.
 
 To get a .uf2 file:
 - edit incredicalculator-rp/.cargo/config.toml and uncomment the line that talks about outputting a uf2 file
