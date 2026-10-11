@@ -19,25 +19,66 @@ pub mod graphics {
 
     include!(concat!(env!("OUT_DIR"), "/generated_graphics.rs"));
 
-    /// Draws a frame from the vitmap's default action after applying its
-    /// local-to-screen transform.
+    /// Draws a frame from the vitmap's default action at `position`, scaling
+    /// coordinates independently on each local axis.
     ///
-    /// `transform` maps coordinates from vitmap-local space to screen space.
     /// Returns `false` when `frame` is outside the vitmap's frame list.
     pub fn draw_vitmap(
         platform: &mut dyn IcPlatform,
         vitmap: &Vitmap,
         frame: usize,
-        transform: Affine2,
+        position: Vec2,
+        scale: Vec2,
     ) -> bool {
-        draw_vitmap_action(platform, vitmap, 0, frame, transform)
+        draw_vitmap_aff(
+            platform,
+            vitmap,
+            frame,
+            Affine2::from_scale_angle_translation(scale, 0.0, position),
+        )
     }
 
-    /// Draws a frame from a selected vitmap action.
+    /// Draws a frame from the vitmap's default action using a local-to-screen
+    /// affine transform.
+    ///
+    /// `transform` maps coordinates from vitmap-local space to screen space.
+    /// Returns `false` when `frame` is outside the vitmap's frame list.
+    pub fn draw_vitmap_aff(
+        platform: &mut dyn IcPlatform,
+        vitmap: &Vitmap,
+        frame: usize,
+        transform: Affine2,
+    ) -> bool {
+        draw_vitmap_action_aff(platform, vitmap, 0, frame, transform)
+    }
+
+    /// Draws a frame from a selected vitmap action at `position`, scaling
+    /// coordinates independently on each local axis.
+    ///
+    /// Returns `false` when `action` or `frame` is outside the vitmap data.
+    pub fn draw_vitmap_action(
+        platform: &mut dyn IcPlatform,
+        vitmap: &Vitmap,
+        action: usize,
+        frame: usize,
+        position: Vec2,
+        scale: Vec2,
+    ) -> bool {
+        draw_vitmap_action_aff(
+            platform,
+            vitmap,
+            action,
+            frame,
+            Affine2::from_scale_angle_translation(scale, 0.0, position),
+        )
+    }
+
+    /// Draws a frame from a selected vitmap action using a local-to-screen
+    /// affine transform.
     ///
     /// `transform` maps coordinates from vitmap-local space to screen space.
     /// Returns `false` when `action` or `frame` is outside the vitmap data.
-    pub fn draw_vitmap_action(
+    pub fn draw_vitmap_action_aff(
         platform: &mut dyn IcPlatform,
         vitmap: &Vitmap,
         action: usize,

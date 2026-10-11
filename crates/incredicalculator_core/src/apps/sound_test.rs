@@ -1,10 +1,10 @@
 use crate::app::{IcApp, InputContext};
 use crate::audio_engine::{AudioEngine, AudioPatch, NoteId};
 use crate::fonts::FontId;
-use crate::graphics::{SAMPLE_GRAPHIC, draw_vitmap};
+use crate::graphics::{draw_vitmap, SAMPLE_GRAPHIC};
 use crate::input::IcKey;
 use crate::text;
-use glam::{Affine2, Vec2};
+use glam::Vec2;
 use rgb::RGB8;
 
 const SOUND_TEST_SOURCE_BASE: u32 = 0x534f_0000;
@@ -104,7 +104,8 @@ impl IcApp for SoundTest {
             platform,
             &SAMPLE_GRAPHIC,
             0,
-            Affine2::from_scale_angle_translation(Vec2::splat(4.0), 0.0, Vec2::new(250.0, 180.0)),
+            Vec2::new(250.0, 180.0),
+            Vec2::splat(4.0),
         );
         text::draw_text_f(
             platform,
