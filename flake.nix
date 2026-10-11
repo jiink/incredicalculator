@@ -2,108 +2,74 @@
   description = "A Nix-flake-based Rust development environment";
 
   inputs = {
-    nixpkgs.url = "https://flakehub.com/f/NixOS/nixpkgs/0.1"; # unstable Nixpkgs
-    fenix = {
-      url = "https://flakehub.com/f/nix-community/fenix/0.1";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    rust-overlay.url = "github:oxalica/rust-overlay";
+    rust-overlay.inputs.nixpkgs.follows = "nixpkgs";
   };
 
   outputs =
-    { self, ... }@inputs:
-
+    { self, nixpkgs, rust-overlay, ... }@inputs:
     let
-      supportedSystems = [
-        "x86_64-linux"
-        "aarch64-linux"
-        "x86_64-darwin"
-        "aarch64-darwin"
-      ];
-      forEachSupportedSystem =
-        f:
-        inputs.nixpkgs.lib.genAttrs supportedSystems (
-          system:
-          f {
-            pkgs = import inputs.nixpkgs {
-              inherit system;
-              overlays = [
-                inputs.self.overlays.default
-              ];
-            };
-          }
-        );
-    in
-    {
-      overlays.default = final: prev: {
-        rustToolchain =
-          with inputs.fenix.packages.${prev.stdenv.hostPlatform.system};
-          combine (
-            with stable;
-            [
-              clippy
-              rustc
-              cargo
-              rustfmt
-              rust-src
-            ]
-          );
+      system = "x86_64-linux";
+      overlays = [ (import rust-overlay) ];
+      pkgs = import nixpkgs {
+        inherit system overlays;
       };
 
-      devShells = forEachSupportedSystem (
-        { pkgs }:
-        {
-          default = pkgs.mkShell {
-            packages = with pkgs; [
-              rustToolchain
-              rustup
-              wasm-pack
-              openssl
-              pkg-config
-              cargo-deny
-              cargo-edit
-              cargo-watch
-              rust-analyzer
-              cmake
-              alsa-lib
-              llvmPackages.libclang
-              xorg.libX11
-              xorg.xorgproto
-              mesa
-              xorg.libxcb
-              xorg.libXrandr
-              xorg.libXinerama
-              xorg.libXcursor
-              xorg.libXi
-              libGL
-              clang
-            ];
+      rustToolchain = pkgs.rust-bin.stable.latest.default.override {
+        extensions = [ "rust-src" "rustfmt" "clippy" ];
+        targets = [ "wasm32-unknown-unknown" ];
+      };
+    in
+    {
+      devShells.${system}.default = pkgs.mkShell {
+        nativeBuildInputs = [
+          rustToolchain
+          pkgs.wasm-pack
+          pkgs.openssl
+          pkgs.pkg-config
+          pkgs.cargo-deny
+          pkgs.cargo-edit
+          pkgs.cargo-watch
+          pkgs.rust-analyzer
+          pkgs.cmake
+          pkgs.alsa-lib
+          pkgs.llvmPackages.libclang
+          pkgs.xorg.libX11
+          pkgs.xorg.xorgproto
+          pkgs.mesa
+          pkgs.xorg.libxcb
+          pkgs.xorg.libXrandr
+          pkgs.xorg.libXinerama
+          pkgs.xorg.libXcursor
+          pkgs.xorg.libXi
+          pkgs.libGL
+          pkgs.clang
+        ];
 
-            env = {
-              # Required by rust-analyzer
-              RUST_SRC_PATH = "${pkgs.rustToolchain}/lib/rustlib/src/rust/library";
-              LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
-              LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath (
-                with pkgs;
-                [
-                  alsa-lib
-                  libGL
-                  libxkbcommon
-                  xorg.libX11
-                  xorg.libXau
-                  xorg.libXcursor
-                  xorg.libXext
-                  xorg.libXfixes
-                  xorg.libXi
-                  xorg.libXinerama
-                  xorg.libXrandr
-                  xorg.libXrender
-                  xorg.libXtst
-                  xorg.libxcb
-                ]
-              );
-            };
-          };
-        }
-      );
+        env = {
+          RUST_SRC_PATH = "${rustToolchain}/lib/rustlib/src/rust/library";
+          LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
+          LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath (
+            with pkgs;
+            [
+              alsa-lib
+              libGL
+              libxkbcommon
+              xorg.libX11
+              xorg.libXau
+              xorg.libXcursor
+              xorg.libXext
+              xorg.libXfixes
+              xorg.libXi
+              xorg.libXinerama
+              xorg.libXrandr
+              xorg.libXrender
+              xorg.libXtst
+              xorg.libxcb
+            ]
+          );
+        };
+      };
     };
 }

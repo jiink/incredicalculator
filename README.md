@@ -16,7 +16,10 @@ To run the RP2350 project:
 
 To run the browser build:
 - Use a wasm-capable Rust toolchain and build the web crate from its directory: `cd incredicalculator_web && wasm-pack build --target web --out-dir pkg`
-- Serve the directory with any static file server (for example `python3 -m http.server` in `incredicalculator_web`) and open the generated `index.html` in a browser.
+- The easiest way to launch it is:
+  - `cd incredicalculator_web && ./start-browser.sh`
+  - then open `http://127.0.0.1:8000` in a browser
+- The script will build the wasm bundle if needed, then start a local static server for the page.
 
 ## Vector graphics JSON
 
