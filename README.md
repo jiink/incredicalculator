@@ -19,6 +19,7 @@ To run the browser build:
 - The easiest way to launch it is:
   - `cd incredicalculator_web && ./start-browser.sh`
   - then open `http://127.0.0.1:8000` in a browser
+  - if that port is busy, the launcher will kill the stale process and retry automatically; you can override it with `PORT=4173 ./start-browser.sh`
 - The script will build the wasm bundle if needed, then start a local static server for the page.
 
 ## Vector graphics JSON

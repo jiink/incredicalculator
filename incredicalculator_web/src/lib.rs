@@ -321,6 +321,7 @@ pub fn start() {
         .expect("canvas 2d context missing")
         .dyn_into::<CanvasRenderingContext2d>()
         .expect("context is not 2d");
+    context.set_image_smoothing_enabled(true);
 
     let shell = Rc::new(RefCell::new(IcShell::new()));
     let platform = Rc::new(RefCell::new(BrowserPlatform {
