@@ -17,37 +17,40 @@
         background: #0b0b12;
       }
       .calculator-shell {
-        position: relative;
-        display: inline-block;
+        display: flex;
+        align-items: flex-start;
+        gap: 16px;
+        padding: 12px;
+        background: rgba(255, 255, 255, 0.04);
+        border: 2px solid rgba(255, 255, 255, 0.12);
+        border-radius: 14px;
+        box-shadow: 0 14px 40px rgba(0, 0, 0, 0.35);
       }
       canvas {
         display: block;
-        width: min(92vw, 640px);
-        height: auto;
+        width: 320px;
+        height: 240px;
         image-rendering: pixelated;
-        border: 2px solid rgba(255, 255, 255, 0.14);
-        border-radius: 12px;
-        box-shadow: 0 14px 40px rgba(0, 0, 0, 0.35);
         background: black;
+        border-radius: 10px;
       }
       .virtual-keypad {
-        position: absolute;
-        inset: 0;
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        grid-template-rows: repeat(5, 1fr);
-        gap: 0.35rem;
-        padding: 0.45rem;
-        box-sizing: border-box;
-        pointer-events: none;
+        position: relative;
+        width: 280px;
+        height: 430px;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 10px;
       }
       .virtual-key {
-        pointer-events: auto;
+        position: absolute;
+        width: 64px;
+        height: 64px;
         border: 1px solid rgba(255, 255, 255, 0.28);
         border-radius: 8px;
         color: rgba(255, 255, 255, 0.92);
         background: rgba(255, 255, 255, 0.12);
-        font-size: clamp(0.5rem, 2vw, 0.8rem);
+        font-size: 1rem;
         font-weight: 700;
         cursor: pointer;
         user-select: none;
@@ -64,33 +67,33 @@
   <body>
     <div class="calculator-shell">
       <canvas id="incredicalculator" width="320" height="240"></canvas>
+
       <div class="virtual-keypad" aria-label="Calculator keypad">
-        <button class="virtual-key" data-code="F1">F1</button>
-        <button class="virtual-key" data-code="F2">F2</button>
-        <button class="virtual-key" data-code="F3">F3</button>
-        <button class="virtual-key" data-code="F4">F4</button>
+        <button class="virtual-key" data-code="Backspace" style="left: 214px; top: 9px;">Bk</button>
+        <button class="virtual-key" data-code="Slash" style="left: 214px; top: 78px;">/</button>
 
-        <button class="virtual-key" data-code="Digit7">7</button>
-        <button class="virtual-key" data-code="Digit8">8</button>
-        <button class="virtual-key" data-code="Digit9">9</button>
-        <button class="virtual-key" data-code="F5">F5</button>
+        <button class="virtual-key" data-code="Digit7" style="left: 7px; top: 147px;">7</button>
+        <button class="virtual-key" data-code="Digit8" style="left: 76px; top: 147px;">8</button>
+        <button class="virtual-key" data-code="Digit9" style="left: 145px; top: 147px;">9</button>
+        <button class="virtual-key" data-code="NumpadMultiply" style="left: 214px; top: 147px;">*</button>
 
-        <button class="virtual-key" data-code="Digit4">4</button>
-        <button class="virtual-key" data-code="Digit5">5</button>
-        <button class="virtual-key" data-code="Digit6">6</button>
-        <button class="virtual-key" data-code="F6">F6</button>
+        <button class="virtual-key" data-code="Digit4" style="left: 7px; top: 216px;">4</button>
+        <button class="virtual-key" data-code="Digit5" style="left: 76px; top: 216px;">5</button>
+        <button class="virtual-key" data-code="Digit6" style="left: 145px; top: 216px;">6</button>
+        <button class="virtual-key" data-code="Minus" style="left: 214px; top: 216px;">-</button>
 
-        <button class="virtual-key" data-code="Digit1">1</button>
-        <button class="virtual-key" data-code="Digit2">2</button>
-        <button class="virtual-key" data-code="Digit3">3</button>
-        <button class="virtual-key" data-code="ShiftLeft">Shift</button>
+        <button class="virtual-key" data-code="Digit1" style="left: 7px; top: 285px;">1</button>
+        <button class="virtual-key" data-code="Digit2" style="left: 76px; top: 285px;">2</button>
+        <button class="virtual-key" data-code="Digit3" style="left: 145px; top: 285px;">3</button>
+        <button class="virtual-key" data-code="NumpadAdd" style="left: 214px; top: 285px;">+</button>
 
-        <button class="virtual-key" data-code="Digit0">0</button>
-        <button class="virtual-key" data-code="ControlLeft">Super</button>
-        <button class="virtual-key" data-code="Backspace">Bksp</button>
-        <button class="virtual-key" data-code="Numpad0">Numpad</button>
+        <button class="virtual-key" data-code="Digit0" style="left: 7px; top: 354px;">0</button>
+        <button class="virtual-key" data-code="ShiftLeft" style="left: 76px; top: 354px;">Shft</button>
+        <button class="virtual-key" data-code="ControlLeft" style="left: 145px; top: 354px;">§</button>
+        <button class="virtual-key" data-code="Equal" style="left: 214px; top: 354px;">=</button>
       </div>
     </div>
+
     <script type="module">
       import init, { start, key_down, key_up, tick } from './pkg/incredicalculator_web.js';
 
