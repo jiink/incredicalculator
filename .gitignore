@@ -44,3 +44,4 @@ CACHEDIR.TAG
 **/*.out
 **/*.log
 **/*.txt
+.direnv/
