@@ -55,6 +55,8 @@
           default = pkgs.mkShell {
             packages = with pkgs; [
               rustToolchain
+              rustup
+              wasm-pack
               openssl
               pkg-config
               cargo-deny

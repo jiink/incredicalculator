@@ -1,9 +1,10 @@
 # incredicalculator
 
 To build the project:
-- Do NOT run `cargo build` in the project's root directory. You will get misled by weird errors. Instead you must first pick whether you want to build the PC program or the RP2350 program.
+- Do NOT run `cargo build` in the project's root directory. You will get misled by weird errors. Instead you must first pick whether you want to build the PC program, the RP2350 program, or the browser build.
     - To build the PC program from the project's root directory, run `cargo build --manifest-path incredicalculator_pc/Cargo.toml`
     - To build the RP program from the project's root directory, run `cargo build --release --manifest-path incredicalculator_rp/Cargo.toml --target thumbv8m.main-none-eabihf`
+    - To build the browser version, run `rustup target add wasm32-unknown-unknown` once, then `cargo build --target wasm32-unknown-unknown --manifest-path incredicalculator_web/Cargo.toml`
     - Or just cd into the respective subdirectory and run cargo build
 
 To run the simulator:
@@ -12,6 +13,10 @@ To run the simulator:
 To run the RP2350 project:
 - `cd incredicalculator_rp && cargo run --release`
 - (it will still work if you don't put --release, but it will run like 10x slower and have like 3x the memory usage)
+
+To run the browser build:
+- Use a wasm-capable Rust toolchain and build the web crate from its directory: `cd incredicalculator_web && wasm-pack build --target web --out-dir pkg`
+- Serve the directory with any static file server (for example `python3 -m http.server` in `incredicalculator_web`) and open the generated `index.html` in a browser.
 
 ## Vector graphics JSON
 
