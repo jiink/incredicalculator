@@ -17,30 +17,38 @@
         background: #0b0b12;
       }
       .calculator-shell {
-        display: flex;
-        align-items: flex-start;
-        gap: 16px;
-        padding: 12px;
-        background: rgba(255, 255, 255, 0.04);
+        position: relative;
+        width: 286px;
+        height: 430px;
+        padding: 0;
+        background: rgba(140, 140, 140, 0.72);
         border: 2px solid rgba(255, 255, 255, 0.12);
-        border-radius: 14px;
+        border-radius: 12px;
         box-shadow: 0 14px 40px rgba(0, 0, 0, 0.35);
+      }
+      .display-slot {
+        position: absolute;
+        left: 23px;
+        top: 10px;
+        width: 160px;
+        height: 120px;
+        display: grid;
+        place-items: center;
+        background: #000;
+        border-radius: 8px;
+        overflow: hidden;
       }
       canvas {
         display: block;
-        width: 320px;
-        height: 240px;
+        width: 160px;
+        height: 120px;
         image-rendering: pixelated;
         background: black;
-        border-radius: 10px;
       }
       .virtual-keypad {
         position: relative;
-        width: 280px;
-        height: 430px;
-        background: rgba(255, 255, 255, 0.03);
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        border-radius: 10px;
+        width: 100%;
+        height: 100%;
       }
       .virtual-key {
         position: absolute;
@@ -55,6 +63,32 @@
         cursor: pointer;
         user-select: none;
         touch-action: none;
+        padding: 0;
+      }
+      .virtual-key .main-label,
+      .virtual-key .shift-label,
+      .virtual-key .super-label {
+        position: absolute;
+        line-height: 1;
+        pointer-events: none;
+      }
+      .virtual-key .main-label {
+        left: 18px;
+        top: 18px;
+        font-size: 1.2rem;
+        color: #000;
+      }
+      .virtual-key .shift-label {
+        right: 7px;
+        bottom: 8px;
+        font-size: 0.75rem;
+        color: #0b5cff;
+      }
+      .virtual-key .super-label {
+        left: 7px;
+        bottom: 8px;
+        font-size: 0.7rem;
+        color: #d75d5d;
       }
       .virtual-key:active,
       .virtual-key.pressed {
@@ -66,31 +100,33 @@
   </head>
   <body>
     <div class="calculator-shell">
-      <canvas id="incredicalculator" width="320" height="240"></canvas>
+      <div class="display-slot">
+        <canvas id="incredicalculator" width="320" height="240"></canvas>
+      </div>
 
       <div class="virtual-keypad" aria-label="Calculator keypad">
-        <button class="virtual-key" data-code="Backspace" style="left: 214px; top: 9px;">Bk</button>
-        <button class="virtual-key" data-code="Slash" style="left: 214px; top: 78px;">/</button>
+        <button class="virtual-key" data-code="Backspace" style="left: 214px; top: 9px;"><span class="main-label">Bk</span><span class="shift-label">&amp;</span><span class="super-label">F1</span></button>
+        <button class="virtual-key" data-code="Slash" style="left: 214px; top: 78px;"><span class="main-label">/</span><span class="shift-label">|</span><span class="super-label">F2</span></button>
 
-        <button class="virtual-key" data-code="Digit7" style="left: 7px; top: 147px;">7</button>
-        <button class="virtual-key" data-code="Digit8" style="left: 76px; top: 147px;">8</button>
-        <button class="virtual-key" data-code="Digit9" style="left: 145px; top: 147px;">9</button>
-        <button class="virtual-key" data-code="NumpadMultiply" style="left: 214px; top: 147px;">*</button>
+        <button class="virtual-key" data-code="Digit7" style="left: 7px; top: 147px;"><span class="main-label">7</span><span class="shift-label">(</span><span class="super-label">Hm</span></button>
+        <button class="virtual-key" data-code="Digit8" style="left: 76px; top: 147px;"><span class="main-label">8</span><span class="shift-label">)</span><span class="super-label">^</span></button>
+        <button class="virtual-key" data-code="Digit9" style="left: 145px; top: 147px;"><span class="main-label">9</span><span class="shift-label">0x</span><span class="super-label">Clr</span></button>
+        <button class="virtual-key" data-code="NumpadMultiply" style="left: 214px; top: 147px;"><span class="main-label">*</span><span class="shift-label">%</span><span class="super-label">F3</span></button>
 
-        <button class="virtual-key" data-code="Digit4" style="left: 7px; top: 216px;">4</button>
-        <button class="virtual-key" data-code="Digit5" style="left: 76px; top: 216px;">5</button>
-        <button class="virtual-key" data-code="Digit6" style="left: 145px; top: 216px;">6</button>
-        <button class="virtual-key" data-code="Minus" style="left: 214px; top: 216px;">-</button>
+        <button class="virtual-key" data-code="Digit4" style="left: 7px; top: 216px;"><span class="main-label">4</span><span class="shift-label">E</span><span class="super-label">&lt;</span></button>
+        <button class="virtual-key" data-code="Digit5" style="left: 76px; top: 216px;"><span class="main-label">5</span><span class="shift-label">F</span><span class="super-label">Sel</span></button>
+        <button class="virtual-key" data-code="Digit6" style="left: 145px; top: 216px;"><span class="main-label">6</span><span class="shift-label">~</span><span class="super-label">&gt;</span></button>
+        <button class="virtual-key" data-code="Minus" style="left: 214px; top: 216px;"><span class="main-label">-</span><span class="shift-label">&lt;&lt;</span><span class="super-label">F4</span></button>
 
-        <button class="virtual-key" data-code="Digit1" style="left: 7px; top: 285px;">1</button>
-        <button class="virtual-key" data-code="Digit2" style="left: 76px; top: 285px;">2</button>
-        <button class="virtual-key" data-code="Digit3" style="left: 145px; top: 285px;">3</button>
-        <button class="virtual-key" data-code="NumpadAdd" style="left: 214px; top: 285px;">+</button>
+        <button class="virtual-key" data-code="Digit1" style="left: 7px; top: 285px;"><span class="main-label">1</span><span class="shift-label">B</span><span class="super-label">End</span></button>
+        <button class="virtual-key" data-code="Digit2" style="left: 76px; top: 285px;"><span class="main-label">2</span><span class="shift-label">C</span><span class="super-label">v</span></button>
+        <button class="virtual-key" data-code="Digit3" style="left: 145px; top: 285px;"><span class="main-label">3</span><span class="shift-label">D</span><span class="super-label">Und</span></button>
+        <button class="virtual-key" data-code="NumpadAdd" style="left: 214px; top: 285px;"><span class="main-label">+</span><span class="shift-label">&gt;&gt;</span><span class="super-label">F5</span></button>
 
-        <button class="virtual-key" data-code="Digit0" style="left: 7px; top: 354px;">0</button>
-        <button class="virtual-key" data-code="ShiftLeft" style="left: 76px; top: 354px;">Shft</button>
-        <button class="virtual-key" data-code="ControlLeft" style="left: 145px; top: 354px;">§</button>
-        <button class="virtual-key" data-code="Equal" style="left: 214px; top: 354px;">=</button>
+        <button class="virtual-key" data-code="Digit0" style="left: 7px; top: 354px;"><span class="main-label">0</span><span class="shift-label">A</span><span class="super-label">.</span></button>
+        <button class="virtual-key" data-code="ShiftLeft" style="left: 76px; top: 354px;"><span class="main-label">Shft</span><span class="shift-label"></span><span class="super-label"></span></button>
+        <button class="virtual-key" data-code="ControlLeft" style="left: 145px; top: 354px;"><span class="main-label">§</span><span class="shift-label"></span><span class="super-label"></span></button>
+        <button class="virtual-key" data-code="Equal" style="left: 214px; top: 354px;"><span class="main-label">=</span><span class="shift-label">^</span><span class="super-label">F6</span></button>
       </div>
     </div>
 
