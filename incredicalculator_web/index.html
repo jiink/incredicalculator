@@ -16,7 +16,12 @@
         place-items: center;
         background: #0b0b12;
       }
+      .calculator-shell {
+        position: relative;
+        display: inline-block;
+      }
       canvas {
+        display: block;
         width: min(92vw, 640px);
         height: auto;
         image-rendering: pixelated;
@@ -25,14 +30,119 @@
         box-shadow: 0 14px 40px rgba(0, 0, 0, 0.35);
         background: black;
       }
+      .virtual-keypad {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        grid-template-rows: repeat(5, 1fr);
+        gap: 0.35rem;
+        padding: 0.45rem;
+        box-sizing: border-box;
+        pointer-events: none;
+      }
+      .virtual-key {
+        pointer-events: auto;
+        border: 1px solid rgba(255, 255, 255, 0.28);
+        border-radius: 8px;
+        color: rgba(255, 255, 255, 0.92);
+        background: rgba(255, 255, 255, 0.12);
+        font-size: clamp(0.5rem, 2vw, 0.8rem);
+        font-weight: 700;
+        cursor: pointer;
+        user-select: none;
+        touch-action: none;
+      }
+      .virtual-key:active,
+      .virtual-key.pressed {
+        background: rgba(111, 180, 255, 0.6);
+        border-color: rgba(160, 210, 255, 0.9);
+        transform: translateY(1px);
+      }
     </style>
   </head>
   <body>
-    <canvas id="incredicalculator" width="320" height="240"></canvas>
+    <div class="calculator-shell">
+      <canvas id="incredicalculator" width="320" height="240"></canvas>
+      <div class="virtual-keypad" aria-label="Calculator keypad">
+        <button class="virtual-key" data-code="F1">F1</button>
+        <button class="virtual-key" data-code="F2">F2</button>
+        <button class="virtual-key" data-code="F3">F3</button>
+        <button class="virtual-key" data-code="F4">F4</button>
+
+        <button class="virtual-key" data-code="Digit7">7</button>
+        <button class="virtual-key" data-code="Digit8">8</button>
+        <button class="virtual-key" data-code="Digit9">9</button>
+        <button class="virtual-key" data-code="F5">F5</button>
+
+        <button class="virtual-key" data-code="Digit4">4</button>
+        <button class="virtual-key" data-code="Digit5">5</button>
+        <button class="virtual-key" data-code="Digit6">6</button>
+        <button class="virtual-key" data-code="F6">F6</button>
+
+        <button class="virtual-key" data-code="Digit1">1</button>
+        <button class="virtual-key" data-code="Digit2">2</button>
+        <button class="virtual-key" data-code="Digit3">3</button>
+        <button class="virtual-key" data-code="ShiftLeft">Shift</button>
+
+        <button class="virtual-key" data-code="Digit0">0</button>
+        <button class="virtual-key" data-code="ControlLeft">Super</button>
+        <button class="virtual-key" data-code="Backspace">Bksp</button>
+        <button class="virtual-key" data-code="Numpad0">Numpad</button>
+      </div>
+    </div>
     <script type="module">
-      import init, { start } from './pkg/incredicalculator_web.js';
+      import init, { start, key_down, key_up, tick } from './pkg/incredicalculator_web.js';
+
+      function dispatchKey(code, type) {
+        if (type === 'keydown') {
+          key_down(code);
+        } else {
+          key_up(code);
+        }
+      }
+
+      document.querySelectorAll('.virtual-key').forEach((button) => {
+        const code = button.dataset.code;
+
+        const release = () => {
+          button.classList.remove('pressed');
+          dispatchKey(code, 'keyup');
+        };
+
+        button.addEventListener('pointerdown', (event) => {
+          event.preventDefault();
+          button.classList.add('pressed');
+          dispatchKey(code, 'keydown');
+        });
+
+        button.addEventListener('pointerup', release);
+        button.addEventListener('pointerleave', release);
+        button.addEventListener('pointercancel', release);
+      });
+
+      document.addEventListener('keydown', (event) => {
+        if (event.code) {
+          event.preventDefault();
+          key_down(event.code);
+        }
+      });
+
+      document.addEventListener('keyup', (event) => {
+        if (event.code) {
+          event.preventDefault();
+          key_up(event.code);
+        }
+      });
+
+      function frame() {
+        tick();
+        requestAnimationFrame(frame);
+      }
+
       await init();
       start();
+      requestAnimationFrame(frame);
     </script>
   </body>
 </html>

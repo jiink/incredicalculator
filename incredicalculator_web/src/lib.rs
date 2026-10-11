@@ -6,7 +6,16 @@ use glam::{IVec2, Vec2};
 use rgb::RGB8;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-use web_sys::{console, window, CanvasRenderingContext2d, HtmlCanvasElement, KeyboardEvent};
+use web_sys::{console, window, CanvasRenderingContext2d, HtmlCanvasElement};
+
+thread_local! {
+    static APP: RefCell<Option<BrowserState>> = RefCell::new(None);
+}
+
+struct BrowserState {
+    shell: Rc<RefCell<IcShell>>,
+    platform: Rc<RefCell<BrowserPlatform>>,
+}
 
 use incredicalculator_core::input::IcKey;
 use incredicalculator_core::platform::{IcPlatform, CANVAS_HEIGHT, CANVAS_WIDTH};
@@ -201,9 +210,8 @@ impl IcPlatform for BrowserPlatform {
     }
 }
 
-fn map_key(event: &KeyboardEvent) -> Option<IcKey> {
-    let code = event.code();
-    match code.as_str() {
+fn map_code(code: &str) -> Option<IcKey> {
+    match code {
         "Digit0" => Some(IcKey::Num0),
         "Digit1" => Some(IcKey::Num1),
         "Digit2" => Some(IcKey::Num2),
@@ -224,6 +232,13 @@ fn map_key(event: &KeyboardEvent) -> Option<IcKey> {
         "Numpad7" => Some(IcKey::Num7),
         "Numpad8" => Some(IcKey::Num8),
         "Numpad9" => Some(IcKey::Num9),
+        "KeyA" => Some(IcKey::Func1),
+        "KeyB" => Some(IcKey::Func2),
+        "KeyC" => Some(IcKey::Func3),
+        "KeyD" => Some(IcKey::Func4),
+        "KeyE" => Some(IcKey::Func6),
+        "KeyF" => Some(IcKey::Func5),
+        "Backspace" => Some(IcKey::Func1),
         "F1" => Some(IcKey::Func1),
         "F2" => Some(IcKey::Func2),
         "F3" => Some(IcKey::Func3),
@@ -234,6 +249,49 @@ fn map_key(event: &KeyboardEvent) -> Option<IcKey> {
         "MetaLeft" | "MetaRight" | "ControlLeft" | "ControlRight" => Some(IcKey::Super),
         _ => None,
     }
+}
+
+#[wasm_bindgen]
+pub fn key_down(code: &str) {
+    let Some(key) = map_code(code) else {
+        return;
+    };
+
+    APP.with(|app| {
+        let mut app = app.borrow_mut();
+        let Some(app) = app.as_mut() else {
+            return;
+        };
+        app.shell.borrow_mut().key_down(key);
+    });
+}
+
+#[wasm_bindgen]
+pub fn key_up(code: &str) {
+    let Some(key) = map_code(code) else {
+        return;
+    };
+
+    APP.with(|app| {
+        let mut app = app.borrow_mut();
+        let Some(app) = app.as_mut() else {
+            return;
+        };
+        app.shell.borrow_mut().key_up(key);
+    });
+}
+
+#[wasm_bindgen]
+pub fn tick() {
+    APP.with(|app| {
+        let mut app = app.borrow_mut();
+        let Some(app) = app.as_mut() else {
+            return;
+        };
+        let mut shell = app.shell.borrow_mut();
+        let mut platform = app.platform.borrow_mut();
+        shell.update(&mut *platform);
+    });
 }
 
 #[wasm_bindgen(start)]
@@ -267,60 +325,7 @@ pub fn start() {
         volume: 255,
     }));
 
-    let shell_for_keydown = Rc::clone(&shell);
-    let keydown = Closure::<dyn FnMut(KeyboardEvent)>::new(move |event: KeyboardEvent| {
-        if let Some(key) = map_key(&event) {
-            shell_for_keydown.borrow_mut().key_down(key);
-            event.prevent_default();
-        }
+    APP.with(|slot| {
+        *slot.borrow_mut() = Some(BrowserState { shell: Rc::clone(&shell), platform: Rc::clone(&platform) });
     });
-    document
-        .add_event_listener_with_callback("keydown", keydown.as_ref().unchecked_ref())
-        .expect("keydown listener should register");
-
-    let shell_for_keyup = Rc::clone(&shell);
-    let keyup = Closure::<dyn FnMut(KeyboardEvent)>::new(move |event: KeyboardEvent| {
-        if let Some(key) = map_key(&event) {
-            shell_for_keyup.borrow_mut().key_up(key);
-            event.prevent_default();
-        }
-    });
-    document
-        .add_event_listener_with_callback("keyup", keyup.as_ref().unchecked_ref())
-        .expect("keyup listener should register");
-
-    let animation_platform = Rc::clone(&platform);
-    let animation_shell = Rc::clone(&shell);
-    let animation: Rc<RefCell<Option<Closure<dyn FnMut()>>>> = Rc::new(RefCell::new(None));
-
-    let closure = Closure::<dyn FnMut()>::new({
-        let animation = Rc::clone(&animation);
-        let window = window.clone();
-        move || {
-            {
-                let mut shell = animation_shell.borrow_mut();
-                let mut platform = animation_platform.borrow_mut();
-                shell.update(&mut *platform);
-            }
-
-            if let Some(callback) = animation.borrow().as_ref() {
-                let _ = window.request_animation_frame(callback.as_ref().unchecked_ref());
-            }
-        }
-    });
-
-    *animation.borrow_mut() = Some(closure);
-    let _ = window.request_animation_frame(
-        animation
-            .borrow()
-            .as_ref()
-            .unwrap()
-            .as_ref()
-            .unchecked_ref(),
-    );
-
-    let _keydown = keydown;
-    let _keyup = keyup;
-    let _animation = animation;
-    let _ = (_keydown, _keyup, _animation);
 }

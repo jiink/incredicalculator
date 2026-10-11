@@ -1638,6 +1638,7 @@ dependencies = [
  "console_error_panic_hook",
  "glam",
  "incredicalculator_core",
+ "js-sys",
  "rgb",
  "wasm-bindgen",
  "web-sys",
