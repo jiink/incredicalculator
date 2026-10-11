@@ -7,17 +7,36 @@ use crate::apps::SoundTest;
 use crate::apps::{FaceCalculator, RangeMapperCalculator};
 use crate::audio_engine::AudioEngine;
 use crate::fonts::FontId;
+use crate::graphics::{draw_vitmap, Vitmap, SAMPLE_GRAPHIC};
 use crate::input::IcKey;
 use crate::input::KeyState;
 use crate::platform::rgb8_hex;
-use crate::platform::{CANVAS_HEIGHT, CANVAS_WIDTH, IcPlatform};
+use crate::platform::{IcPlatform, CANVAS_HEIGHT, CANVAS_WIDTH};
 use crate::text::*;
 use alloc::boxed::Box;
-use glam::IVec2;
-use num_traits::FromPrimitive;
+use glam::{IVec2, Vec2};
 use num_traits::clamp;
+use num_traits::FromPrimitive;
 use rgb::Rgb;
 use rgb::*;
+
+const APPS_PER_PAGE: usize = 6;
+
+#[derive(Clone, Copy)]
+enum SelectorAction {
+    Launch(usize),
+    PreviousPage,
+    NextPage,
+    None,
+}
+
+#[derive(Clone, Copy)]
+struct SelectorCard<'a> {
+    name: &'a str,
+    button: IcKey,
+    vitmap: &'static Vitmap,
+    action: SelectorAction,
+}
 
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq, FromPrimitive, ToPrimitive)]
 #[repr(usize)]
@@ -27,9 +46,10 @@ pub enum Adjustable {
 }
 
 pub struct IcShell {
-    apps: [Box<dyn IcApp>; 6], // INCREASE THIS SIZE WHEN ADDING NEW APPS
+    apps: [Box<dyn IcApp>; 9], // INCREASE THIS SIZE WHEN ADDING NEW APPS
     active_app_idx: Option<usize>,
     last_active_app_idx: Option<usize>,
+    selector_page: usize,
     key_states: [KeyState; IcKey::COUNT],
     super_interrupted: bool,
     adjusting_something: Option<Adjustable>,
@@ -46,9 +66,13 @@ impl IcShell {
                 Box::new(FaceCalculator::new()),
                 Box::new(SoundTest::new()),
                 Box::new(ColorCalculator::new()),
+                Box::new(RangeMapperCalculator::new()),
+                Box::new(RangeMapperCalculator::new()),
+                Box::new(RangeMapperCalculator::new()),
             ],
             active_app_idx: Some(0),
             last_active_app_idx: None,
+            selector_page: 0,
             key_states: [KeyState::default(); IcKey::COUNT],
             super_interrupted: false,
             adjusting_something: None,
@@ -224,6 +248,167 @@ impl IcShell {
         );
     }
 
+    fn selector_cards(&self) -> [SelectorCard<'_>; 9] {
+        let mut cards = [
+            SelectorCard {
+                name: "",
+                button: IcKey::Num7,
+                vitmap: &SAMPLE_GRAPHIC,
+                action: SelectorAction::None,
+            },
+            SelectorCard {
+                name: "",
+                button: IcKey::Num8,
+                vitmap: &SAMPLE_GRAPHIC,
+                action: SelectorAction::None,
+            },
+            SelectorCard {
+                name: "",
+                button: IcKey::Num9,
+                vitmap: &SAMPLE_GRAPHIC,
+                action: SelectorAction::None,
+            },
+            SelectorCard {
+                name: "",
+                button: IcKey::Num4,
+                vitmap: &SAMPLE_GRAPHIC,
+                action: SelectorAction::None,
+            },
+            SelectorCard {
+                name: "",
+                button: IcKey::Num5,
+                vitmap: &SAMPLE_GRAPHIC,
+                action: SelectorAction::None,
+            },
+            SelectorCard {
+                name: "",
+                button: IcKey::Num6,
+                vitmap: &SAMPLE_GRAPHIC,
+                action: SelectorAction::None,
+            },
+            SelectorCard {
+                name: "Previous",
+                button: IcKey::Num1,
+                vitmap: &SAMPLE_GRAPHIC,
+                action: SelectorAction::PreviousPage,
+            },
+            SelectorCard {
+                name: "Page",
+                button: IcKey::Num2,
+                vitmap: &SAMPLE_GRAPHIC,
+                action: SelectorAction::None,
+            },
+            SelectorCard {
+                name: "Next",
+                button: IcKey::Num3,
+                vitmap: &SAMPLE_GRAPHIC,
+                action: SelectorAction::NextPage,
+            },
+        ];
+
+        let first_app_idx = self.selector_page * APPS_PER_PAGE;
+        for (slot, card) in cards.iter_mut().take(APPS_PER_PAGE).enumerate() {
+            let app_idx = first_app_idx + slot;
+            if let Some(app) = self.apps.get(app_idx) {
+                card.name = app.name();
+                card.action = SelectorAction::Launch(app_idx);
+            }
+        }
+
+        cards
+    }
+
+    fn draw_app_selector(&self, platform: &mut dyn IcPlatform) {
+        platform.clear(rgb8_hex(0x7FFF8E));
+        draw_text_f(
+            platform,
+            format_args!("Apps"),
+            4.0,
+            5.0,
+            4.0,
+            2.0,
+            rgb8_hex(0x000000),
+            FontId::Futural,
+        );
+
+        let cards = self.selector_cards();
+        let page_count = (self.apps.len() + APPS_PER_PAGE - 1) / APPS_PER_PAGE;
+        for (index, card) in cards.iter().enumerate() {
+            let column = (index % 3) as i32;
+            let row = (index / 3) as i32;
+            let start = IVec2::new(4 + column * 106, 27 + row * 69);
+            let end = start + IVec2::new(100, 64);
+            let is_empty = matches!(card.action, SelectorAction::None) && index < APPS_PER_PAGE;
+            let fill = if is_empty {
+                rgb8_hex(0xB7D9BC)
+            } else {
+                rgb8_hex(0xE8F5E9)
+            };
+            platform.draw_rectangle_rounded(start, end, rgb8_hex(0x18321D), 2, Some(fill), 5);
+            draw_text_f(
+                platform,
+                format_args!("{}", button_number(card.button)),
+                start.x as f32 + 5.0,
+                start.y as f32 + 16.0,
+                7.0,
+                2.0,
+                rgb8_hex(0x000000),
+                FontId::Futural,
+            );
+            draw_vitmap(
+                platform,
+                card.vitmap,
+                0,
+                Vec2::new(start.x as f32 + 50.0, start.y as f32 + 25.0),
+                Vec2::splat(1.2),
+            );
+            draw_text_f(
+                platform,
+                format_args!("{}", card.name),
+                start.x as f32 + 4.0,
+                start.y as f32 + 57.0,
+                1.5,
+                1.5,
+                rgb8_hex(0x000000),
+                FontId::Futural,
+            );
+            if index == 6 {
+                draw_text_f(
+                    platform,
+                    format_args!("<"),
+                    start.x as f32 + 46.0,
+                    start.y as f32 + 44.0,
+                    4.0,
+                    2.0,
+                    rgb8_hex(0x000000),
+                    FontId::Futural,
+                );
+            } else if index == 7 {
+                draw_text_f(
+                    platform,
+                    format_args!("{}/{}", self.selector_page + 1, page_count),
+                    start.x as f32 + 34.0,
+                    start.y as f32 + 44.0,
+                    2.0,
+                    2.0,
+                    rgb8_hex(0x000000),
+                    FontId::Futural,
+                );
+            } else if index == 8 {
+                draw_text_f(
+                    platform,
+                    format_args!(">"),
+                    start.x as f32 + 46.0,
+                    start.y as f32 + 44.0,
+                    4.0,
+                    2.0,
+                    rgb8_hex(0x000000),
+                    FontId::Futural,
+                );
+            }
+        }
+    }
+
     pub fn update(&mut self, platform: &mut dyn IcPlatform) {
         for s in self.key_states.iter_mut() {
             s.just_pressed = s.is_down && !s.was_down;
@@ -282,18 +467,25 @@ impl IcShell {
                     self.apps[app_idx].on_key(key, &ctx);
                 }
             } else {
-                let selected_app_i = match key {
-                    IcKey::Num0 => Some(0),
-                    IcKey::Num1 => Some(1),
-                    IcKey::Num2 => Some(2),
-                    IcKey::Num3 => Some(3),
-                    IcKey::Num4 => Some(4),
-                    IcKey::Num5 => Some(5),
-                    _ => None,
-                };
-                if let Some(idx) = selected_app_i {
-                    self.active_app_idx = Some(idx);
-                    self.apps[idx].on_enter();
+                let action = self
+                    .selector_cards()
+                    .iter()
+                    .find(|card| card.button == key)
+                    .map(|card| card.action);
+                match action {
+                    Some(SelectorAction::Launch(idx)) => {
+                        self.active_app_idx = Some(idx);
+                        self.apps[idx].on_enter();
+                    }
+                    Some(SelectorAction::PreviousPage) if self.selector_page > 0 => {
+                        self.selector_page -= 1;
+                    }
+                    Some(SelectorAction::NextPage)
+                        if (self.selector_page + 1) * APPS_PER_PAGE < self.apps.len() =>
+                    {
+                        self.selector_page += 1;
+                    }
+                    _ => {}
                 }
             }
         }
@@ -312,24 +504,27 @@ impl IcShell {
         if let Some(appidx) = self.active_app_idx {
             self.apps[appidx].update(platform, &ctx, &mut self.audio);
         } else {
-            platform.clear(rgb8_hex(0x7FFF8E));
-            for i in 0..self.apps.len() {
-                draw_text_f(
-                    platform,
-                    format_args!("#{}: {}", i, self.apps[i].name()),
-                    4.0,
-                    4.0 + (20 * i) as f32,
-                    8.0,
-                    2.0,
-                    rgb8_hex(0x000000),
-                    FontId::Futural,
-                );
-            }
+            self.draw_app_selector(platform);
         }
         if let Some(adjustable) = self.adjusting_something {
             let v = Self::get_adjustable(platform, adjustable);
             Self::draw_adjustable_readout(platform, adjustable, v);
         }
         self.draw_battery(platform);
+    }
+}
+
+fn button_number(button: IcKey) -> u8 {
+    match button {
+        IcKey::Num1 => 1,
+        IcKey::Num2 => 2,
+        IcKey::Num3 => 3,
+        IcKey::Num4 => 4,
+        IcKey::Num5 => 5,
+        IcKey::Num6 => 6,
+        IcKey::Num7 => 7,
+        IcKey::Num8 => 8,
+        IcKey::Num9 => 9,
+        _ => 0,
     }
 }
