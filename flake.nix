@@ -80,6 +80,25 @@
               # Required by rust-analyzer
               RUST_SRC_PATH = "${pkgs.rustToolchain}/lib/rustlib/src/rust/library";
               LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
+              LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath (
+                with pkgs;
+                [
+                  alsa-lib
+                  libGL
+                  libxkbcommon
+                  xorg.libX11
+                  xorg.libXau
+                  xorg.libXcursor
+                  xorg.libXext
+                  xorg.libXfixes
+                  xorg.libXi
+                  xorg.libXinerama
+                  xorg.libXrandr
+                  xorg.libXrender
+                  xorg.libXtst
+                  xorg.libxcb
+                ]
+              );
             };
           };
         }
