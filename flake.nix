@@ -62,6 +62,8 @@
               cargo-watch
               rust-analyzer
               cmake
+              alsa-lib
+              llvmPackages.libclang
               xorg.libX11
               xorg.xorgproto
               mesa
@@ -77,6 +79,7 @@
             env = {
               # Required by rust-analyzer
               RUST_SRC_PATH = "${pkgs.rustToolchain}/lib/rustlib/src/rust/library";
+              LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
             };
           };
         }
