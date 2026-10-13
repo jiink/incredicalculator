@@ -1,8 +1,9 @@
 use crate::app::{IcApp, InputContext};
 use crate::audio_engine::AudioEngine;
 use crate::fonts::FontId;
+use crate::graphics::{Vitmap, SAMPLE_GRAPHIC};
 use crate::input::IcKey;
-use crate::platform::{CANVAS_WIDTH, IcPlatform};
+use crate::platform::{IcPlatform, CANVAS_WIDTH};
 use crate::text::{draw_text, draw_text_f};
 use crate::ui::{MathInput, MathInputDirection, MathInputEvent, MathInputMode};
 use alloc::format;
@@ -255,6 +256,14 @@ impl ColorCalculator {
 impl IcApp for ColorCalculator {
     fn name(&self) -> &str {
         "Color Converter"
+    }
+
+    fn icon(&self) -> &'static Vitmap {
+        &SAMPLE_GRAPHIC
+    }
+
+    fn color(&self) -> RGB8 {
+        RGB8::new(0x1f, 0x5c, 0x55)
     }
 
     fn requires_realtime_updates(&self) -> bool {

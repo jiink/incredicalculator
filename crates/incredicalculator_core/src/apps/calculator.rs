@@ -2,9 +2,12 @@ use crate::app::IcApp;
 use crate::app::InputContext;
 use crate::audio_engine::AudioEngine;
 use crate::fonts::FontId;
+use crate::graphics::{Vitmap};
+use crate::graphics;
 use crate::input::IcKey;
-use crate::platform::CANVAS_WIDTH;
+use crate::platform::rgb8_hex;
 use crate::platform::IcPlatform;
+use crate::platform::CANVAS_WIDTH;
 use crate::text::{draw_text, text_to_pos};
 use alloc::boxed::Box;
 use alloc::string::ToString;
@@ -1151,6 +1154,14 @@ impl Calculator {
 impl IcApp for Calculator {
     fn name(&self) -> &str {
         "Programmer & Scientific"
+    }
+
+    fn icon(&self) -> &'static Vitmap {
+        &graphics::CODE_ICON
+    }
+
+    fn color(&self) -> RGB8 {
+        rgb8_hex(0x282820)
     }
 
     fn requires_realtime_updates(&self) -> bool {

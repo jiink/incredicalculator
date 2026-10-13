@@ -7,7 +7,8 @@ use crate::apps::SoundTest;
 use crate::apps::{FaceCalculator, RangeMapperCalculator};
 use crate::audio_engine::AudioEngine;
 use crate::fonts::FontId;
-use crate::graphics::{draw_vitmap, Vitmap, SAMPLE_GRAPHIC};
+use crate::graphics;
+use crate::graphics::{draw_vitmap, Vitmap};
 use crate::input::IcKey;
 use crate::input::KeyState;
 use crate::platform::rgb8_hex;
@@ -35,6 +36,7 @@ struct SelectorCard<'a> {
     name: &'a str,
     button: IcKey,
     vitmap: &'static Vitmap,
+    color: RGB8,
     action: SelectorAction,
 }
 
@@ -241,7 +243,7 @@ impl IcShell {
             format_args!("{:?}", adjustable),
             start.x as f32 + 3.0,
             start.y as f32 - 20.0,
-            2.5,
+            5.0,
             2.0,
             rgb8_hex(0xFFFFFF),
             FontId::Futural,
@@ -253,55 +255,64 @@ impl IcShell {
             SelectorCard {
                 name: "",
                 button: IcKey::Num7,
-                vitmap: &SAMPLE_GRAPHIC,
+                vitmap: &graphics::SAMPLE_GRAPHIC,
+                color: rgb8_hex(0x282820),
                 action: SelectorAction::None,
             },
             SelectorCard {
                 name: "",
                 button: IcKey::Num8,
-                vitmap: &SAMPLE_GRAPHIC,
+                vitmap: &graphics::SAMPLE_GRAPHIC,
+                color: rgb8_hex(0x282820),
                 action: SelectorAction::None,
             },
             SelectorCard {
                 name: "",
                 button: IcKey::Num9,
-                vitmap: &SAMPLE_GRAPHIC,
+                vitmap: &graphics::SAMPLE_GRAPHIC,
+                color: rgb8_hex(0x282820),
                 action: SelectorAction::None,
             },
             SelectorCard {
                 name: "",
                 button: IcKey::Num4,
-                vitmap: &SAMPLE_GRAPHIC,
+                vitmap: &graphics::SAMPLE_GRAPHIC,
+                color: rgb8_hex(0x282820),
                 action: SelectorAction::None,
             },
             SelectorCard {
                 name: "",
                 button: IcKey::Num5,
-                vitmap: &SAMPLE_GRAPHIC,
+                vitmap: &graphics::SAMPLE_GRAPHIC,
+                color: rgb8_hex(0x282820),
                 action: SelectorAction::None,
             },
             SelectorCard {
                 name: "",
                 button: IcKey::Num6,
-                vitmap: &SAMPLE_GRAPHIC,
+                vitmap: &graphics::SAMPLE_GRAPHIC,
+                color: rgb8_hex(0x282820),
                 action: SelectorAction::None,
             },
             SelectorCard {
                 name: "Previous",
                 button: IcKey::Num1,
-                vitmap: &SAMPLE_GRAPHIC,
+                vitmap: &graphics::SAMPLE_GRAPHIC,
+                color: rgb8_hex(0x282820),
                 action: SelectorAction::PreviousPage,
             },
             SelectorCard {
                 name: "Page",
                 button: IcKey::Num2,
-                vitmap: &SAMPLE_GRAPHIC,
+                vitmap: &graphics::SAMPLE_GRAPHIC,
+                color: rgb8_hex(0x282820),
                 action: SelectorAction::None,
             },
             SelectorCard {
                 name: "Next",
                 button: IcKey::Num3,
-                vitmap: &SAMPLE_GRAPHIC,
+                vitmap: &graphics::SAMPLE_GRAPHIC,
+                color: rgb8_hex(0x282820),
                 action: SelectorAction::NextPage,
             },
         ];
@@ -311,6 +322,8 @@ impl IcShell {
             let app_idx = first_app_idx + slot;
             if let Some(app) = self.apps.get(app_idx) {
                 card.name = app.name();
+                card.vitmap = app.icon();
+                card.color = app.color();
                 card.action = SelectorAction::Launch(app_idx);
             }
         }
@@ -339,12 +352,10 @@ impl IcShell {
             let start = IVec2::new(4 + column * 106, 27 + row * 69);
             let end = start + IVec2::new(100, 64);
             let is_empty = matches!(card.action, SelectorAction::None) && index < APPS_PER_PAGE;
-            let fill = if is_empty {
-                rgb8_hex(0xB7D9BC)
-            } else {
-                rgb8_hex(0xE8F5E9)
-            };
-            platform.draw_rectangle_rounded(start, end, rgb8_hex(0x18321D), 2, Some(fill), 5);
+            if is_empty {
+                continue;
+            }
+            platform.draw_rectangle_rounded(start, end, rgb8_hex(0x333333), 2, Some(card.color), 5);
             draw_text_f(
                 platform,
                 format_args!("{}", button_number(card.button)),
@@ -352,7 +363,7 @@ impl IcShell {
                 start.y as f32 + 16.0,
                 7.0,
                 2.0,
-                rgb8_hex(0x000000),
+                rgb8_hex(0xffffff),
                 FontId::Futural,
             );
             draw_vitmap(
@@ -360,16 +371,16 @@ impl IcShell {
                 card.vitmap,
                 0,
                 Vec2::new(start.x as f32 + 50.0, start.y as f32 + 25.0),
-                Vec2::splat(1.2),
+                Vec2::splat(3.0),
             );
             draw_text_f(
                 platform,
                 format_args!("{}", card.name),
                 start.x as f32 + 4.0,
                 start.y as f32 + 57.0,
-                1.5,
-                1.5,
-                rgb8_hex(0x000000),
+                3.0,
+                2.0,
+                rgb8_hex(0xffffff),
                 FontId::Futural,
             );
             if index == 6 {
@@ -378,9 +389,9 @@ impl IcShell {
                     format_args!("<"),
                     start.x as f32 + 46.0,
                     start.y as f32 + 44.0,
-                    4.0,
+                    10.0,
                     2.0,
-                    rgb8_hex(0x000000),
+                    rgb8_hex(0xffffff),
                     FontId::Futural,
                 );
             } else if index == 7 {
@@ -389,9 +400,9 @@ impl IcShell {
                     format_args!("{}/{}", self.selector_page + 1, page_count),
                     start.x as f32 + 34.0,
                     start.y as f32 + 44.0,
+                    10.0,
                     2.0,
-                    2.0,
-                    rgb8_hex(0x000000),
+                    rgb8_hex(0xffffff),
                     FontId::Futural,
                 );
             } else if index == 8 {
@@ -400,9 +411,9 @@ impl IcShell {
                     format_args!(">"),
                     start.x as f32 + 46.0,
                     start.y as f32 + 44.0,
-                    4.0,
+                    10.0,
                     2.0,
-                    rgb8_hex(0x000000),
+                    rgb8_hex(0xffffff),
                     FontId::Futural,
                 );
             }

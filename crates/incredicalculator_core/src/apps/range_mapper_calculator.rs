@@ -1,10 +1,12 @@
 use crate::audio_engine;
 use crate::fonts::FontId;
+use crate::graphics::{Vitmap};
+use crate::graphics;
 use crate::input::IcKey;
 use crate::ui::{MathInput, MathInputDirection, MathInputEvent, MathInputMode};
 use crate::{
     app::IcApp,
-    platform::{IcPlatform, rgb8_hex},
+    platform::{rgb8_hex, IcPlatform},
     text::{draw_text, draw_text_f},
 };
 use glam::IVec2;
@@ -148,6 +150,14 @@ impl RangeMapperCalculator {
 impl IcApp for RangeMapperCalculator {
     fn name(&self) -> &str {
         "Range Mapper"
+    }
+
+    fn icon(&self) -> &'static Vitmap {
+        &graphics::RANGE_ICON
+    }
+
+    fn color(&self) -> rgb::RGB8 {
+        rgb8_hex(0x180470)
     }
 
     fn requires_realtime_updates(&self) -> bool {

@@ -1,6 +1,8 @@
 use crate::audio_engine::AudioEngine;
+use crate::graphics::Vitmap;
 use crate::input::{IcKey, KeyState};
 use crate::platform::IcPlatform;
+use rgb::RGB8;
 
 pub struct InputContext<'a> {
     pub key_states: &'a [KeyState; IcKey::COUNT],
@@ -20,6 +22,8 @@ impl<'a> InputContext<'a> {
 
 pub trait IcApp {
     fn name(&self) -> &str;
+    fn icon(&self) -> &'static Vitmap;
+    fn color(&self) -> RGB8;
     /// for things like games that shouldnt only update when you press a button
     fn requires_realtime_updates(&self) -> bool;
     fn on_enter(&mut self);

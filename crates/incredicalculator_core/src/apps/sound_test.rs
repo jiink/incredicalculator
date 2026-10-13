@@ -1,7 +1,7 @@
 use crate::app::{IcApp, InputContext};
 use crate::audio_engine::{AudioEngine, AudioPatch, NoteId};
 use crate::fonts::FontId;
-use crate::graphics::{draw_vitmap, SAMPLE_GRAPHIC};
+use crate::graphics::{draw_vitmap, Vitmap, SAMPLE_GRAPHIC};
 use crate::input::IcKey;
 use crate::text;
 use glam::Vec2;
@@ -171,6 +171,14 @@ impl IcApp for SoundTest {
 
     fn name(&self) -> &str {
         "Sound test"
+    }
+
+    fn icon(&self) -> &'static Vitmap {
+        &SAMPLE_GRAPHIC
+    }
+
+    fn color(&self) -> RGB8 {
+        RGB8::new(0x27, 0x83, 0xa5)
     }
 }
 

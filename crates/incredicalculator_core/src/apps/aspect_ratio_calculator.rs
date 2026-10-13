@@ -1,5 +1,8 @@
 use crate::audio_engine;
 use crate::fonts::FontId;
+use crate::graphics::{Vitmap};
+use crate::graphics;
+use crate::platform::rgb8_hex;
 use crate::ui::{MathInput, MathInputDirection, MathInputEvent, MathInputMode};
 use glam::{IVec2, Vec2};
 use num_traits::{abs, clamp_max};
@@ -255,6 +258,14 @@ impl AspectRatioCalculator {
 impl IcApp for AspectRatioCalculator {
     fn name(&self) -> &str {
         "Aspect Ratio"
+    }
+
+    fn icon(&self) -> &'static Vitmap {
+        &graphics::ASPECT_RATIO_ICON
+    }
+
+    fn color(&self) -> RGB8 {
+        rgb8_hex(0xF8B038)
     }
 
     fn requires_realtime_updates(&self) -> bool {
