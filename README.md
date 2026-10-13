@@ -16,6 +16,7 @@ To run the RP2350 project:
 
 To run the browser build:
 - Use a wasm-capable Rust toolchain and build the web crate from its directory: `cd incredicalculator_web && wasm-pack build --target web --out-dir pkg`
+- With the `wasm32-unknown-unknown` target installed, `cd incredicalculator_web && cargo build` also builds for WebAssembly; the web directory's Cargo config selects that target by default.
 - On Windows with this project's Rust 1.89 toolchain, install the compatible wasm-pack version with `cargo install --locked --version 0.13.1 wasm-pack` if it is not already available. (`wasm-pack` 0.15.0 requires Rust 1.91 even with `--locked`.) Make sure Python 3 is on `PATH`.
 - The easiest way to launch it is:
   - `cd incredicalculator_web && ./start-browser.sh`
