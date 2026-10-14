@@ -1,8 +1,9 @@
+use crate::graphics;
 use crate::input::IcKey;
 use crate::{
     app::{IcApp, InputContext},
     audio_engine,
-    graphics::{Vitmap, SAMPLE_GRAPHIC},
+    graphics::{Vitmap},
     platform::{rgb8_hex, IcPlatform},
 };
 use glam::IVec2;
@@ -654,11 +655,11 @@ impl IcApp for FaceCalculator {
     }
 
     fn icon(&self) -> &'static Vitmap {
-        &SAMPLE_GRAPHIC
+        &graphics::FACE_ICON
     }
 
     fn color(&self) -> RGB8 {
-        RGB8::new(0x72, 0x48, 0x91)
+        rgb8_hex(0x000000)
     }
 
     fn requires_realtime_updates(&self) -> bool {

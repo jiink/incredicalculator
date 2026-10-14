@@ -1,7 +1,7 @@
 use crate::app::{IcApp, InputContext};
 use crate::audio_engine::AudioEngine;
 use crate::fonts::FontId;
-use crate::graphics::{Vitmap, SAMPLE_GRAPHIC};
+use crate::graphics::{self, Vitmap, SAMPLE_GRAPHIC};
 use crate::input::IcKey;
 use crate::platform::{IcPlatform, CANVAS_WIDTH};
 use crate::text::{draw_text, draw_text_f};
@@ -259,7 +259,7 @@ impl IcApp for ColorCalculator {
     }
 
     fn icon(&self) -> &'static Vitmap {
-        &SAMPLE_GRAPHIC
+        &graphics::COLORS_ICON
     }
 
     fn color(&self) -> RGB8 {
