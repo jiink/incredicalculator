@@ -191,6 +191,7 @@ pub struct IcRpPlatform<'d> {
     backlight2: Pwm<'d>,
     brightness: u8,
     volume: u8,
+    screen_timeout_seconds: u32,
 }
 
 impl<'d> IcRpPlatform<'d> {
@@ -201,6 +202,7 @@ impl<'d> IcRpPlatform<'d> {
             backlight2,
             brightness: 128,
             volume: 100,
+            screen_timeout_seconds: 30,
         }
     }
 
@@ -405,6 +407,14 @@ impl<'d> IcPlatform for IcRpPlatform<'d> {
 
     fn set_volume(&mut self, value: u8) {
         self.volume = value;
+    }
+
+    fn get_screen_timeout_seconds(&self) -> u32 {
+        self.screen_timeout_seconds
+    }
+
+    fn set_screen_timeout_seconds(&mut self, seconds: u32) {
+        self.screen_timeout_seconds = seconds;
     }
 }
 

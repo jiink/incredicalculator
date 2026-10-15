@@ -9,6 +9,7 @@ pub mod apps;
 pub mod audio_engine;
 pub mod input;
 pub mod platform;
+pub mod settings;
 pub mod shell;
 pub mod graphics {
     use alloc::vec::Vec;

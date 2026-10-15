@@ -26,6 +26,7 @@ struct BrowserPlatform {
     start_ms: f64,
     brightness: u8,
     volume: u8,
+    screen_timeout_seconds: u32,
 }
 
 impl BrowserPlatform {
@@ -208,6 +209,14 @@ impl IcPlatform for BrowserPlatform {
     fn set_volume(&mut self, value: u8) {
         self.volume = value;
     }
+
+    fn get_screen_timeout_seconds(&self) -> u32 {
+        self.screen_timeout_seconds
+    }
+
+    fn set_screen_timeout_seconds(&mut self, seconds: u32) {
+        self.screen_timeout_seconds = seconds;
+    }
 }
 
 fn map_code(code: &str) -> Option<IcKey> {
@@ -329,6 +338,7 @@ pub fn start() {
         start_ms: window.performance().map(|p| p.now()).unwrap_or(0.0),
         brightness: 255,
         volume: 255,
+        screen_timeout_seconds: 30,
     }));
 
     APP.with(|slot| {

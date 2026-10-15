@@ -13,6 +13,7 @@ use crate::input::IcKey;
 use crate::input::KeyState;
 use crate::platform::rgb8_hex;
 use crate::platform::{IcPlatform, CANVAS_HEIGHT, CANVAS_WIDTH};
+use crate::settings::SettingsMenu;
 use crate::text::*;
 use alloc::boxed::Box;
 use glam::{IVec2, Vec2};
@@ -28,6 +29,7 @@ enum SelectorAction {
     Launch(usize),
     PreviousPage,
     NextPage,
+    OpenSettings,
     None,
 }
 
@@ -53,6 +55,8 @@ pub struct IcShell {
     last_active_app_idx: Option<usize>,
     selector_page: usize,
     selector_hints_until: Option<u64>,
+    settings_open: bool,
+    settings_menu: SettingsMenu,
     key_states: [KeyState; IcKey::COUNT],
     super_interrupted: bool,
     adjusting_something: Option<Adjustable>,
@@ -75,6 +79,8 @@ impl IcShell {
             last_active_app_idx: None,
             selector_page: 0,
             selector_hints_until: None,
+            settings_open: false,
+            settings_menu: SettingsMenu::new(),
             key_states: [KeyState::default(); IcKey::COUNT],
             super_interrupted: false,
             adjusting_something: None,
@@ -306,7 +312,7 @@ impl IcShell {
                 button: IcKey::Num2,
                 vitmap: &graphics::SETTINGS_ICON,
                 color: rgb8_hex(0xffffff),
-                action: SelectorAction::None,
+                action: SelectorAction::OpenSettings,
             },
             SelectorCard {
                 name: "Next",
@@ -360,7 +366,7 @@ impl IcShell {
                 platform,
                 card.vitmap,
                 0,
-                Vec2::new(start.x as f32 + 50.0, start.y as f32 + 30.0),
+                Vec2::new(start.x as f32 + 50.0, start.y as f32 + 32.0),
                 Vec2::splat(3.0),
             );
             // draw_text_f(
@@ -373,7 +379,7 @@ impl IcShell {
             //     rgb8_hex(0xffffff),
             //     FontId::Futural,
             // );
-        if show_key_hints {
+            if show_key_hints {
                 let hint_start = start;
                 platform.draw_rectangle(
                     hint_start,
@@ -454,25 +460,35 @@ impl IcShell {
                     self.apps[app_idx].on_key(key, &ctx);
                 }
             } else {
-                let action = self
-                    .selector_cards()
-                    .iter()
-                    .find(|card| card.button == key)
-                    .map(|card| card.action);
-                match action {
-                    Some(SelectorAction::Launch(idx)) => {
-                        self.active_app_idx = Some(idx);
-                        self.apps[idx].on_enter();
+                if self.settings_open {
+                    if self.settings_menu.handle_key(key, platform) {
+                        self.settings_open = false;
                     }
-                    Some(SelectorAction::PreviousPage) if self.selector_page > 0 => {
-                        self.selector_page -= 1;
+                } else {
+                    let action = self
+                        .selector_cards()
+                        .iter()
+                        .find(|card| card.button == key)
+                        .map(|card| card.action);
+                    match action {
+                        Some(SelectorAction::Launch(idx)) => {
+                            self.active_app_idx = Some(idx);
+                            self.apps[idx].on_enter();
+                        }
+                        Some(SelectorAction::PreviousPage) if self.selector_page > 0 => {
+                            self.selector_page -= 1;
+                        }
+                        Some(SelectorAction::NextPage)
+                            if (self.selector_page + 1) * APPS_PER_PAGE < self.apps.len() =>
+                        {
+                            self.selector_page += 1;
+                        }
+                        Some(SelectorAction::OpenSettings) => {
+                            self.settings_open = true;
+                            self.settings_menu.open();
+                        }
+                        _ => {}
                     }
-                    Some(SelectorAction::NextPage)
-                        if (self.selector_page + 1) * APPS_PER_PAGE < self.apps.len() =>
-                    {
-                        self.selector_page += 1;
-                    }
-                    _ => {}
                 }
             }
         }
@@ -483,6 +499,8 @@ impl IcShell {
                 self.selector_hints_until = Some(platform.millis().saturating_add(1400));
                 // release its sound instead of leaving a held note behind.
                 self.audio.release_all();
+            } else if self.settings_open {
+                self.settings_open = false;
             } else if let Some(prev) = self.last_active_app_idx {
                 self.active_app_idx = Some(prev);
                 self.apps[prev].on_enter();
@@ -491,6 +509,8 @@ impl IcShell {
         self.audio.set_volume(platform.get_volume());
         if let Some(appidx) = self.active_app_idx {
             self.apps[appidx].update(platform, &ctx, &mut self.audio);
+        } else if self.settings_open {
+            self.settings_menu.draw(platform);
         } else {
             let show_key_hints = self
                 .selector_hints_until

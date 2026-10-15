@@ -44,6 +44,8 @@ pub trait IcPlatform {
     fn set_brightness(&mut self, value: u8);
     fn get_volume(&self) -> u8;
     fn set_volume(&mut self, value: u8);
+    fn get_screen_timeout_seconds(&self) -> u32;
+    fn set_screen_timeout_seconds(&mut self, seconds: u32);
 }
 
 #[macro_export]

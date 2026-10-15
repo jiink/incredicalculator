@@ -117,6 +117,7 @@ pub struct IcRaylibPlatform {
     start_time: Instant,
     fake_brightness: u8,
     fake_volume: u8,
+    screen_timeout_seconds: u32,
 }
 
 impl IcRaylibPlatform {
@@ -126,6 +127,7 @@ impl IcRaylibPlatform {
             start_time: Instant::now(),
             fake_brightness: 100,
             fake_volume: 255,
+            screen_timeout_seconds: 30,
         }
     }
 }
@@ -272,6 +274,14 @@ impl IcPlatform for IcRaylibPlatform {
     fn set_volume(&mut self, value: u8) {
         println!("omg, setting fake volume to {}", value);
         self.fake_volume = value;
+    }
+
+    fn get_screen_timeout_seconds(&self) -> u32 {
+        self.screen_timeout_seconds
+    }
+
+    fn set_screen_timeout_seconds(&mut self, seconds: u32) {
+        self.screen_timeout_seconds = seconds;
     }
 }
 
