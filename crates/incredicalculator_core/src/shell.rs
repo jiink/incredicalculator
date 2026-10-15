@@ -52,6 +52,7 @@ pub struct IcShell {
     active_app_idx: Option<usize>,
     last_active_app_idx: Option<usize>,
     selector_page: usize,
+    selector_hints_until: Option<u64>,
     key_states: [KeyState; IcKey::COUNT],
     super_interrupted: bool,
     adjusting_something: Option<Adjustable>,
@@ -73,6 +74,7 @@ impl IcShell {
             active_app_idx: Some(0),
             last_active_app_idx: None,
             selector_page: 0,
+            selector_hints_until: None,
             key_states: [KeyState::default(); IcKey::COUNT],
             super_interrupted: false,
             adjusting_something: None,
@@ -329,7 +331,7 @@ impl IcShell {
         cards
     }
 
-    fn draw_app_selector(&self, platform: &mut dyn IcPlatform) {
+    fn draw_app_selector(&self, platform: &mut dyn IcPlatform, show_key_hints: bool) {
         platform.clear(rgb8_hex(0x000000));
         let page_count = (self.apps.len() + APPS_PER_PAGE - 1) / APPS_PER_PAGE;
         draw_text_f(
@@ -354,16 +356,6 @@ impl IcShell {
                 continue;
             }
             platform.draw_rectangle_rounded(start, end, rgb8_hex(0xffffff), 0, Some(card.color), 5);
-            // draw_text_f(
-            //     platform,
-            //     format_args!("{}", button_number(card.button)),
-            //     start.x as f32 + 5.0,
-            //     start.y as f32 + 16.0,
-            //     7.0,
-            //     2.0,
-            //     rgb8_hex(0xffffff),
-            //     FontId::Futural,
-            // );
             draw_vitmap(
                 platform,
                 card.vitmap,
@@ -381,6 +373,26 @@ impl IcShell {
             //     rgb8_hex(0xffffff),
             //     FontId::Futural,
             // );
+        if show_key_hints {
+                let hint_start = start;
+                platform.draw_rectangle(
+                    hint_start,
+                    hint_start + IVec2::splat(30),
+                    rgb8_hex(0x000000),
+                    1,
+                    Some(rgb8_hex(0xffff00)),
+                );
+                draw_text_f(
+                    platform,
+                    format_args!("{}", button_number(card.button)),
+                    hint_start.x as f32 + 4.0,
+                    hint_start.y as f32 + 17.0,
+                    10.0,
+                    4.0,
+                    rgb8_hex(0x000000),
+                    FontId::Futural,
+                );
+            }
         }
     }
 
@@ -468,6 +480,7 @@ impl IcShell {
             if self.active_app_idx.is_some() {
                 self.last_active_app_idx = self.active_app_idx;
                 self.active_app_idx = None;
+                self.selector_hints_until = Some(platform.millis().saturating_add(1400));
                 // release its sound instead of leaving a held note behind.
                 self.audio.release_all();
             } else if let Some(prev) = self.last_active_app_idx {
@@ -479,7 +492,10 @@ impl IcShell {
         if let Some(appidx) = self.active_app_idx {
             self.apps[appidx].update(platform, &ctx, &mut self.audio);
         } else {
-            self.draw_app_selector(platform);
+            let show_key_hints = self
+                .selector_hints_until
+                .is_some_and(|expires_at| platform.millis() < expires_at);
+            self.draw_app_selector(platform, show_key_hints);
         }
         if let Some(adjustable) = self.adjusting_something {
             let v = Self::get_adjustable(platform, adjustable);
