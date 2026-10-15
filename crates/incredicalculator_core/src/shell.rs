@@ -297,22 +297,22 @@ impl IcShell {
             SelectorCard {
                 name: "Previous",
                 button: IcKey::Num1,
-                vitmap: &graphics::SAMPLE_GRAPHIC,
-                color: rgb8_hex(0x282820),
+                vitmap: &graphics::LEFT_ARROW,
+                color: rgb8_hex(0xffffff),
                 action: SelectorAction::PreviousPage,
             },
             SelectorCard {
-                name: "Page",
+                name: "Settings",
                 button: IcKey::Num2,
-                vitmap: &graphics::SAMPLE_GRAPHIC,
-                color: rgb8_hex(0x282820),
+                vitmap: &graphics::SETTINGS_ICON,
+                color: rgb8_hex(0xffffff),
                 action: SelectorAction::None,
             },
             SelectorCard {
                 name: "Next",
                 button: IcKey::Num3,
-                vitmap: &graphics::SAMPLE_GRAPHIC,
-                color: rgb8_hex(0x282820),
+                vitmap: &graphics::RIGHT_ARROW,
+                color: rgb8_hex(0xffffff),
                 action: SelectorAction::NextPage,
             },
         ];
@@ -332,20 +332,20 @@ impl IcShell {
     }
 
     fn draw_app_selector(&self, platform: &mut dyn IcPlatform) {
-        platform.clear(rgb8_hex(0x7FFF8E));
+        platform.clear(rgb8_hex(0x000000));
+        let page_count = (self.apps.len() + APPS_PER_PAGE - 1) / APPS_PER_PAGE;
         draw_text_f(
             platform,
-            format_args!("Apps"),
-            4.0,
+            format_args!("Apps - Page {} of {}", self.selector_page + 1, page_count),
             5.0,
-            4.0,
+            12.0,
+            6.0,
             2.0,
-            rgb8_hex(0x000000),
+            rgb8_hex(0xffffff),
             FontId::Futural,
         );
 
         let cards = self.selector_cards();
-        let page_count = (self.apps.len() + APPS_PER_PAGE - 1) / APPS_PER_PAGE;
         for (index, card) in cards.iter().enumerate() {
             let column = (index % 3) as i32;
             let row = (index / 3) as i32;
@@ -355,68 +355,34 @@ impl IcShell {
             if is_empty {
                 continue;
             }
-            platform.draw_rectangle_rounded(start, end, rgb8_hex(0x333333), 2, Some(card.color), 5);
-            draw_text_f(
-                platform,
-                format_args!("{}", button_number(card.button)),
-                start.x as f32 + 5.0,
-                start.y as f32 + 16.0,
-                7.0,
-                2.0,
-                rgb8_hex(0xffffff),
-                FontId::Futural,
-            );
+            platform.draw_rectangle_rounded(start, end, rgb8_hex(0xffffff), 0, Some(card.color), 5);
+            // draw_text_f(
+            //     platform,
+            //     format_args!("{}", button_number(card.button)),
+            //     start.x as f32 + 5.0,
+            //     start.y as f32 + 16.0,
+            //     7.0,
+            //     2.0,
+            //     rgb8_hex(0xffffff),
+            //     FontId::Futural,
+            // );
             draw_vitmap(
                 platform,
                 card.vitmap,
                 0,
-                Vec2::new(start.x as f32 + 50.0, start.y as f32 + 25.0),
+                Vec2::new(start.x as f32 + 50.0, start.y as f32 + 30.0),
                 Vec2::splat(3.0),
             );
-            draw_text_f(
-                platform,
-                format_args!("{}", card.name),
-                start.x as f32 + 4.0,
-                start.y as f32 + 57.0,
-                3.0,
-                2.0,
-                rgb8_hex(0xffffff),
-                FontId::Futural,
-            );
-            if index == 6 {
-                draw_text_f(
-                    platform,
-                    format_args!("<"),
-                    start.x as f32 + 46.0,
-                    start.y as f32 + 44.0,
-                    10.0,
-                    2.0,
-                    rgb8_hex(0xffffff),
-                    FontId::Futural,
-                );
-            } else if index == 7 {
-                draw_text_f(
-                    platform,
-                    format_args!("{}/{}", self.selector_page + 1, page_count),
-                    start.x as f32 + 34.0,
-                    start.y as f32 + 44.0,
-                    10.0,
-                    2.0,
-                    rgb8_hex(0xffffff),
-                    FontId::Futural,
-                );
-            } else if index == 8 {
-                draw_text_f(
-                    platform,
-                    format_args!(">"),
-                    start.x as f32 + 46.0,
-                    start.y as f32 + 44.0,
-                    10.0,
-                    2.0,
-                    rgb8_hex(0xffffff),
-                    FontId::Futural,
-                );
-            }
+            // draw_text_f(
+            //     platform,
+            //     format_args!("{}", card.name),
+            //     start.x as f32 + 4.0,
+            //     start.y as f32 + 57.0,
+            //     3.0,
+            //     2.0,
+            //     rgb8_hex(0xffffff),
+            //     FontId::Futural,
+            // );
         }
     }
 
