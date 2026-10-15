@@ -83,7 +83,7 @@ enum NavDir {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum EngineMode {
+pub enum EngineMode {
     Programmer,
     Scientific,
 }
@@ -707,7 +707,7 @@ pub struct Calculator {
 }
 
 impl Calculator {
-    pub fn new() -> Calculator {
+    pub fn new(engine_mode: EngineMode) -> Calculator {
         Calculator {
             current_eq: LineBuffer::default(),
             eq_history: [EqEntry::default(); EQ_HISTORY_MAX],
@@ -717,8 +717,11 @@ impl Calculator {
             current_result_len: 0,
             history_selection: None,
             focused_ui: FocusUi::Equation,
-            engine: Box::new(ProgrammerEngine::default()),
-            engine_mode: EngineMode::Programmer,
+            engine: match engine_mode {
+                EngineMode::Programmer => Box::new(ProgrammerEngine::default()),
+                EngineMode::Scientific => Box::new(ScientificEngine::default())
+            },
+            engine_mode: engine_mode,
         }
     }
 
@@ -1157,11 +1160,17 @@ impl IcApp for Calculator {
     }
 
     fn icon(&self) -> &'static Vitmap {
-        &graphics::CODE_ICON
+        match self.engine_mode {
+            EngineMode::Programmer => &graphics::CODE_ICON,
+            EngineMode::Scientific => &graphics::SCIENTIFIC_ICON
+        } 
     }
 
     fn color(&self) -> RGB8 {
-        rgb8_hex(0x282820)
+        match self.engine_mode {
+            EngineMode::Programmer => PROGRAMMER_THEME.background,
+            EngineMode::Scientific => SCIENTIFIC_THEME.background    
+        }
     }
 
     fn requires_realtime_updates(&self) -> bool {
@@ -1242,19 +1251,7 @@ impl IcApp for Calculator {
                 KeyAction::MoveRight => self.ui_nav(NavDir::Right),
                 KeyAction::Home => self.current_eq.move_cursor_home(),
                 KeyAction::End => self.current_eq.move_cursor_end(),
-                KeyAction::Mode => {
-                    match self.engine_mode {
-                        EngineMode::Programmer => {
-                            self.engine_mode = EngineMode::Scientific;
-                            self.engine = Box::new(ScientificEngine::default());
-                        }
-                        EngineMode::Scientific => {
-                            self.engine_mode = EngineMode::Programmer;
-                            self.engine = Box::new(ProgrammerEngine::default());
-                        }
-                    }
-                    self.focused_ui = FocusUi::Equation;
-                }
+                KeyAction::Mode => ()
             }
             self.update_realtime_result();
         }

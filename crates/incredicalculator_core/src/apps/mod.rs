@@ -1,5 +1,5 @@
 mod calculator;
-pub use calculator::Calculator;
+pub use calculator::{Calculator, EngineMode};
 mod aspect_ratio_calculator;
 pub use aspect_ratio_calculator::AspectRatioCalculator;
 mod range_mapper_calculator;

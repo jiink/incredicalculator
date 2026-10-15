@@ -1,9 +1,9 @@
 use crate::app::IcApp;
 use crate::app::InputContext;
 use crate::apps::AspectRatioCalculator;
-use crate::apps::Calculator;
 use crate::apps::ColorCalculator;
 use crate::apps::SoundTest;
+use crate::apps::{Calculator, EngineMode};
 use crate::apps::{FaceCalculator, RangeMapperCalculator};
 use crate::audio_engine::AudioEngine;
 use crate::fonts::FontId;
@@ -48,7 +48,7 @@ pub enum Adjustable {
 }
 
 pub struct IcShell {
-    apps: [Box<dyn IcApp>; 9], // INCREASE THIS SIZE WHEN ADDING NEW APPS
+    apps: [Box<dyn IcApp>; 7], // INCREASE THIS SIZE WHEN ADDING NEW APPS
     active_app_idx: Option<usize>,
     last_active_app_idx: Option<usize>,
     selector_page: usize,
@@ -62,15 +62,13 @@ impl IcShell {
     pub fn new() -> Self {
         Self {
             apps: [
-                Box::new(Calculator::new()),
+                Box::new(Calculator::new(EngineMode::Programmer)),
+                Box::new(Calculator::new(EngineMode::Scientific)),
                 Box::new(AspectRatioCalculator::new()),
                 Box::new(RangeMapperCalculator::new()),
-                Box::new(FaceCalculator::new()),
-                Box::new(SoundTest::new()),
                 Box::new(ColorCalculator::new()),
-                Box::new(RangeMapperCalculator::new()),
-                Box::new(RangeMapperCalculator::new()),
-                Box::new(RangeMapperCalculator::new()),
+                Box::new(SoundTest::new()),
+                Box::new(FaceCalculator::new()),
             ],
             active_app_idx: Some(0),
             last_active_app_idx: None,
