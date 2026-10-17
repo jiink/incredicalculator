@@ -1,11 +1,15 @@
+use crate::app::InputContext;
 use crate::fonts::FontId;
 use crate::input::IcKey;
 use crate::platform::{rgb8_hex, IcPlatform};
 use crate::text::draw_text_f;
+use crate::ui::{MathInput, MathInputEvent, MathInputMode};
 use glam::IVec2;
+use rgb::RGB8;
 
 const VISIBLE_ENTRIES: usize = 5;
 const ENTRY_HEIGHT: i32 = 31;
+const INPUT_CHAR_LIMIT: usize = 10;
 
 #[derive(Clone, Copy)]
 enum SettingKind {
@@ -32,7 +36,8 @@ const SETTINGS: [SettingEntry; 2] = [
 pub struct SettingsMenu {
     selected_entry: usize,
     first_visible_entry: usize,
-    editing_value: Option<u32>,
+    editing_value: bool,
+    value_input: MathInput<INPUT_CHAR_LIMIT>,
 }
 
 impl SettingsMenu {
@@ -40,28 +45,49 @@ impl SettingsMenu {
         Self {
             selected_entry: 0,
             first_visible_entry: 0,
-            editing_value: None,
+            editing_value: false,
+            value_input: MathInput::new(
+                IVec2::new(200, 38),
+                IVec2::new(115, 23),
+                MathInputMode::Integer,
+                4.0,
+                5.0,
+                RGB8::new(0x30, 0x30, 0x30),
+                RGB8::new(0xff, 0xff, 0x00),
+                None,
+            ),
         }
     }
 
     pub fn open(&mut self) {
         self.selected_entry = 0;
         self.first_visible_entry = 0;
-        self.editing_value = None;
+        self.editing_value = false;
+        self.value_input.clear();
     }
 
-    pub fn handle_key(&mut self, key: IcKey, platform: &mut dyn IcPlatform) -> bool {
-        if let Some(value) = self.editing_value {
-            if let Some(digit) = key_digit(key) {
-                self.editing_value = Some(value.saturating_mul(10).saturating_add(digit as u32));
-            } else {
-                match key {
-                    IcKey::Func2 => {
+    pub fn handle_key(
+        &mut self,
+        key: IcKey,
+        ctx: &InputContext,
+        platform: &mut dyn IcPlatform,
+    ) -> bool {
+        if self.editing_value {
+            match key {
+                IcKey::Func2 => {
+                    if let Ok(value) = self.value_input.text().parse::<u32>() {
                         set_entry_value(SETTINGS[self.selected_entry], value, platform);
-                        self.editing_value = None;
+                        self.editing_value = false;
+                        self.value_input.clear();
                     }
-                    IcKey::Func1 => self.editing_value = None,
-                    _ => {}
+                }
+                IcKey::Func1 => {
+                    self.editing_value = false;
+                    self.value_input.clear();
+                }
+                IcKey::Func4 => {}
+                _ => {
+                    self.value_input.handle_key(key, ctx);
                 }
             }
             return false;
@@ -77,15 +103,17 @@ impl SettingsMenu {
                 self.update_scroll();
             }
             IcKey::Func1 => return true,
-            key if key_digit(key).is_some() => {
-                self.editing_value = key_digit(key).map(u32::from);
+            IcKey::Func4 => {}
+            _ => {
+                if self.value_input.handle_key(key, ctx) == MathInputEvent::Changed {
+                    self.editing_value = true;
+                }
             }
-            _ => {}
         }
         false
     }
 
-    pub fn draw(&self, platform: &mut dyn IcPlatform) {
+    pub fn draw(&mut self, platform: &mut dyn IcPlatform) {
         platform.clear(rgb8_hex(0x000000));
         draw_text_f(
             platform,
@@ -124,26 +152,23 @@ impl SettingsMenu {
             );
 
             if selected {
-                let value = self
-                    .editing_value
-                    .unwrap_or_else(|| entry_value(entry, platform));
-                let suffix = if self.editing_value.is_some() {
-                    "_"
-                } else if value == 0 {
-                    " (Never)"
+                if self.editing_value {
+                    self.value_input.pos = IVec2::new(200, y + 4);
+                    self.value_input.draw(platform, true);
                 } else {
-                    " sec"
-                };
-                draw_text_f(
-                    platform,
-                    format_args!("{}{}", value, suffix),
-                    205.0,
-                    (y + 19) as f32,
-                    5.0,
-                    2.0,
-                    rgb8_hex(0xffff00),
-                    FontId::Futural,
-                );
+                    let value = entry_value(entry, platform);
+                    let suffix = if value == 0 { " (Never)" } else { " sec" };
+                    draw_text_f(
+                        platform,
+                        format_args!("{}{}", value, suffix),
+                        205.0,
+                        (y + 19) as f32,
+                        5.0,
+                        2.0,
+                        rgb8_hex(0xffff00),
+                        FontId::Futural,
+                    );
+                }
             } else {
                 let value = entry_value(entry, platform);
                 let suffix = if value == 0 { " (Never)" } else { " sec" };
@@ -170,7 +195,7 @@ impl SettingsMenu {
             rgb8_hex(0xaaaaaa),
             FontId::Futural,
         );
-        let instructions = if self.editing_value.is_some() {
+        let instructions = if self.editing_value {
             "0-9: Enter  FUNC2: Save  FUNC1: Cancel"
         } else {
             "FUNC4/5: Navigate  0-9: Edit  FUNC1: Back"
@@ -205,21 +230,5 @@ fn entry_value(entry: SettingEntry, platform: &dyn IcPlatform) -> u32 {
 fn set_entry_value(entry: SettingEntry, value: u32, platform: &mut dyn IcPlatform) {
     match entry.kind {
         SettingKind::ScreenTimeout => platform.set_screen_timeout_seconds(value),
-    }
-}
-
-fn key_digit(key: IcKey) -> Option<u8> {
-    match key {
-        IcKey::Num0 => Some(0),
-        IcKey::Num1 => Some(1),
-        IcKey::Num2 => Some(2),
-        IcKey::Num3 => Some(3),
-        IcKey::Num4 => Some(4),
-        IcKey::Num5 => Some(5),
-        IcKey::Num6 => Some(6),
-        IcKey::Num7 => Some(7),
-        IcKey::Num8 => Some(8),
-        IcKey::Num9 => Some(9),
-        _ => None,
     }
 }

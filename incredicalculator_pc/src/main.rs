@@ -616,7 +616,7 @@ fn main() {
             y: 9 + 69 * 0,
             pressed: false,
             hovered: false,
-            label: "Bk",
+            label: "Bk", // backspace
             shlabel: "&",
             sulabel: "F1",
             sticky: false,
@@ -640,7 +640,7 @@ fn main() {
             hovered: false,
             label: "7",
             shlabel: "(",
-            sulabel: "Hm",
+            sulabel: "Hm", // home
             sticky: false,
         },
         VirtualKey {
@@ -651,7 +651,7 @@ fn main() {
             hovered: false,
             label: "8",
             shlabel: ")",
-            sulabel: "^",
+            sulabel: "^", // navigate up
             sticky: false,
         },
         VirtualKey {
@@ -662,7 +662,7 @@ fn main() {
             hovered: false,
             label: "9",
             shlabel: "0x",
-            sulabel: "Clr",
+            sulabel: "Clr", // clear
             sticky: false,
         },
         VirtualKey {
@@ -684,7 +684,7 @@ fn main() {
             hovered: false,
             label: "4",
             shlabel: "E",
-            sulabel: "<",
+            sulabel: "<", // nagivate left
             sticky: false,
         },
         VirtualKey {
@@ -695,7 +695,7 @@ fn main() {
             hovered: false,
             label: "5",
             shlabel: "F",
-            sulabel: "Sel",
+            sulabel: "Sel", // navigate select (have not found a good use yet, usually you would just use the "="/enter key)
             sticky: false,
         },
         VirtualKey {
@@ -706,7 +706,7 @@ fn main() {
             hovered: false,
             label: "6",
             shlabel: "~",
-            sulabel: ">",
+            sulabel: ">", // navigate right
             sticky: false,
         },
         VirtualKey {
@@ -739,7 +739,7 @@ fn main() {
             hovered: false,
             label: "2",
             shlabel: "C",
-            sulabel: "v",
+            sulabel: "v", // navigate down
             sticky: false,
         },
         VirtualKey {
@@ -750,7 +750,7 @@ fn main() {
             hovered: false,
             label: "3",
             shlabel: "D",
-            sulabel: "Und",
+            sulabel: "Und", // undo
             sticky: false,
         },
         VirtualKey {
@@ -761,7 +761,7 @@ fn main() {
             hovered: false,
             label: "+",
             shlabel: ">>",
-            sulabel: "F5",
+            sulabel: "F5", // reserved for volume control
             sticky: false,
         },
         VirtualKey {
@@ -781,7 +781,7 @@ fn main() {
             y: 9 + 69 * 5,
             pressed: false,
             hovered: false,
-            label: "Shft",
+            label: "Shft", // shift
             shlabel: "",
             sulabel: "",
             sticky: true,
@@ -792,7 +792,7 @@ fn main() {
             y: 9 + 69 * 5,
             pressed: false,
             hovered: false,
-            label: "§",
+            label: "§", // super
             shlabel: "",
             sulabel: "",
             sticky: true,
@@ -805,7 +805,7 @@ fn main() {
             hovered: false,
             label: "=",
             shlabel: "^",
-            sulabel: "F6",
+            sulabel: "F6", // reserved for brightness control
             sticky: false,
         },
     ];
