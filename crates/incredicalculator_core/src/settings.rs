@@ -3,7 +3,7 @@ use crate::fonts::FontId;
 use crate::input::IcKey;
 use crate::platform::{rgb8_hex, IcPlatform};
 use crate::text::draw_text_f;
-use crate::ui::{MathInput, MathInputEvent, MathInputMode};
+use crate::ui::{MathInput, MathInputMode};
 use glam::IVec2;
 use rgb::RGB8;
 
@@ -66,51 +66,41 @@ impl SettingsMenu {
         self.value_input.clear();
     }
 
-    pub fn handle_key(
-        &mut self,
-        key: IcKey,
-        ctx: &InputContext,
-        platform: &mut dyn IcPlatform,
-    ) -> bool {
+    pub fn handle_key(&mut self, key: IcKey, ctx: &InputContext, platform: &mut dyn IcPlatform) {
         if self.editing_value {
             match key {
-                IcKey::Func2 => {
+                IcKey::Func6 => {
                     if let Ok(value) = self.value_input.text().parse::<u32>() {
                         set_entry_value(SETTINGS[self.selected_entry], value, platform);
                         self.editing_value = false;
                         self.value_input.clear();
                     }
                 }
-                IcKey::Func1 => {
-                    self.editing_value = false;
-                    self.value_input.clear();
-                }
-                IcKey::Func4 => {}
                 _ => {
                     self.value_input.handle_key(key, ctx);
                 }
             }
-            return false;
+            return;
         }
-
         match key {
-            IcKey::Func4 if self.selected_entry > 0 => {
+            IcKey::Num8 if self.selected_entry > 0 => {
                 self.selected_entry -= 1;
                 self.update_scroll();
             }
-            IcKey::Func5 if self.selected_entry + 1 < SETTINGS.len() => {
+            IcKey::Num2 if self.selected_entry + 1 < SETTINGS.len() => {
                 self.selected_entry += 1;
                 self.update_scroll();
             }
-            IcKey::Func1 => return true,
-            IcKey::Func4 => {}
-            _ => {
-                if self.value_input.handle_key(key, ctx) == MathInputEvent::Changed {
-                    self.editing_value = true;
-                }
+            IcKey::Func6 => {
+                let value = entry_value(SETTINGS[self.selected_entry], platform);
+                let text = alloc::format!("{}", value);
+                self.value_input
+                    .set_text(&text)
+                    .expect("u32 setting value fits the integer input");
+                self.editing_value = true;
             }
+            _ => {}
         }
-        false
     }
 
     pub fn draw(&mut self, platform: &mut dyn IcPlatform) {
@@ -196,9 +186,9 @@ impl SettingsMenu {
             FontId::Futural,
         );
         let instructions = if self.editing_value {
-            "0-9: Enter  FUNC2: Save  FUNC1: Cancel"
+            ""
         } else {
-            "FUNC4/5: Navigate  0-9: Edit  FUNC1: Back"
+            "^/v: Navigate  =: Edit"
         };
         draw_text_f(
             platform,
