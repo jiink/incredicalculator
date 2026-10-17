@@ -381,12 +381,22 @@ impl IcShell {
             // );
             if show_key_hints {
                 let hint_start = start;
-                platform.draw_rectangle(
-                    hint_start,
-                    hint_start + IVec2::splat(30),
+                // platform.draw_rectangle(
+                //     hint_start,
+                //     hint_start + IVec2::splat(30),
+                //     rgb8_hex(0x000000),
+                //     1,
+                //     Some(rgb8_hex(0xffff00)),
+                // );
+                draw_text_f(
+                    platform,
+                    format_args!("{}", button_number(card.button)),
+                    hint_start.x as f32 + 6.0,
+                    hint_start.y as f32 + 19.0,
+                    10.0,
+                    4.0,
                     rgb8_hex(0x000000),
-                    1,
-                    Some(rgb8_hex(0xffff00)),
+                    FontId::Futural,
                 );
                 draw_text_f(
                     platform,
@@ -395,7 +405,7 @@ impl IcShell {
                     hint_start.y as f32 + 17.0,
                     10.0,
                     4.0,
-                    rgb8_hex(0x000000),
+                    rgb8_hex(0xffffff),
                     FontId::Futural,
                 );
             }
@@ -496,7 +506,7 @@ impl IcShell {
             if self.active_app_idx.is_some() {
                 self.last_active_app_idx = self.active_app_idx;
                 self.active_app_idx = None;
-                self.selector_hints_until = Some(platform.millis().saturating_add(1400));
+                self.selector_hints_until = Some(platform.millis().saturating_add(1700));
                 // release its sound instead of leaving a held note behind.
                 self.audio.release_all();
             } else if self.settings_open {
