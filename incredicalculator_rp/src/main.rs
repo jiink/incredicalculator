@@ -30,7 +30,8 @@ use embassy_time::Timer;
 use embassy_time::{Delay, Instant};
 use embedded_alloc::LlffHeap as Heap;
 use embedded_graphics::mono_font::{MonoTextStyle, ascii::FONT_10X20};
-use embedded_graphics::pixelcolor::Rgb565;
+use embedded_graphics::pixelcolor::raw::RawU16;
+use embedded_graphics::pixelcolor::{IntoStorage, Rgb565};
 use embedded_graphics::prelude::*;
 use embedded_graphics::primitives::PrimitiveStyleBuilder;
 use embedded_graphics::text::Text;
@@ -635,7 +636,8 @@ fn fill_simple_polygon(buf: &mut [Rgb565], points: &[Vec2], color: Rgb565) {
                 previous = current;
             }
             if inside {
-                buf[y as usize * RENDER_W as usize + x as usize] = color;
+                buf[y as usize * RENDER_W as usize + x as usize] =
+                    Rgb565::from(RawU16::new(color.into_storage().to_be()));
             }
         }
     }
