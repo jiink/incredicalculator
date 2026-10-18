@@ -4,7 +4,7 @@ use crate::input::IcKey;
 use crate::platform::{rgb8_hex, IcPlatform};
 use crate::text::draw_text_f;
 use crate::ui::{MathInput, MathInputMode};
-use glam::{Vec2, IVec2};
+use glam::{IVec2, Vec2};
 use rgb::RGB8;
 
 const VISIBLE_ENTRIES: usize = 5;
@@ -14,6 +14,11 @@ const INPUT_CHAR_LIMIT: usize = 10;
 #[derive(Clone, Copy)]
 enum IntegerSettingKind {
     ScreenTimeout,
+}
+
+#[derive(Clone, Copy)]
+enum CheckboxSettingKind {
+    StickyKeys,
 }
 
 #[derive(Clone, Copy)]
@@ -29,7 +34,14 @@ enum SettingDisplay {
         suffix: &'static str,
         zero_suffix: Option<&'static str>,
     },
-    Checkbox,
+    Checkbox {
+        kind: CheckboxSettingKind,
+    },
+}
+
+enum EntryValue {
+    Integer { value: u32, suffix: &'static str },
+    Checkbox { checked: bool },
 }
 
 const SETTINGS: [SettingEntry; 2] = [
@@ -43,7 +55,9 @@ const SETTINGS: [SettingEntry; 2] = [
     },
     SettingEntry {
         label: "Sticky keys",
-        display: SettingDisplay::Checkbox,
+        display: SettingDisplay::Checkbox {
+            kind: CheckboxSettingKind::StickyKeys,
+        },
     },
 ];
 
@@ -126,9 +140,11 @@ impl SettingsMenu {
                             .expect("u32 setting value fits the integer input");
                         self.editing_value = true;
                     }
-                    SettingDisplay::Checkbox => {
-                        self.sticky_keys_enabled = !self.sticky_keys_enabled;
-                    }
+                    SettingDisplay::Checkbox { kind } => match kind {
+                        CheckboxSettingKind::StickyKeys => {
+                            self.sticky_keys_enabled = !self.sticky_keys_enabled;
+                        }
+                    },
                 }
             }
             IcKey::Func1 => return true,
@@ -175,27 +191,13 @@ impl SettingsMenu {
                 FontId::Futural,
             );
 
-            if selected {
-                if self.editing_value {
-                    self.value_input.pos = IVec2::new(200, y + 2);
-                    self.value_input.draw(platform, true);
-                } else {
-                    draw_entry_value(
-                        platform,
-                        entry,
-                        y,
-                        rgb8_hex(0xffff00),
-                        self.sticky_keys_enabled,
-                    );
-                }
+            if selected && self.editing_value {
+                self.value_input.pos = IVec2::new(200, y + 2);
+                self.value_input.draw(platform, true);
             } else {
-                draw_entry_value(
-                    platform,
-                    entry,
-                    y,
-                    rgb8_hex(0xaaaaaa),
-                    self.sticky_keys_enabled,
-                );
+                let value = self.resolve_entry_value(entry.display, platform);
+                let color = rgb8_hex(if selected { 0xffff00 } else { 0xaaaaaa });
+                draw_entry_value(platform, value, y, color);
             }
         }
 
@@ -226,6 +228,35 @@ impl SettingsMenu {
         );
     }
 
+    fn resolve_entry_value(
+        &self,
+        display: SettingDisplay,
+        platform: &dyn IcPlatform,
+    ) -> EntryValue {
+        match display {
+            SettingDisplay::Integer {
+                kind,
+                suffix,
+                zero_suffix,
+            } => {
+                let value = entry_value(kind, platform);
+                EntryValue::Integer {
+                    value,
+                    suffix: if value == 0 {
+                        zero_suffix.unwrap_or(suffix)
+                    } else {
+                        suffix
+                    },
+                }
+            }
+            SettingDisplay::Checkbox { kind } => EntryValue::Checkbox {
+                checked: match kind {
+                    CheckboxSettingKind::StickyKeys => self.sticky_keys_enabled,
+                },
+            },
+        }
+    }
+
     fn update_scroll(&mut self) {
         if self.selected_entry < self.first_visible_entry {
             self.first_visible_entry = self.selected_entry;
@@ -235,25 +266,9 @@ impl SettingsMenu {
     }
 }
 
-fn draw_entry_value(
-    platform: &mut dyn IcPlatform,
-    entry: SettingEntry,
-    y: i32,
-    color: RGB8,
-    sticky_keys_enabled: bool,
-) {
-    match entry.display {
-        SettingDisplay::Integer {
-            kind,
-            suffix,
-            zero_suffix,
-        } => {
-            let value = entry_value(kind, platform);
-            let suffix = if value == 0 {
-                zero_suffix.unwrap_or(suffix)
-            } else {
-                suffix
-            };
+fn draw_entry_value(platform: &mut dyn IcPlatform, value: EntryValue, y: i32, color: RGB8) {
+    match value {
+        EntryValue::Integer { value, suffix } => {
             draw_text_f(
                 platform,
                 format_args!("{}{}", value, suffix),
@@ -265,11 +280,11 @@ fn draw_entry_value(
                 FontId::Futural,
             );
         }
-        SettingDisplay::Checkbox => {
+        EntryValue::Checkbox { checked } => {
             let top_left = IVec2::new(294, y + 7);
             let bottom_right = top_left + IVec2::new(16, 16);
             platform.draw_rectangle(top_left, bottom_right, color, 1, None);
-            if sticky_keys_enabled {
+            if checked {
                 platform.draw_line(
                     Vec2::new(297.0, (y + 15) as f32),
                     Vec2::new(301.0, (y + 19) as f32),
