@@ -489,7 +489,7 @@ impl IcShell {
                 }
             }
         }
-        if self.key_states[IcKey::Super as usize].just_released && !self.super_interrupted {
+        if (self.key_states[IcKey::Func1 as usize].just_pressed || self.key_states[IcKey::Super as usize].just_released) && !self.super_interrupted {
             if self.active_app_idx.is_some() {
                 self.last_active_app_idx = self.active_app_idx;
                 self.active_app_idx = None;
