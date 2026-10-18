@@ -14,6 +14,8 @@ To run the RP2350 project:
 - `cd incredicalculator_rp && cargo run --release`
 - (it will still work if you don't put --release, but it will run like 10x slower and have like 3x the memory usage)
 
+On the RP2350, the screen timeout setting dims both backlights to half the configured brightness after half the timeout, then turns them off at the full timeout. Any key press restores the configured brightness and restarts the timer. A timeout of `0` (Never) disables both idle dimming and shutdown.
+
 To run the browser build:
 - Use a wasm-capable Rust toolchain and build the web crate from its directory: `cd incredicalculator_web && wasm-pack build --target web --out-dir pkg`
 - With the `wasm32-unknown-unknown` target installed, `cd incredicalculator_web && cargo build` also builds for WebAssembly; the web directory's Cargo config selects that target by default.

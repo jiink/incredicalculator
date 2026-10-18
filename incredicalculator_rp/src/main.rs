@@ -3,6 +3,8 @@
 
 extern crate alloc;
 
+mod backlight;
+
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use core::{fmt, mem};
 
@@ -190,20 +192,48 @@ pub struct IcRpPlatform<'d> {
     backlight: Pwm<'d>,
     backlight2: Pwm<'d>,
     brightness: u8,
+    applied_brightness: Option<u8>,
+    last_key_activity: Instant,
     volume: u8,
     screen_timeout_seconds: u32,
 }
 
 impl<'d> IcRpPlatform<'d> {
     fn new(backlight: Pwm<'d>, backlight2: Pwm<'d>, canvas: FrameBuffer) -> Self {
-        Self {
+        let mut platform = Self {
             canvas: Some(canvas),
             backlight,
             backlight2,
             brightness: 128,
+            applied_brightness: None,
+            last_key_activity: Instant::now(),
             volume: 100,
             screen_timeout_seconds: 30,
+        };
+        platform.update_backlight();
+        platform
+    }
+
+    fn record_key_activity(&mut self) {
+        self.last_key_activity = Instant::now();
+        self.update_backlight();
+    }
+
+    fn update_backlight(&mut self) -> Option<Instant> {
+        let (brightness, next_change_ms) = backlight::idle_backlight(
+            self.brightness,
+            self.screen_timeout_seconds,
+            self.last_key_activity.elapsed().as_millis(),
+        );
+        if self.applied_brightness != Some(brightness) {
+            let mut config = PwmConfig::default();
+            config.top = 0xffff;
+            config.compare_b = ((u32::from(brightness) * 0xffff) / 255) as u16;
+            self.backlight.set_config(&config);
+            self.backlight2.set_config(&config);
+            self.applied_brightness = Some(brightness);
         }
+        next_change_ms.map(|ms| self.last_key_activity + embassy_time::Duration::from_millis(ms))
     }
 
     fn has_canvas(&self) -> bool {
@@ -393,12 +423,7 @@ impl<'d> IcPlatform for IcRpPlatform<'d> {
 
     fn set_brightness(&mut self, value: u8) {
         self.brightness = value;
-        let duty = ((value as u32 * 0xffff) / 255) as u16;
-        let mut config = PwmConfig::default();
-        config.top = 0xffff;
-        config.compare_b = duty.max(128);
-        self.backlight.set_config(&config);
-        self.backlight2.set_config(&config);
+        self.update_backlight();
     }
 
     fn get_volume(&self) -> u8 {
@@ -415,6 +440,7 @@ impl<'d> IcPlatform for IcRpPlatform<'d> {
 
     fn set_screen_timeout_seconds(&mut self, seconds: u32) {
         self.screen_timeout_seconds = seconds;
+        self.update_backlight();
     }
 }
 
@@ -1247,11 +1273,9 @@ async fn main(spawner: Spawner) {
     let mut audio_is_running = false;
     info!("audio idle: no active voices; waiting for input");
     loop {
-        // When the synth is silent, wait only for input. While it is active,
-        // wake for either fresh input or a DMA buffer that needs rendering.
-        // The executor can therefore enter WFI instead of waking every 1 ms
-        // to generate silence.
-        let (first_input, mut audio_buffer, realtime_tick) =
+        let backlight_deadline = ic_rp_platform.update_backlight();
+        // Backlight deadlines also wake an otherwise idle UI, without polling.
+        let wait_for_work = async {
             match (icalc.has_active_audio(), icalc.requires_realtime_updates()) {
                 (true, true) => match select3(
                     INPUT_BUFFER.receive(),
@@ -1277,7 +1301,20 @@ async fn main(spawner: Spawner) {
                     }
                 }
                 (false, false) => (Some(INPUT_BUFFER.receive().await), None, false),
+            }
+        };
+        let wait_for_backlight = async {
+            match backlight_deadline {
+                Some(deadline) => Timer::at(deadline).await,
+                None => core::future::pending::<()>().await,
+            }
+        };
+        let (first_input, mut audio_buffer, realtime_tick) =
+            match select(wait_for_work, wait_for_backlight).await {
+                Either::First(work) => work,
+                Either::Second(()) => (None, None, false),
             };
+        ic_rp_platform.update_backlight();
 
         let mut inputs_changed = false;
         if let Some(event) = first_input {
@@ -1287,6 +1324,7 @@ async fn main(spawner: Spawner) {
                     icalc.key_up(event.key);
                 }
                 KeyMovement::Down => {
+                    ic_rp_platform.record_key_activity();
                     debug!("input key={} down", event.key as usize);
                     icalc.key_down(event.key);
                 }
@@ -1300,6 +1338,7 @@ async fn main(spawner: Spawner) {
                     icalc.key_up(event.key);
                 }
                 KeyMovement::Down => {
+                    ic_rp_platform.record_key_activity();
                     debug!("input key={} down", event.key as usize);
                     icalc.key_down(event.key);
                 }
