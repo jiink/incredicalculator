@@ -23,9 +23,8 @@ use rgb::Rgb;
 use rgb::*;
 
 const APPS_PER_PAGE: usize = 6;
-const KEY_HINT_HOLD_MS: u64 = 1000;
-const KEY_HINT_FADE_MS: u64 = 700;
-const KEY_HINT_DURATION_MS: u64 = KEY_HINT_HOLD_MS + KEY_HINT_FADE_MS;
+const KEY_HINT_FADE_DELAY_MS: u64 = 2000;
+const KEY_HINT_FADE_IN_MS: u64 = 700;
 
 #[derive(Clone, Copy)]
 enum SelectorAction {
@@ -57,7 +56,7 @@ pub struct IcShell {
     active_app_idx: Option<usize>,
     last_active_app_idx: Option<usize>,
     selector_page: usize,
-    selector_hints_until: Option<u64>,
+    selector_hints_started_at: Option<u64>,
     settings_open: bool,
     settings_menu: SettingsMenu,
     key_states: [KeyState; IcKey::COUNT],
@@ -81,7 +80,7 @@ impl IcShell {
             active_app_idx: Some(0),
             last_active_app_idx: None,
             selector_page: 0,
-            selector_hints_until: None,
+            selector_hints_started_at: None,
             settings_open: false,
             settings_menu: SettingsMenu::new(),
             key_states: [KeyState::default(); IcKey::COUNT],
@@ -494,8 +493,7 @@ impl IcShell {
             if self.active_app_idx.is_some() {
                 self.last_active_app_idx = self.active_app_idx;
                 self.active_app_idx = None;
-                self.selector_hints_until =
-                    Some(platform.millis().saturating_add(KEY_HINT_DURATION_MS));
+                self.selector_hints_started_at = Some(platform.millis());
                 // release its sound instead of leaving a held note behind.
                 self.audio.release_all();
             } else if self.settings_open {
@@ -511,15 +509,10 @@ impl IcShell {
         } else if self.settings_open {
             self.settings_menu.draw(platform);
         } else {
-            let hint_opacity = self.selector_hints_until.and_then(|expires_at| {
-                let remaining = expires_at.saturating_sub(platform.millis());
-                (remaining > 0).then(|| {
-                    if remaining > KEY_HINT_FADE_MS {
-                        u8::MAX
-                    } else {
-                        (remaining * u8::MAX as u64 / KEY_HINT_FADE_MS) as u8
-                    }
-                })
+            let hint_opacity = self.selector_hints_started_at.map(|started_at| {
+                let elapsed = platform.millis().saturating_sub(started_at);
+                let fade_elapsed = elapsed.saturating_sub(KEY_HINT_FADE_DELAY_MS);
+                (fade_elapsed.min(KEY_HINT_FADE_IN_MS) * u8::MAX as u64 / KEY_HINT_FADE_IN_MS) as u8
             });
             self.draw_app_selector(platform, hint_opacity);
         }
@@ -550,8 +543,8 @@ fn mix_colors(color_a: RGB8, color_b: RGB8, color_a_weight: u8) -> RGB8 {
     let color_a_weight = color_a_weight as u16;
     let color_b_weight = u8::MAX as u16 - color_a_weight;
     let mix_channel = |color_a: u8, color_b: u8| {
-        ((color_a as u16 * color_a_weight + color_b as u16 * color_b_weight + 127)
-            / u8::MAX as u16) as u8
+        ((color_a as u16 * color_a_weight + color_b as u16 * color_b_weight + 127) / u8::MAX as u16)
+            as u8
     };
 
     RGB8::new(
