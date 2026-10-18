@@ -64,7 +64,7 @@ impl SettingsMenu {
             sticky_keys_enabled: false,
             value_input: MathInput::new(
                 IVec2::new(200, 38),
-                IVec2::new(115, 23),
+                IVec2::new(112, 23),
                 MathInputMode::Integer,
                 4.0,
                 5.0,
@@ -143,8 +143,8 @@ impl SettingsMenu {
             platform,
             format_args!("Settings"),
             5.0,
-            16.0,
-            8.0,
+            12.0,
+            6.0,
             2.0,
             rgb8_hex(0xffffff),
             FontId::Futural,
@@ -154,7 +154,7 @@ impl SettingsMenu {
         for visible_index in 0..visible_count {
             let entry_index = self.first_visible_entry + visible_index;
             let entry = SETTINGS[entry_index];
-            let y = 34 + visible_index as i32 * ENTRY_HEIGHT;
+            let y = 26 + visible_index as i32 * ENTRY_HEIGHT;
             let selected = entry_index == self.selected_entry;
             platform.draw_rectangle_rounded(
                 IVec2::new(4, y),
@@ -177,7 +177,7 @@ impl SettingsMenu {
 
             if selected {
                 if self.editing_value {
-                    self.value_input.pos = IVec2::new(200, y + 4);
+                    self.value_input.pos = IVec2::new(200, y + 2);
                     self.value_input.draw(platform, true);
                 } else {
                     draw_entry_value(

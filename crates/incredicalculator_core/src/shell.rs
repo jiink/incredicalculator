@@ -23,6 +23,9 @@ use rgb::Rgb;
 use rgb::*;
 
 const APPS_PER_PAGE: usize = 6;
+const KEY_HINT_HOLD_MS: u64 = 1000;
+const KEY_HINT_FADE_MS: u64 = 700;
+const KEY_HINT_DURATION_MS: u64 = KEY_HINT_HOLD_MS + KEY_HINT_FADE_MS;
 
 #[derive(Clone, Copy)]
 enum SelectorAction {
@@ -337,7 +340,7 @@ impl IcShell {
         cards
     }
 
-    fn draw_app_selector(&self, platform: &mut dyn IcPlatform, show_key_hints: bool) {
+    fn draw_app_selector(&self, platform: &mut dyn IcPlatform, hint_opacity: Option<u8>) {
         platform.clear(rgb8_hex(0x000000));
         let page_count = (self.apps.len() + APPS_PER_PAGE - 1) / APPS_PER_PAGE;
         draw_text_f(
@@ -369,25 +372,9 @@ impl IcShell {
                 Vec2::new(start.x as f32 + 50.0, start.y as f32 + 32.0),
                 Vec2::splat(3.0),
             );
-            // draw_text_f(
-            //     platform,
-            //     format_args!("{}", card.name),
-            //     start.x as f32 + 4.0,
-            //     start.y as f32 + 57.0,
-            //     3.0,
-            //     2.0,
-            //     rgb8_hex(0xffffff),
-            //     FontId::Futural,
-            // );
-            if show_key_hints {
+            if let Some(opacity) = hint_opacity {
                 let hint_start = start;
-                // platform.draw_rectangle(
-                //     hint_start,
-                //     hint_start + IVec2::splat(30),
-                //     rgb8_hex(0x000000),
-                //     1,
-                //     Some(rgb8_hex(0xffff00)),
-                // );
+                let shadow_color = mix_colors(rgb8_hex(0x000000), card.color, opacity);
                 draw_text_f(
                     platform,
                     format_args!("{}", button_number(card.button)),
@@ -395,9 +382,10 @@ impl IcShell {
                     hint_start.y as f32 + 19.0,
                     10.0,
                     4.0,
-                    rgb8_hex(0x000000),
+                    shadow_color,
                     FontId::Futural,
                 );
+                let text_color = mix_colors(rgb8_hex(0xffffff), card.color, opacity);
                 draw_text_f(
                     platform,
                     format_args!("{}", button_number(card.button)),
@@ -405,7 +393,7 @@ impl IcShell {
                     hint_start.y as f32 + 17.0,
                     10.0,
                     4.0,
-                    rgb8_hex(0xffffff),
+                    text_color,
                     FontId::Futural,
                 );
             }
@@ -506,7 +494,8 @@ impl IcShell {
             if self.active_app_idx.is_some() {
                 self.last_active_app_idx = self.active_app_idx;
                 self.active_app_idx = None;
-                self.selector_hints_until = Some(platform.millis().saturating_add(1700));
+                self.selector_hints_until =
+                    Some(platform.millis().saturating_add(KEY_HINT_DURATION_MS));
                 // release its sound instead of leaving a held note behind.
                 self.audio.release_all();
             } else if self.settings_open {
@@ -522,10 +511,17 @@ impl IcShell {
         } else if self.settings_open {
             self.settings_menu.draw(platform);
         } else {
-            let show_key_hints = self
-                .selector_hints_until
-                .is_some_and(|expires_at| platform.millis() < expires_at);
-            self.draw_app_selector(platform, show_key_hints);
+            let hint_opacity = self.selector_hints_until.and_then(|expires_at| {
+                let remaining = expires_at.saturating_sub(platform.millis());
+                (remaining > 0).then(|| {
+                    if remaining > KEY_HINT_FADE_MS {
+                        u8::MAX
+                    } else {
+                        (remaining * u8::MAX as u64 / KEY_HINT_FADE_MS) as u8
+                    }
+                })
+            });
+            self.draw_app_selector(platform, hint_opacity);
         }
         if let Some(adjustable) = self.adjusting_something {
             let v = Self::get_adjustable(platform, adjustable);
@@ -548,4 +544,19 @@ fn button_number(button: IcKey) -> u8 {
         IcKey::Num9 => 9,
         _ => 0,
     }
+}
+
+fn mix_colors(color_a: RGB8, color_b: RGB8, color_a_weight: u8) -> RGB8 {
+    let color_a_weight = color_a_weight as u16;
+    let color_b_weight = u8::MAX as u16 - color_a_weight;
+    let mix_channel = |color_a: u8, color_b: u8| {
+        ((color_a as u16 * color_a_weight + color_b as u16 * color_b_weight + 127)
+            / u8::MAX as u16) as u8
+    };
+
+    RGB8::new(
+        mix_channel(color_a.r, color_b.r),
+        mix_channel(color_a.g, color_b.g),
+        mix_channel(color_a.b, color_b.b),
+    )
 }

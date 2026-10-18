@@ -14,7 +14,7 @@
 use core::fmt;
 
 use crate::fonts;
-use crate::fonts::{HERSHEY_LIFT, HersheyFont, HersheyGlyph};
+use crate::fonts::{HersheyFont, HersheyGlyph, HERSHEY_LIFT};
 use glam::Vec2;
 use rgb::*;
 
@@ -40,7 +40,11 @@ fn glyph_advance(font: &'static HersheyFont, c: u8, glyph: &'static HersheyGlyph
         font.space_advance as f32
     } else {
         let advance = glyph.advance();
-        if advance > 0 { advance as f32 } else { 1.0 }
+        if advance > 0 {
+            advance as f32
+        } else {
+            1.0
+        }
     }
 }
 
@@ -205,4 +209,24 @@ pub fn text_to_pos(text: &str, x: f32, scale: f32, cursor: usize, font_id: fonts
 
 pub fn text_width(text: &str, scale: f32, font_id: fonts::FontId) -> f32 {
     text_to_pos(text, 0.0, scale, text.len(), font_id)
+}
+
+pub fn text_vertical_bounds(text: &str, font_id: fonts::FontId) -> Option<(f32, f32)> {
+    let font = fonts::get_font(font_id);
+    let mut min_y = f32::INFINITY;
+    let mut max_y = f32::NEG_INFINITY;
+
+    for byte in text.bytes() {
+        if byte == b'\n' || byte == b'\r' {
+            continue;
+        }
+        for vertex in get_glyph(font, byte).vertices {
+            if *vertex != HERSHEY_LIFT {
+                min_y = min_y.min(vertex.y as f32);
+                max_y = max_y.max(vertex.y as f32);
+            }
+        }
+    }
+
+    (min_y <= max_y).then_some((min_y, max_y))
 }

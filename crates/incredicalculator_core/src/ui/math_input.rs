@@ -1,8 +1,8 @@
 use crate::app::InputContext;
-use crate::fonts::FontId;
+use crate::fonts::{self, FontId};
 use crate::input::IcKey;
-use crate::platform::{IcPlatform, rgb8_hex};
-use crate::text::{draw_text, text_to_pos};
+use crate::platform::{rgb8_hex, IcPlatform};
+use crate::text::{draw_text, text_to_pos, text_vertical_bounds};
 use glam::{IVec2, Vec2};
 use rgb::RGB8;
 
@@ -384,13 +384,30 @@ impl<const N: usize> MathInput<N> {
         if text.is_empty() {
             return self.max_text_scale;
         }
-        let available_width = self.size.x as f32 - Self::TEXT_MARGIN * 2.0;
+
+        let available_width = (self.size.x as f32 - Self::TEXT_MARGIN * 2.0).max(0.0);
+        let available_height = (self.size.y as f32 - Self::TEXT_MARGIN * 2.0).max(0.0);
         let max_width = crate::text::text_width(text, self.max_text_scale, font_id);
-        if max_width <= available_width {
-            return self.max_text_scale;
-        }
-        let scale = self.max_text_scale * available_width / max_width;
-        scale.clamp(self.min_text_scale, self.max_text_scale)
+        let width_scale = if max_width > available_width {
+            self.max_text_scale * available_width / max_width
+        } else {
+            self.max_text_scale
+        };
+        let height_scale = text_vertical_bounds(text, font_id)
+            .map(|(min_y, max_y)| {
+                let font_scale = self.max_text_scale / fonts::get_font(font_id).units_per_em;
+                let max_height = (max_y - min_y) * font_scale;
+                if max_height > available_height {
+                    self.max_text_scale * available_height / max_height
+                } else {
+                    self.max_text_scale
+                }
+            })
+            .unwrap_or(self.max_text_scale);
+        let width_scale = width_scale.min(self.max_text_scale);
+        let height_scale = height_scale.min(self.max_text_scale);
+        let scale = width_scale.min(height_scale);
+        scale.max(self.min_text_scale.min(width_scale).min(height_scale))
     }
 
     pub fn draw(&self, platform: &mut dyn IcPlatform, has_focus: bool) {
@@ -413,14 +430,19 @@ impl<const N: usize> MathInput<N> {
         let font_id = FontId::Futural;
         let text_scale = self.text_scale(display_text, font_id);
         let text_x = self.pos.x as f32 + margin;
-        let text_y = self.pos.y as f32 + margin;
+        let text_center_y = self.pos.y as f32 + self.size.y as f32 * 0.5;
+        let font_scale = text_scale / fonts::get_font(font_id).units_per_em;
+        let text_bounds = text_vertical_bounds(display_text, font_id);
+        let text_y = text_bounds
+            .map(|(min_y, max_y)| text_center_y - (min_y + max_y) * 0.5 * font_scale)
+            .unwrap_or(text_center_y);
 
         if !display_text.is_empty() {
             draw_text(
                 platform,
                 display_text,
                 text_x,
-                text_y + 13.0,
+                text_y,
                 text_scale,
                 2.0,
                 rgb8_hex(if has_focus { 0x000000 } else { 0xffffff }),
@@ -437,9 +459,10 @@ impl<const N: usize> MathInput<N> {
                 font_id,
             );
 
-            let text_center_y = text_y + 12.0;
-            let cursor_height =
-                (4.0 * text_scale).min(self.size.y as f32 - Self::TEXT_MARGIN * 2.0);
+            let cursor_height = text_bounds
+                .map(|(min_y, max_y)| (max_y - min_y) * font_scale)
+                .unwrap_or(4.0 * text_scale)
+                .min((self.size.y as f32 - Self::TEXT_MARGIN * 2.0).max(0.0));
 
             platform.draw_line(
                 Vec2::new(cursor_x, text_center_y - cursor_height * 0.5),
