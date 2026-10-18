@@ -471,7 +471,9 @@ impl IcShell {
                 }
             } else {
                 if self.settings_open {
-                    self.settings_menu.handle_key(key, &ctx, platform);
+                    if self.settings_menu.handle_key(key, &ctx, platform) {
+                        self.settings_open = false;
+                    }
                 } else {
                     let action = self
                         .selector_cards()

@@ -4,7 +4,7 @@ use crate::input::IcKey;
 use crate::platform::{rgb8_hex, IcPlatform};
 use crate::text::draw_text_f;
 use crate::ui::{MathInput, MathInputMode};
-use glam::IVec2;
+use glam::{Vec2, IVec2};
 use rgb::RGB8;
 
 const VISIBLE_ENTRIES: usize = 5;
@@ -12,24 +12,38 @@ const ENTRY_HEIGHT: i32 = 31;
 const INPUT_CHAR_LIMIT: usize = 10;
 
 #[derive(Clone, Copy)]
-enum SettingKind {
+enum IntegerSettingKind {
     ScreenTimeout,
 }
 
 #[derive(Clone, Copy)]
 struct SettingEntry {
     label: &'static str,
-    kind: SettingKind,
+    display: SettingDisplay,
+}
+
+#[derive(Clone, Copy)]
+enum SettingDisplay {
+    Integer {
+        kind: IntegerSettingKind,
+        suffix: &'static str,
+        zero_suffix: Option<&'static str>,
+    },
+    Checkbox,
 }
 
 const SETTINGS: [SettingEntry; 2] = [
     SettingEntry {
         label: "Screen timeout",
-        kind: SettingKind::ScreenTimeout,
+        display: SettingDisplay::Integer {
+            kind: IntegerSettingKind::ScreenTimeout,
+            suffix: " sec",
+            zero_suffix: Some(" (Never)"),
+        },
     },
     SettingEntry {
-        label: "Screen timeout",
-        kind: SettingKind::ScreenTimeout,
+        label: "Sticky keys",
+        display: SettingDisplay::Checkbox,
     },
 ];
 
@@ -37,6 +51,7 @@ pub struct SettingsMenu {
     selected_entry: usize,
     first_visible_entry: usize,
     editing_value: bool,
+    sticky_keys_enabled: bool,
     value_input: MathInput<INPUT_CHAR_LIMIT>,
 }
 
@@ -46,6 +61,7 @@ impl SettingsMenu {
             selected_entry: 0,
             first_visible_entry: 0,
             editing_value: false,
+            sticky_keys_enabled: false,
             value_input: MathInput::new(
                 IVec2::new(200, 38),
                 IVec2::new(115, 23),
@@ -66,12 +82,21 @@ impl SettingsMenu {
         self.value_input.clear();
     }
 
-    pub fn handle_key(&mut self, key: IcKey, ctx: &InputContext, platform: &mut dyn IcPlatform) {
+    pub fn handle_key(
+        &mut self,
+        key: IcKey,
+        ctx: &InputContext,
+        platform: &mut dyn IcPlatform,
+    ) -> bool {
         if self.editing_value {
             match key {
                 IcKey::Func6 => {
                     if let Ok(value) = self.value_input.text().parse::<u32>() {
-                        set_entry_value(SETTINGS[self.selected_entry], value, platform);
+                        if let SettingDisplay::Integer { kind, .. } =
+                            SETTINGS[self.selected_entry].display
+                        {
+                            set_entry_value(kind, value, platform);
+                        }
                         self.editing_value = false;
                         self.value_input.clear();
                     }
@@ -80,7 +105,7 @@ impl SettingsMenu {
                     self.value_input.handle_key(key, ctx);
                 }
             }
-            return;
+            return false;
         }
         match key {
             IcKey::Num8 if self.selected_entry > 0 => {
@@ -92,15 +117,24 @@ impl SettingsMenu {
                 self.update_scroll();
             }
             IcKey::Func6 => {
-                let value = entry_value(SETTINGS[self.selected_entry], platform);
-                let text = alloc::format!("{}", value);
-                self.value_input
-                    .set_text(&text)
-                    .expect("u32 setting value fits the integer input");
-                self.editing_value = true;
+                let entry = SETTINGS[self.selected_entry];
+                match entry.display {
+                    SettingDisplay::Integer { kind, .. } => {
+                        let text = alloc::format!("{}", entry_value(kind, platform));
+                        self.value_input
+                            .set_text(&text)
+                            .expect("u32 setting value fits the integer input");
+                        self.editing_value = true;
+                    }
+                    SettingDisplay::Checkbox => {
+                        self.sticky_keys_enabled = !self.sticky_keys_enabled;
+                    }
+                }
             }
+            IcKey::Func1 => return true,
             _ => {}
         }
+        false
     }
 
     pub fn draw(&mut self, platform: &mut dyn IcPlatform) {
@@ -146,31 +180,21 @@ impl SettingsMenu {
                     self.value_input.pos = IVec2::new(200, y + 4);
                     self.value_input.draw(platform, true);
                 } else {
-                    let value = entry_value(entry, platform);
-                    let suffix = if value == 0 { " (Never)" } else { " sec" };
-                    draw_text_f(
+                    draw_entry_value(
                         platform,
-                        format_args!("{}{}", value, suffix),
-                        205.0,
-                        (y + 19) as f32,
-                        5.0,
-                        2.0,
+                        entry,
+                        y,
                         rgb8_hex(0xffff00),
-                        FontId::Futural,
+                        self.sticky_keys_enabled,
                     );
                 }
             } else {
-                let value = entry_value(entry, platform);
-                let suffix = if value == 0 { " (Never)" } else { " sec" };
-                draw_text_f(
+                draw_entry_value(
                     platform,
-                    format_args!("{}{}", value, suffix),
-                    205.0,
-                    (y + 19) as f32,
-                    5.0,
-                    2.0,
+                    entry,
+                    y,
                     rgb8_hex(0xaaaaaa),
-                    FontId::Futural,
+                    self.sticky_keys_enabled,
                 );
             }
         }
@@ -211,14 +235,66 @@ impl SettingsMenu {
     }
 }
 
-fn entry_value(entry: SettingEntry, platform: &dyn IcPlatform) -> u32 {
-    match entry.kind {
-        SettingKind::ScreenTimeout => platform.get_screen_timeout_seconds(),
+fn draw_entry_value(
+    platform: &mut dyn IcPlatform,
+    entry: SettingEntry,
+    y: i32,
+    color: RGB8,
+    sticky_keys_enabled: bool,
+) {
+    match entry.display {
+        SettingDisplay::Integer {
+            kind,
+            suffix,
+            zero_suffix,
+        } => {
+            let value = entry_value(kind, platform);
+            let suffix = if value == 0 {
+                zero_suffix.unwrap_or(suffix)
+            } else {
+                suffix
+            };
+            draw_text_f(
+                platform,
+                format_args!("{}{}", value, suffix),
+                205.0,
+                (y + 19) as f32,
+                5.0,
+                2.0,
+                color,
+                FontId::Futural,
+            );
+        }
+        SettingDisplay::Checkbox => {
+            let top_left = IVec2::new(294, y + 7);
+            let bottom_right = top_left + IVec2::new(16, 16);
+            platform.draw_rectangle(top_left, bottom_right, color, 1, None);
+            if sticky_keys_enabled {
+                platform.draw_line(
+                    Vec2::new(297.0, (y + 15) as f32),
+                    Vec2::new(301.0, (y + 19) as f32),
+                    color,
+                    2,
+                );
+                platform.draw_line(
+                    Vec2::new(301.0, (y + 19) as f32),
+                    Vec2::new(308.0, (y + 10) as f32),
+                    color,
+                    2,
+                );
+            }
+        }
     }
 }
 
-fn set_entry_value(entry: SettingEntry, value: u32, platform: &mut dyn IcPlatform) {
-    match entry.kind {
-        SettingKind::ScreenTimeout => platform.set_screen_timeout_seconds(value),
+fn entry_value(kind: IntegerSettingKind, platform: &dyn IcPlatform) -> u32 {
+    match kind {
+        IntegerSettingKind::ScreenTimeout => platform.get_screen_timeout_seconds(),
+    }
+}
+
+fn set_entry_value(kind: IntegerSettingKind, value: u32, platform: &mut dyn IcPlatform) {
+    match kind {
+        IntegerSettingKind::ScreenTimeout => platform.set_screen_timeout_seconds(value),
     }
 }
