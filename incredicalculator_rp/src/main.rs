@@ -4,6 +4,7 @@
 extern crate alloc;
 
 mod backlight;
+mod power;
 
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use core::{fmt, mem};
@@ -24,15 +25,18 @@ use embassy_rp::spi::Spi;
 use embassy_sync::blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex};
 use embassy_sync::channel::{Channel, DynamicSender};
 use embassy_sync::mutex::Mutex as AsyncMutex;
+use embassy_sync::signal::Signal;
 use embassy_time::Timer;
 use embassy_time::{Delay, Instant};
 use embedded_alloc::LlffHeap as Heap;
+use embedded_graphics::mono_font::{MonoTextStyle, ascii::FONT_10X20};
 use embedded_graphics::pixelcolor::Rgb565;
 use embedded_graphics::prelude::*;
 use embedded_graphics::primitives::PrimitiveStyleBuilder;
+use embedded_graphics::text::Text;
 use glam::{IVec2, Vec2};
 use incredicalculator_core::input::IcKey;
-use incredicalculator_core::platform::IcPlatform;
+use incredicalculator_core::platform::{rgb8_hex, IcPlatform};
 use incredicalculator_core::shell::IcShell;
 use lcd_async::interface::SpiInterface;
 use lcd_async::models::ST7789;
@@ -73,6 +77,7 @@ static CANVAS_DATA1: ConstStaticCell<[u8; FRAME_BUFFER_SIZE]> =
     ConstStaticCell::new([0; FRAME_BUFFER_SIZE]);
 static FREE_FRAME_BUFFERS: Channel<CriticalSectionRawMutex, FrameBuffer, 2> = Channel::new();
 static READY_FRAME_BUFFERS: Channel<CriticalSectionRawMutex, FrameBuffer, 2> = Channel::new();
+static DISPLAY_SLEEP_REQUEST: Signal<CriticalSectionRawMutex, bool> = Signal::new();
 
 static DISPLAY_SPI_BUS: StaticCell<AsyncMutex<NoopRawMutex, Spi<'static, SPI1, spi::Async>>> =
     StaticCell::new();
@@ -193,6 +198,7 @@ pub struct IcRpPlatform<'d> {
     backlight2: Pwm<'d>,
     brightness: u8,
     applied_brightness: Option<u8>,
+    display_sleep_requested: Option<bool>,
     last_key_activity: Instant,
     volume: u8,
     screen_timeout_seconds: u32,
@@ -206,6 +212,7 @@ impl<'d> IcRpPlatform<'d> {
             backlight2,
             brightness: 128,
             applied_brightness: None,
+            display_sleep_requested: None,
             last_key_activity: Instant::now(),
             volume: 100,
             screen_timeout_seconds: 30,
@@ -220,11 +227,14 @@ impl<'d> IcRpPlatform<'d> {
     }
 
     fn update_backlight(&mut self) -> Option<Instant> {
-        let (brightness, next_change_ms) = backlight::idle_backlight(
-            self.brightness,
-            self.screen_timeout_seconds,
-            self.last_key_activity.elapsed().as_millis(),
-        );
+        let idle_ms = self.last_key_activity.elapsed().as_millis();
+        let (brightness, next_change_ms) =
+            backlight::idle_backlight(self.brightness, self.screen_timeout_seconds, idle_ms);
+        let sleep = backlight::idle_display_sleep(self.screen_timeout_seconds, idle_ms);
+        if self.display_sleep_requested != Some(sleep) {
+            DISPLAY_SLEEP_REQUEST.signal(sleep);
+            self.display_sleep_requested = Some(sleep);
+        }
         if self.applied_brightness != Some(brightness) {
             let mut config = PwmConfig::default();
             config.top = 0xffff;
@@ -998,10 +1008,6 @@ impl<'d> KeyMatrix<'d> {
             _ => None,
         }
     }
-
-    pub fn is_pressed(&self, key: IcKey) -> bool {
-        self.prev_pressed[key as usize]
-    }
 }
 
 fn rgbu8_to_rgb565(rgbu8_col: rgb::Rgb<u8>) -> Rgb565 {
@@ -1039,7 +1045,37 @@ async fn main(spawner: Spawner) {
         let usable = total - adjust;
         HEAP.init(aligned, usable);
     }
-    let p = embassy_rp::init(Default::default());
+    let mut config = embassy_rp::config::Config::default();
+    // Keep SPI's clock independent of the system divider used for idle scaling.
+    config.clocks.peri_clk_src = Some(embassy_rp::clocks::PeriClkSrc::PllSys);
+    config.clocks.usb_clk = None;
+    // The unused ADC also defaults to PLL_USB; disable it before removing that PLL.
+    config.clocks.adc_clk = None;
+    if let Some(xosc) = config.clocks.xosc.as_mut() {
+        xosc.usb_pll = None;
+    }
+    let p = embassy_rp::init(config);
+
+    // Embassy leaves USBCTRL untouched at startup. Clear any boot-ROM USB state
+    // and explicitly stop its clocks/PLL; BOOTSEL reinitializes USB after reboot.
+    embassy_rp::pac::RESETS
+        .reset()
+        .modify(|w| w.set_usbctrl(true));
+    embassy_rp::pac::CLOCKS
+        .clk_usb_ctrl()
+        .modify(|w| w.set_enable(false));
+    embassy_rp::pac::CLOCKS
+        .clk_adc_ctrl()
+        .modify(|w| w.set_enable(false));
+    embassy_rp::pac::PLL_USB.pwr().modify(|w| {
+        w.set_pd(true);
+        w.set_dsmpd(true);
+        w.set_postdivpd(true);
+        w.set_vcopd(true);
+    });
+    embassy_rp::pac::RESETS
+        .reset()
+        .modify(|w| w.set_pll_usb(true));
     info!("Hello World!");
     let test_str = alloc::string::String::from("test");
     info!(
@@ -1145,9 +1181,9 @@ async fn main(spawner: Spawner) {
         Input::new(p.PIN_18, Pull::Up),
     ];
 
-    if matrix_cols[2].is_low() {
-        reboot_into_bootloader();
-    }
+    let mut key_matrix = KeyMatrix::new(matrix_rows, matrix_cols);
+    // Sample once before display initialization; later key presses are normal input.
+    let enter_bootsel = key_matrix.scan().iter().any(|&pressed| pressed);
 
     let _led = Output::new(p.PIN_22, Level::Low);
     let rst = p.PIN_47;
@@ -1158,7 +1194,7 @@ async fn main(spawner: Spawner) {
     let module_bl = p.PIN_31;
     let bare_display_bl = p.PIN_41;
     let lcd_spi_bus = p.SPI1;
-    let _audio_shutdown_n = Output::new(p.PIN_27, Level::High);
+    let audio_shutdown_n = Output::new(p.PIN_27, Level::Low);
 
     // ST7789 datasheet: "If not used, please fix this pin at VDDI or DGND."
     let _tft_unused_d0 = Output::new(p.PIN_33, Level::Low);
@@ -1204,7 +1240,7 @@ async fn main(spawner: Spawner) {
     let di = SpiInterface::new(display_spi, dcx);
 
     // Define the display from the display interface and initialize it
-    let display: LcdDisplay = Builder::new(ST7789, di)
+    let mut display: LcdDisplay = Builder::new(ST7789, di)
         .display_size(240, 320)
         .reset_pin(rst)
         .orientation(Orientation::new().rotate(Rotation::Deg270))
@@ -1235,6 +1271,32 @@ async fn main(spawner: Spawner) {
     let initial_canvas = FrameBuffer {
         pixels: CANVAS_DATA0.take(),
     };
+    let mut ic_rp_platform = IcRpPlatform::new(backlight, backlight2, initial_canvas);
+    if enter_bootsel {
+        ic_rp_platform.clear(rgb8_hex(0x5B6EE1));
+        let mut fbuf = RawFrameBuf::<Rgb565, _>::new(
+            &mut ic_rp_platform.canvas_data_mut()[..],
+            RENDER_W as usize,
+            RENDER_H as usize,
+        );
+        Text::new(
+            "Entering BOOTSEL mode...",
+            Point::new(45, 120),
+            MonoTextStyle::new(&FONT_10X20, Rgb565::WHITE),
+        )
+        .draw(&mut fbuf)
+        .unwrap();
+        let canvas = ic_rp_platform.take_canvas();
+        display
+            .show_raw_data(0, 0, RENDER_W as u16, RENDER_H as u16, &canvas.pixels[..])
+            .await
+            .unwrap();
+        Timer::after_secs(1).await;
+        reboot_into_bootloader();
+        loop {
+            Timer::after_secs(1).await;
+        }
+    }
     let spare_canvas = FrameBuffer {
         pixels: CANVAS_DATA1.take(),
     };
@@ -1243,7 +1305,7 @@ async fn main(spawner: Spawner) {
     // This board uses a MAX17048 battery fuel gauge
     let fuel_gauge: Max17048<BoardI2c> = Max17048::new(board_i2c);
     unwrap!(spawner.spawn(battery_task(fuel_gauge)));
-    unwrap!(spawner.spawn(audio_task(i2s)));
+    unwrap!(spawner.spawn(audio_task(i2s, audio_shutdown_n)));
     unwrap!(spawner.spawn(display_task(display)));
 
     spawn_core1(
@@ -1255,14 +1317,13 @@ async fn main(spawner: Spawner) {
         move || {
             let exec1 = EXECUTOR1.init(Executor::new());
             exec1.run(|spawner| {
-                unwrap!(spawner.spawn(inputs_core1_task(matrix_rows, matrix_cols)));
+                unwrap!(spawner.spawn(inputs_core1_task(key_matrix)));
             });
         },
     );
 
     let mut icalc: IcShell = IcShell::new();
     let mut pcm_buffer = [0i16; AUDIO_BUFFER_SIZE];
-    let mut ic_rp_platform = IcRpPlatform::new(backlight, backlight2, initial_canvas);
 
     // render the first frame
     icalc.update(&mut ic_rp_platform);
@@ -1273,7 +1334,14 @@ async fn main(spawner: Spawner) {
     let mut audio_is_running = false;
     info!("audio idle: no active voices; waiting for input");
     loop {
+        let clock_guard = power::keep_awake();
         let backlight_deadline = ic_rp_platform.update_backlight();
+        power::set_idle_allowed(
+            ic_rp_platform.display_sleep_requested == Some(true)
+                && !icalc.has_active_audio()
+                && !icalc.requires_realtime_updates(),
+        );
+        drop(clock_guard);
         // Backlight deadlines also wake an otherwise idle UI, without polling.
         let wait_for_work = async {
             match (icalc.has_active_audio(), icalc.requires_realtime_updates()) {
@@ -1314,6 +1382,7 @@ async fn main(spawner: Spawner) {
                 Either::First(work) => work,
                 Either::Second(()) => (None, None, false),
             };
+        let _clock_guard = power::keep_awake();
         ic_rp_platform.update_backlight();
 
         let mut inputs_changed = false;
@@ -1423,7 +1492,52 @@ async fn main(spawner: Spawner) {
 #[embassy_executor::task]
 async fn display_task(mut display: LcdDisplay) {
     loop {
-        let canvas = READY_FRAME_BUFFERS.receive().await;
+        let canvas = match select(DISPLAY_SLEEP_REQUEST.wait(), READY_FRAME_BUFFERS.receive()).await
+        {
+            Either::First(sleep) => {
+                let _clock_guard = power::keep_awake();
+                if sleep == display.is_sleeping() {
+                    continue;
+                }
+                let mut latest_canvas = None;
+                {
+                    let transition = async {
+                        if sleep {
+                            display.sleep(&mut Delay).await.unwrap();
+                        } else {
+                            display.wake(&mut Delay).await.unwrap();
+                        }
+                    };
+                    let mut transition = core::pin::pin!(transition);
+                    loop {
+                        // Keep returning buffers during the 120 ms settling
+                        // delay so UI rendering cannot stall audio production.
+                        match select(transition.as_mut(), READY_FRAME_BUFFERS.receive()).await {
+                            Either::First(()) => break,
+                            Either::Second(canvas) => {
+                                if sleep {
+                                    FREE_FRAME_BUFFERS.send(canvas).await;
+                                } else if let Some(previous) = latest_canvas.replace(canvas) {
+                                    FREE_FRAME_BUFFERS.send(previous).await;
+                                }
+                            }
+                        }
+                    }
+                }
+                match latest_canvas {
+                    Some(canvas) => canvas,
+                    None => continue,
+                }
+            }
+            Either::Second(canvas) => canvas,
+        };
+        if display.is_sleeping() {
+            // Keep rendering/audio responsive without sending pixels to a
+            // sleeping panel or retaining the UI's frame buffers.
+            FREE_FRAME_BUFFERS.send(canvas).await;
+            continue;
+        }
+        let _clock_guard = power::keep_awake();
         let display_start = Instant::now();
         display
             .show_raw_data(0, 0, RENDER_W as u16, RENDER_H as u16, &canvas.pixels[..])
@@ -1441,18 +1555,22 @@ async fn display_task(mut display: LcdDisplay) {
 #[embassy_executor::task]
 async fn battery_task(mut fuel_gauge: Max17048<BoardI2c>) {
     loop {
-        if let Ok(soc) = fuel_gauge.soc() {
-            BATTERY_SOC.store(soc as i32, core::sync::atomic::Ordering::Relaxed);
-        } else {
-            warn!("Error getting battery soc from fuel gauge");
+        {
+            let _clock_guard = power::keep_awake();
+            if let Ok(soc) = fuel_gauge.soc() {
+                BATTERY_SOC.store(soc as i32, core::sync::atomic::Ordering::Relaxed);
+            } else {
+                warn!("Error getting battery soc from fuel gauge");
+            }
         }
         Timer::after_secs(10).await;
     }
 }
 
 #[embassy_executor::task]
-async fn audio_task(mut i2s: PioI2sOut<'static, PIO0, 0>) {
+async fn audio_task(mut i2s: PioI2sOut<'static, PIO0, 0>, mut audio_shutdown_n: Output<'static>) {
     let mut has_started = false;
+    let mut clock_guard = None;
     loop {
         // `write` only returns after the DMA transfer has drained. If no next
         // buffer is queued at this point, the PIO runs out of FIFO data and an
@@ -1462,7 +1580,18 @@ async fn audio_task(mut i2s: PioI2sOut<'static, PIO0, 0>) {
             Ok(buf) => buf,
             Err(_) => {
                 let wait_start = Instant::now();
-                let buf = FILLED_BUFFERS.receive().await;
+                // Allow the final PIO FIFO samples to play and tolerate brief
+                // producer delays before putting the amplifier into shutdown.
+                let buf = match select(FILLED_BUFFERS.receive(), Timer::after_millis(1)).await {
+                    Either::First(buf) => buf,
+                    Either::Second(()) => {
+                        audio_shutdown_n.set_low();
+                        // DMA completion precedes the last FIFO samples, so
+                        // release the clock only after the drain grace period.
+                        drop(clock_guard.take());
+                        FILLED_BUFFERS.receive().await
+                    }
+                };
                 // Waiting for the very first buffer is expected during boot;
                 // after that it means the PIO had no next DMA transfer ready.
                 if has_started {
@@ -1473,6 +1602,8 @@ async fn audio_task(mut i2s: PioI2sOut<'static, PIO0, 0>) {
             }
         };
 
+        clock_guard.get_or_insert_with(power::keep_awake);
+        audio_shutdown_n.set_high();
         let dma_start = Instant::now();
         i2s.write(buf.samples).await;
         let dma_us = elapsed_us(dma_start);
@@ -1489,9 +1620,8 @@ async fn audio_task(mut i2s: PioI2sOut<'static, PIO0, 0>) {
 }
 
 #[embassy_executor::task]
-async fn inputs_core1_task(matrix_rows: [Output<'static>; 5], matrix_cols: [Input<'static>; 4]) {
+async fn inputs_core1_task(mut key_matrix: KeyMatrix<'static>) {
     info!("Hello from the \"inputs core\"");
-    let mut key_matrix = KeyMatrix::new(matrix_rows, matrix_cols);
     let input_buf_sender = INPUT_BUFFER.dyn_sender();
     loop {
         // Release events cannot wake the matrix while every row is low, so
@@ -1503,9 +1633,7 @@ async fn inputs_core1_task(matrix_rows: [Output<'static>; 5], matrix_cols: [Inpu
             key_matrix.wait_for_key_press().await;
         }
 
+        let _clock_guard = power::keep_awake();
         key_matrix.scan_and_send(input_buf_sender);
-        if key_matrix.is_pressed(IcKey::Super) && key_matrix.is_pressed(IcKey::Shift) {
-            reboot_into_bootloader();
-        }
     }
 }

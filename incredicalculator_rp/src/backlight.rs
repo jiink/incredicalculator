@@ -15,9 +15,37 @@ pub fn idle_backlight(brightness: u8, timeout_seconds: u32, idle_ms: u64) -> (u8
     }
 }
 
+pub fn idle_display_sleep(timeout_seconds: u32, idle_ms: u64) -> bool {
+    timeout_seconds != 0 && idle_ms >= u64::from(timeout_seconds) * 1_000
+}
+
 #[cfg(test)]
 mod tests {
-    use super::idle_backlight;
+    use super::{idle_backlight, idle_display_sleep};
+
+    #[test]
+    fn panel_sleeps_only_at_the_full_timeout() {
+        assert!(!idle_display_sleep(30, 0));
+        assert!(!idle_display_sleep(30, 15_000));
+        assert!(!idle_display_sleep(30, 29_999));
+        assert!(idle_display_sleep(30, 30_000));
+        assert!(idle_display_sleep(30, 60_000));
+    }
+
+    #[test]
+    fn panel_wakes_on_activity_or_timeout_changes() {
+        assert!(idle_display_sleep(30, 30_000));
+        assert!(!idle_display_sleep(30, 0));
+        assert!(!idle_display_sleep(60, 30_000));
+        assert!(!idle_display_sleep(0, u64::MAX));
+    }
+
+    #[test]
+    fn panel_sleep_handles_maximum_timeout() {
+        let timeout_ms = u64::from(u32::MAX) * 1_000;
+        assert!(!idle_display_sleep(u32::MAX, timeout_ms - 1));
+        assert!(idle_display_sleep(u32::MAX, timeout_ms));
+    }
 
     #[test]
     fn dims_and_turns_off_at_the_deadlines() {

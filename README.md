@@ -14,7 +14,15 @@ To run the RP2350 project:
 - `cd incredicalculator_rp && cargo run --release`
 - (it will still work if you don't put --release, but it will run like 10x slower and have like 3x the memory usage)
 
-On the RP2350, the screen timeout setting dims both backlights to half the configured brightness after half the timeout, then turns them off at the full timeout. Any key press restores the configured brightness and restarts the timer. A timeout of `0` (Never) disables both idle dimming and shutdown.
+To enter ROM BOOTSEL mode, hold any calculator key while powering on or resetting the RP2350. The firmware samples the key matrix once during startup, displays “Entering BOOTSEL mode...” for about a second, then reboots into BOOTSEL. Pressing Super+Shift during normal operation no longer triggers BOOTSEL.
+
+The RP2350 firmware disables the unused USB controller, USB clock, ADC clock, and USB PLL during initialization. USB remains available in ROM BOOTSEL mode; normal calculator operation does not provide USB functionality. RTT logging is unaffected.
+
+When the RP2350 screen has timed out and there is no active audio or real-time app update, the firmware divides the 150 MHz system clock by 12 (12.5 MHz). Cross-core activity guards restore 150 MHz for UI work, key scans, LCD transfers/transitions, battery I2C reads, and audio DMA through the final FIFO drain. SPI keeps its independent 150 MHz peripheral clock, and the reference-clock-based timers continue at their normal rate. This is idle clock scaling, not dormant/deep sleep: PLL_SYS stays on for immediate wakeup.
+
+The RP2350 audio amplifier starts in shutdown (GPIO 27 low), is enabled when an audio buffer is ready, and returns to shutdown when no further buffer arrives for 1 ms after the last DMA transfer. This grace period lets the remaining I2S FIFO samples drain without toggling the amplifier between normally queued buffers. Audio resumes automatically when playback restarts, independently of screen brightness.
+
+On the RP2350, the screen timeout setting dims both backlights to half the configured brightness after half the timeout, then turns them off and puts the ST7789 panel into sleep mode at the full timeout. Pixel transfers are skipped while the panel sleeps; audio and key handling continue. Any key press restores the configured brightness, wakes the panel, and restarts the timer. Panel sleep/wake transitions each require the driver's 120 ms settling delay, so the image may take a moment to return. A timeout of `0` (Never) disables idle dimming and panel sleep; setting brightness to zero alone does not put the panel to sleep.
 
 To run the browser build:
 - Use a wasm-capable Rust toolchain and build the web crate from its directory: `cd incredicalculator_web && wasm-pack build --target web --out-dir pkg`
