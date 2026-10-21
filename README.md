@@ -7,6 +7,10 @@ To build the project:
     - To build the browser version, run `rustup target add wasm32-unknown-unknown` once, then `cargo build --target wasm32-unknown-unknown --manifest-path incredicalculator_web/Cargo.toml`
     - Or just cd into the respective subdirectory and run cargo build
 
+Press and release Super alone to open or close the apps menu. In the apps menu, Func1 (Backspace) returns to the previous app; in settings, it returns to the apps menu. While an app is active, Backspace is handled only by that app.
+
+In the scientific calculator, press and release Shift alone to insert a decimal point (`.`). Pressing another key during the tap cancels this shortcut; existing Shift combinations remain unchanged. The programmer calculator is unaffected.
+
 To run the simulator:
 - `cd incredicalculator_pc && cargo run`
 

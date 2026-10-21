@@ -704,6 +704,7 @@ pub struct Calculator {
     focused_ui: FocusUi,
     engine: Box<dyn CalcEngine>,
     engine_mode: EngineMode,
+    shift_tap_pending: bool,
 }
 
 impl Calculator {
@@ -722,6 +723,32 @@ impl Calculator {
                 EngineMode::Scientific => Box::new(ScientificEngine::default())
             },
             engine_mode: engine_mode,
+            shift_tap_pending: false,
+        }
+    }
+
+    fn handle_shift_tap(&mut self, ctx: &InputContext) {
+        if self.engine_mode != EngineMode::Scientific {
+            return;
+        }
+
+        let shift = &ctx.key_states[IcKey::Shift as usize];
+        if shift.just_pressed {
+            self.shift_tap_pending = true;
+        }
+        // Inspect raw states so shell-consumed keys also interrupt the tap.
+        if ctx.key_states.iter().enumerate().any(|(i, state)| {
+            i != IcKey::Shift as usize
+                && (state.is_down || state.just_pressed || state.just_released)
+        }) {
+            self.shift_tap_pending = false;
+        }
+        if shift.just_released {
+            if self.shift_tap_pending {
+                self.current_eq.insert_char(b'.');
+                self.update_realtime_result();
+            }
+            self.shift_tap_pending = false;
         }
     }
 
@@ -1260,9 +1287,10 @@ impl IcApp for Calculator {
     fn update(
         &mut self,
         platform: &mut dyn IcPlatform,
-        _ctx: &InputContext,
+        ctx: &InputContext,
         _audio: &mut AudioEngine,
     ) {
+        self.handle_shift_tap(ctx);
         let theme = self.current_theme();
         platform.clear(theme.background);
         self.draw_mode_icon(platform, theme);
@@ -1279,6 +1307,102 @@ impl IcApp for Calculator {
     }
 
     fn on_enter(&mut self) {
-        ()
+        self.shift_tap_pending = false;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::input::KeyState;
+    use num_traits::FromPrimitive;
+
+    fn shift_tap_frame(calculator: &mut Calculator, states: &mut [KeyState; IcKey::COUNT]) {
+        for state in states.iter_mut() {
+            state.just_pressed = state.is_down && !state.was_down;
+            state.just_released = !state.is_down && state.was_down;
+            state.was_down = state.is_down;
+        }
+        let ctx = InputContext { key_states: states };
+        for i in 0..IcKey::COUNT {
+            if states[i].just_pressed {
+                calculator.on_key(IcKey::from_usize(i).unwrap(), &ctx);
+            }
+        }
+        calculator.handle_shift_tap(&ctx);
+    }
+
+    #[test]
+    fn shift_tap_inserts_once_on_release_and_updates_result() {
+        let mut calculator = Calculator::new(EngineMode::Scientific);
+        calculator.current_eq.insert_char(b'1');
+        let mut states = [KeyState::default(); IcKey::COUNT];
+        states[IcKey::Shift as usize].is_down = true;
+        shift_tap_frame(&mut calculator, &mut states);
+        shift_tap_frame(&mut calculator, &mut states);
+        assert_eq!(calculator.current_eq.as_str(), "1");
+        states[IcKey::Shift as usize].is_down = false;
+        shift_tap_frame(&mut calculator, &mut states);
+        shift_tap_frame(&mut calculator, &mut states);
+        assert_eq!(calculator.current_eq.as_str(), "1.");
+        assert_eq!(
+            &calculator.current_result[..calculator.current_result_len],
+            b"1"
+        );
+    }
+
+    #[test]
+    fn shift_tap_is_cancelled_by_every_other_key() {
+        for i in 0..IcKey::COUNT {
+            if i == IcKey::Shift as usize {
+                continue;
+            }
+            let mut calculator = Calculator::new(EngineMode::Scientific);
+            let mut states = [KeyState::default(); IcKey::COUNT];
+            states[IcKey::Shift as usize].is_down = true;
+            shift_tap_frame(&mut calculator, &mut states);
+            states[i].is_down = true;
+            shift_tap_frame(&mut calculator, &mut states);
+            states[i].is_down = false;
+            shift_tap_frame(&mut calculator, &mut states);
+            let len = calculator.current_eq.len;
+            states[IcKey::Shift as usize].is_down = false;
+            shift_tap_frame(&mut calculator, &mut states);
+            assert_eq!(calculator.current_eq.len, len, "interrupting key {i}");
+        }
+    }
+
+    #[test]
+    fn shift_tap_rejects_overlapping_keys_including_release_frame() {
+        for key_first in [false, true] {
+            let mut calculator = Calculator::new(EngineMode::Scientific);
+            let mut states = [KeyState::default(); IcKey::COUNT];
+            if key_first {
+                states[IcKey::Num1 as usize].is_down = true;
+                shift_tap_frame(&mut calculator, &mut states);
+            }
+            states[IcKey::Shift as usize].is_down = true;
+            shift_tap_frame(&mut calculator, &mut states);
+            states[IcKey::Shift as usize].is_down = false;
+            states[IcKey::Num1 as usize].is_down = true;
+            shift_tap_frame(&mut calculator, &mut states);
+            assert!(!calculator.current_eq.as_str().contains('.'));
+        }
+    }
+
+    #[test]
+    fn shift_tap_does_not_affect_programmer_or_survive_reentry() {
+        for mode in [EngineMode::Programmer, EngineMode::Scientific] {
+            let mut calculator = Calculator::new(mode);
+            let mut states = [KeyState::default(); IcKey::COUNT];
+            states[IcKey::Shift as usize].is_down = true;
+            shift_tap_frame(&mut calculator, &mut states);
+            if mode == EngineMode::Scientific {
+                calculator.on_enter();
+            }
+            states[IcKey::Shift as usize].is_down = false;
+            shift_tap_frame(&mut calculator, &mut states);
+            assert_eq!(calculator.current_eq.as_str(), "");
+        }
     }
 }

@@ -408,6 +408,9 @@ impl IcShell {
         let ctx = InputContext {
             key_states: &self.key_states,
         };
+        let backspace_closes_menu = self.active_app_idx.is_none()
+            && !self.settings_open
+            && self.key_states[IcKey::Func1 as usize].just_pressed;
         if self.key_states[IcKey::Super as usize].just_pressed {
             self.super_interrupted = false;
         }
@@ -489,7 +492,9 @@ impl IcShell {
                 }
             }
         }
-        if (self.key_states[IcKey::Func1 as usize].just_pressed || self.key_states[IcKey::Super as usize].just_released) && !self.super_interrupted {
+        if backspace_closes_menu
+            || (self.key_states[IcKey::Super as usize].just_released && !self.super_interrupted)
+        {
             if self.active_app_idx.is_some() {
                 self.last_active_app_idx = self.active_app_idx;
                 self.active_app_idx = None;
