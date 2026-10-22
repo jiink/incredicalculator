@@ -1,14 +1,14 @@
 use crate::app::IcApp;
 use crate::app::InputContext;
 use crate::audio_engine::AudioEngine;
-use crate::fonts::FontId;
+use crate::fonts::{self, FontId};
 use crate::graphics::{Vitmap};
 use crate::graphics;
 use crate::input::{IcKey, KeyMode};
 use crate::platform::rgb8_hex;
 use crate::platform::IcPlatform;
 use crate::platform::CANVAS_WIDTH;
-use crate::text::{draw_text, text_to_pos};
+use crate::text::{draw_text, text_to_pos, text_vertical_bounds, text_width};
 use alloc::boxed::Box;
 use alloc::string::ToString;
 use alloc::{format, string::String};
@@ -176,6 +176,45 @@ const SCIENTIFIC_THEME: CalculatorTheme = CalculatorTheme {
         b: 222,
     },
 };
+
+struct FittedText {
+    scale: f32,
+    y: f32,
+    height: f32,
+}
+
+impl FittedText {
+    fn new(text: &str, max_scale: f32, width: f32, height: f32, center_y: f32) -> Self {
+        let font_id = FontId::Futural;
+        let width = width.max(0.0);
+        let height = height.max(0.0);
+        let max_width = text_width(text, max_scale, font_id);
+        let mut scale = max_scale;
+        if max_width > width {
+            scale = scale.min(max_scale * width / max_width);
+        }
+        let bounds = text_vertical_bounds(text, font_id);
+        let units_per_em = fonts::get_font(font_id).units_per_em;
+        if let Some((min_y, max_y)) = bounds {
+            let max_height = (max_y - min_y) * max_scale / units_per_em;
+            if max_height > height {
+                scale = scale.min(max_scale * height / max_height);
+            }
+        }
+        let font_scale = scale / units_per_em;
+        Self {
+            scale,
+            y: bounds
+                .map(|(min_y, max_y)| center_y - (min_y + max_y) * 0.5 * font_scale)
+                .unwrap_or(center_y),
+            height: bounds
+                .map(|(min_y, max_y)| (max_y - min_y) * font_scale)
+                .unwrap_or(4.0 * scale)
+                .max(4.0)
+                .min(height),
+        }
+    }
+}
 
 struct LineBuffer<const N: usize> {
     pub data: [u8; N],
@@ -1081,12 +1120,14 @@ impl Calculator {
                         0,
                         Some(theme.emphasis_2),
                     );
+                    let marker_layout =
+                        FittedText::new("*", font_size, 10.0, 13.0, y_pos as f32 + 6.5);
                     draw_text(
                         platform,
                         "*",
-                        (CANVAS_WIDTH - margin - 9) as f32,
-                        y_pos as f32 + 4.0,
-                        font_size,
+                        (CANVAS_WIDTH - margin - 10) as f32,
+                        marker_layout.y,
+                        marker_layout.scale,
                         2.0,
                         theme.background,
                         FontId::Futural,
@@ -1095,24 +1136,37 @@ impl Calculator {
                     h_ans_col = theme.foreground;
                 }
             }
+            let text_x = margin as f32 + 2.0;
+            // Reserve space for the selection marker, even on unselected rows.
+            let text_width = CANVAS_WIDTH as f32 - text_x * 2.0 - 14.0;
+            let eq_layout = FittedText::new(eq_disp, font_size, text_width, 13.0, y as f32 + 6.5);
             draw_text(
                 platform,
                 eq_disp,
-                margin as f32,
-                y as f32 + 8.0,
-                font_size,
+                text_x,
+                eq_layout.y,
+                eq_layout.scale,
                 2.0,
                 h_exp_col,
                 FontId::Futural,
             );
             let ans_disp =
                 core::str::from_utf8(&entry.result[..entry.result_len]).unwrap_or("Invalid UTF-8");
+            let result_center_y = y2 as f32 + 6.5;
+            let equals_layout = FittedText::new("=", font_size, 12.0, 13.0, result_center_y);
+            let ans_layout = FittedText::new(
+                ans_disp,
+                font_size,
+                text_width - 14.0,
+                13.0,
+                result_center_y,
+            );
             draw_text(
                 platform,
                 "=",
-                margin as f32,
-                y2 as f32 + 6.0,
-                font_size,
+                text_x,
+                equals_layout.y,
+                equals_layout.scale,
                 2.0,
                 theme.subtle,
                 FontId::Futural,
@@ -1120,9 +1174,9 @@ impl Calculator {
             draw_text(
                 platform,
                 ans_disp,
-                margin as f32 + 14.0,
-                y2 as f32 + 6.0,
-                font_size,
+                text_x + 14.0,
+                ans_layout.y,
+                ans_layout.scale,
                 2.0,
                 h_ans_col,
                 FontId::Futural,
@@ -1139,68 +1193,70 @@ impl Calculator {
     }
 
     fn draw_editor(&self, platform: &mut dyn IcPlatform, theme: CalculatorTheme) {
-        let margin: u32 = 2;
+        let margin = 4.0;
         let equation_disp = core::str::from_utf8(&self.current_eq.data[..self.current_eq.len])
             .unwrap_or("Invalid UTF-8");
-        let eq_scale = match self.current_eq.len {
-            x if x > 12 => 5.0,
-            _ => 10.0,
-        };
-        let eq_y: f32 = 164.0;
+        let eq_center_y = 162.0;
+        let eq_layout = FittedText::new(
+            equation_disp,
+            10.0,
+            CANVAS_WIDTH as f32 - margin * 2.0,
+            28.0,
+            eq_center_y,
+        );
         draw_text(
             platform,
-            &equation_disp,
-            margin as f32,
-            eq_y,
-            eq_scale,
+            equation_disp,
+            margin,
+            eq_layout.y,
+            eq_layout.scale,
             3.0,
             theme.foreground,
             FontId::Futural,
         );
         if self.focused_ui == FocusUi::Equation && self.history_selection.is_none() {
-            let mut cursor_x_pos = text_to_pos(
-                &equation_disp,
-                margin as f32,
-                eq_scale,
+            let cursor_x = text_to_pos(
+                equation_disp,
+                margin,
+                eq_layout.scale,
                 self.current_eq.cursor,
                 FontId::Futural,
             );
-            cursor_x_pos -= 2.0;
-            if cursor_x_pos < 2.0 {
-                cursor_x_pos = 2.0;
-            }
             platform.draw_line(
-                Vec2::new(cursor_x_pos + 5.0, eq_y - 16.0),
-                Vec2::new(cursor_x_pos + 5.0, eq_y + 13.0),
+                Vec2::new(cursor_x, eq_center_y - eq_layout.height * 0.5),
+                Vec2::new(cursor_x, eq_center_y + eq_layout.height * 0.5),
                 theme.emphasis_2,
                 2,
             );
         }
 
-        // draw result -------------
-
         let result_disp = core::str::from_utf8(&self.current_result[..self.current_result_len])
             .unwrap_or("Invalid UTF-8");
-        let ans_scale = match self.current_result_len {
-            x if x > 12 => 8.0,
-            _ => 10.0,
-        };
+        let result_center_y = 194.0;
+        let equals_layout = FittedText::new("=", 10.0, 22.0, 26.0, result_center_y);
+        let ans_layout = FittedText::new(
+            result_disp,
+            10.0,
+            CANVAS_WIDTH as f32 - margin * 2.0 - 24.0,
+            26.0,
+            result_center_y,
+        );
         draw_text(
             platform,
             "=",
-            margin as f32,
-            eq_y + 31.0,
-            ans_scale,
+            margin,
+            equals_layout.y,
+            equals_layout.scale,
             2.0,
             theme.emphasis_2,
             FontId::Futural,
         );
         draw_text(
             platform,
-            &result_disp,
-            (margin + 24) as f32,
-            eq_y + 31.0,
-            ans_scale,
+            result_disp,
+            margin + 24.0,
+            ans_layout.y,
+            ans_layout.scale,
             4.0,
             theme.foreground,
             FontId::Futural,
@@ -1360,6 +1416,62 @@ mod tests {
             }
         }
         calculator.handle_shift_tap(&ctx);
+    }
+
+    #[test]
+    fn calculator_text_fitting_uses_glyph_widths() {
+        let narrow = FittedText::new("iiiiiiiiiiii", 10.0, 100.0, 100.0, 0.0);
+        let wide = FittedText::new("WWWWWWWWWWWW", 10.0, 100.0, 100.0, 0.0);
+        assert!(narrow.scale > wide.scale);
+        assert_eq!(FittedText::new("3(4)", 10.0, 312.0, 100.0, 0.0).scale, 10.0);
+    }
+
+    #[test]
+    fn calculator_text_fitting_stays_in_its_row() {
+        for text in [
+            "123456789012345678901234567890123456789012345678",
+            "888888888888888888888888888888888888888888888888",
+            "((((1+2)*3)/4)^5)",
+            "Syntax error: unexpected function call",
+            "-1.2345678901234567e-100",
+            "gyp()[]",
+            "1",
+        ] {
+            for (max_scale, width, height, center_y) in [
+                (10.0, 312.0, 28.0, 162.0),
+                (10.0, 288.0, 26.0, 194.0),
+                (6.0, 298.0, 13.0, 116.5),
+                (6.0, 284.0, 13.0, 136.5),
+            ] {
+                let layout = FittedText::new(text, max_scale, width, height, center_y);
+                assert!(layout.scale > 0.0 && layout.scale <= max_scale);
+                assert!(text_width(text, layout.scale, FontId::Futural) <= width + 0.001);
+                let (min_y, max_y) = text_vertical_bounds(text, FontId::Futural).unwrap();
+                let font_scale = layout.scale / fonts::get_font(FontId::Futural).units_per_em;
+                let top = layout.y + min_y * font_scale;
+                let bottom = layout.y + max_y * font_scale;
+                assert!(top >= center_y - height * 0.5 - 0.001, "{text}");
+                assert!(bottom <= center_y + height * 0.5 + 0.001, "{text}");
+                assert!(((top + bottom) * 0.5 - center_y).abs() < 0.001);
+                for cursor in 0..=text.len() {
+                    let x = text_to_pos(text, 4.0, layout.scale, cursor, FontId::Futural);
+                    assert!(x >= 4.0 && x <= 4.0 + width + 0.001);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn calculator_cursor_fits_empty_and_single_stroke_text() {
+        for text in ["", " ", "-", ".", "_"] {
+            let layout = FittedText::new(text, 10.0, 312.0, 32.0, 162.0);
+            assert!(layout.y.is_finite());
+            assert!(layout.height >= 4.0 && layout.height <= 32.0);
+        }
+        let layout = FittedText::new("123", 10.0, 0.0, 0.0, 162.0);
+        assert_eq!(layout.scale, 0.0);
+        assert_eq!(layout.height, 0.0);
+        assert_eq!(layout.y, 162.0);
     }
 
     #[test]

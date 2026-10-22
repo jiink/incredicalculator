@@ -21,6 +21,8 @@ In the scientific calculator's Normal mode, press and release Shift alone to ins
 
 The scientific calculator supports implicit multiplication next to parentheses: `3(4)`, `(3)(4)`, and `(3)4` all evaluate to `12`. Function calls such as `sqrt(9)` remain unchanged. Implicit multiplication has the same precedence as `*`.
 
+In both calculator modes, equations, results, and history entries shrink to fit their available width and height using the font's actual glyph measurements. Text is vertically centered, and the editor cursor follows the fitted text size.
+
 To run the simulator:
 - `cd incredicalculator_pc && cargo run`
 
