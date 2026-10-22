@@ -1,11 +1,13 @@
 use crate::audio_engine::AudioEngine;
 use crate::graphics::Vitmap;
-use crate::input::{IcKey, KeyState};
+use crate::input::{IcKey, KeyMode, KeyState};
 use crate::platform::IcPlatform;
 use rgb::RGB8;
 
 pub struct InputContext<'a> {
+    /// Physical key transitions with effective (possibly latched) modifier held states.
     pub key_states: &'a [KeyState; IcKey::COUNT],
+    pub key_mode: KeyMode,
 }
 
 impl<'a> InputContext<'a> {

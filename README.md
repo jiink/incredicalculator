@@ -7,9 +7,17 @@ To build the project:
     - To build the browser version, run `rustup target add wasm32-unknown-unknown` once, then `cargo build --target wasm32-unknown-unknown --manifest-path incredicalculator_web/Cargo.toml`
     - Or just cd into the respective subdirectory and run cargo build
 
-Press and release Super alone to open or close the apps menu. In the apps menu, Func1 (Backspace) returns to the previous app; in settings, it returns to the apps menu. While an app is active, Backspace is handled only by that app.
+In Settings, select **Keys** and press Enter (Func6) to cycle through **Normal**, **Sticky**, and **Toggle**. The mode is shared by all apps and remains selected until changed or the calculator restarts.
 
-In the scientific calculator, press and release Shift alone to insert a decimal point (`.`). Pressing another key during the tap cancels this shortcut; existing Shift combinations remain unchanged. The programmer calculator is unaffected.
+- **Normal:** hold Shift or Super while pressing another key.
+- **Sticky:** tap Shift or Super to arm it for the next non-modifier keystroke. It clears when that keystroke and the modifier are released. Tapping an armed modifier again cancels it; holding modifiers for ordinary chords also works.
+- **Toggle:** press Shift or Super to turn it on; press it again to turn it off. It stays active across multiple keystrokes.
+
+In Sticky and Toggle modes, a blue border around the screen indicates active Shift, and a green border indicates active Super. When both modifiers are active, the blue outer border and green inner border are both visible. Changing modes clears latched modifiers.
+
+Press and release Super alone to open or close the apps menu. In Sticky and Toggle modes, starting with Super off, tap it twice: once to latch it on, then again to turn it off and toggle the menu on release. Pressing another key during that press/release sequence cancels the menu gesture. **Super + Backspace (Func1)** also toggles the menu in every mode. In the apps menu, Backspace returns to the previous app; in settings, it returns to the apps menu. Unmodified Backspace inside an app is handled only by that app.
+
+In the scientific calculator's Normal mode, press and release Shift alone to insert a decimal point (`.`). Pressing another key during the tap cancels this shortcut. In Sticky and Toggle modes, the tap controls the modifier instead; use Shift + Num6 or Super + Num0 to enter a decimal point. The programmer calculator is unaffected by the decimal-point shortcut.
 
 To run the simulator:
 - `cd incredicalculator_pc && cargo run`
@@ -18,7 +26,7 @@ To run the RP2350 project:
 - `cd incredicalculator_rp && cargo run --release`
 - (it will still work if you don't put --release, but it will run like 10x slower and have like 3x the memory usage)
 
-To enter ROM BOOTSEL mode, hold any calculator key while powering on or resetting the RP2350. The firmware samples the key matrix once during startup, displays “Entering BOOTSEL mode...” for about a second, then reboots into BOOTSEL. Pressing Super+Shift during normal operation no longer triggers BOOTSEL.
+To enter ROM BOOTSEL mode, hold Super while powering on or resetting the RP2350. Other keys alone do not trigger BOOTSEL. The firmware samples the key matrix once during startup, displays “Entering BOOTSEL mode...” for about a second, then reboots into BOOTSEL. Pressing Super+Shift during normal operation no longer triggers BOOTSEL.
 
 The RP2350 firmware disables the unused USB controller, USB clock, ADC clock, and USB PLL during initialization. USB remains available in ROM BOOTSEL mode; normal calculator operation does not provide USB functionality. RTT logging is unaffected.
 

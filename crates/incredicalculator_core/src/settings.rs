@@ -1,6 +1,6 @@
 use crate::app::InputContext;
 use crate::fonts::FontId;
-use crate::input::IcKey;
+use crate::input::{IcKey, KeyMode};
 use crate::platform::{rgb8_hex, IcPlatform};
 use crate::text::draw_text_f;
 use crate::ui::{MathInput, MathInputMode};
@@ -16,9 +16,15 @@ enum IntegerSettingKind {
     ScreenTimeout,
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Copy)]
 enum CheckboxSettingKind {
     StickyKeys,
+}
+
+#[derive(Clone, Copy)]
+enum ChoiceSettingKind {
+    KeyMode,
 }
 
 #[derive(Clone, Copy)]
@@ -34,14 +40,19 @@ enum SettingDisplay {
         suffix: &'static str,
         zero_suffix: Option<&'static str>,
     },
+    #[allow(dead_code)]
     Checkbox {
         kind: CheckboxSettingKind,
+    },
+    Choice {
+        kind: ChoiceSettingKind,
     },
 }
 
 enum EntryValue {
     Integer { value: u32, suffix: &'static str },
     Checkbox { checked: bool },
+    Choice { label: &'static str },
 }
 
 const SETTINGS: [SettingEntry; 2] = [
@@ -54,9 +65,9 @@ const SETTINGS: [SettingEntry; 2] = [
         },
     },
     SettingEntry {
-        label: "Sticky keys",
-        display: SettingDisplay::Checkbox {
-            kind: CheckboxSettingKind::StickyKeys,
+        label: "Keys",
+        display: SettingDisplay::Choice {
+            kind: ChoiceSettingKind::KeyMode,
         },
     },
 ];
@@ -66,6 +77,7 @@ pub struct SettingsMenu {
     first_visible_entry: usize,
     editing_value: bool,
     sticky_keys_enabled: bool,
+    key_mode: KeyMode,
     value_input: MathInput<INPUT_CHAR_LIMIT>,
 }
 
@@ -76,6 +88,7 @@ impl SettingsMenu {
             first_visible_entry: 0,
             editing_value: false,
             sticky_keys_enabled: false,
+            key_mode: KeyMode::Normal,
             value_input: MathInput::new(
                 IVec2::new(200, 38),
                 IVec2::new(112, 23),
@@ -87,6 +100,10 @@ impl SettingsMenu {
                 None,
             ),
         }
+    }
+
+    pub fn key_mode(&self) -> KeyMode {
+        self.key_mode
     }
 
     pub fn open(&mut self) {
@@ -144,6 +161,9 @@ impl SettingsMenu {
                         CheckboxSettingKind::StickyKeys => {
                             self.sticky_keys_enabled = !self.sticky_keys_enabled;
                         }
+                    },
+                    SettingDisplay::Choice { kind } => match kind {
+                        ChoiceSettingKind::KeyMode => self.key_mode = self.key_mode.next(),
                     },
                 }
             }
@@ -214,7 +234,7 @@ impl SettingsMenu {
         let instructions = if self.editing_value {
             ""
         } else {
-            "^/v: Navigate  =: Edit"
+            "^/v: Navigate  =: Edit/Cycle"
         };
         draw_text_f(
             platform,
@@ -254,6 +274,11 @@ impl SettingsMenu {
                     CheckboxSettingKind::StickyKeys => self.sticky_keys_enabled,
                 },
             },
+            SettingDisplay::Choice { kind } => EntryValue::Choice {
+                label: match kind {
+                    ChoiceSettingKind::KeyMode => self.key_mode.label(),
+                },
+            },
         }
     }
 
@@ -272,6 +297,18 @@ fn draw_entry_value(platform: &mut dyn IcPlatform, value: EntryValue, y: i32, co
             draw_text_f(
                 platform,
                 format_args!("{}{}", value, suffix),
+                205.0,
+                (y + 19) as f32,
+                5.0,
+                2.0,
+                color,
+                FontId::Futural,
+            );
+        }
+        EntryValue::Choice { label } => {
+            draw_text_f(
+                platform,
+                format_args!("{}", label),
                 205.0,
                 (y + 19) as f32,
                 5.0,

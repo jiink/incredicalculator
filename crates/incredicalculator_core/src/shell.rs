@@ -10,7 +10,7 @@ use crate::fonts::FontId;
 use crate::graphics;
 use crate::graphics::{draw_vitmap, Vitmap};
 use crate::input::IcKey;
-use crate::input::KeyState;
+use crate::input::{KeyMode, KeyState, ModifierKeys};
 use crate::platform::rgb8_hex;
 use crate::platform::{IcPlatform, CANVAS_HEIGHT, CANVAS_WIDTH};
 use crate::settings::SettingsMenu;
@@ -21,6 +21,10 @@ use num_traits::clamp;
 use num_traits::FromPrimitive;
 use rgb::Rgb;
 use rgb::*;
+
+#[cfg(test)]
+#[path = "shell_tests.rs"]
+mod tests;
 
 const APPS_PER_PAGE: usize = 6;
 const KEY_HINT_FADE_DELAY_MS: u64 = 2000;
@@ -61,6 +65,7 @@ pub struct IcShell {
     settings_menu: SettingsMenu,
     key_states: [KeyState; IcKey::COUNT],
     super_interrupted: bool,
+    modifiers: ModifierKeys,
     adjusting_something: Option<Adjustable>,
     audio: AudioEngine,
 }
@@ -85,6 +90,7 @@ impl IcShell {
             settings_menu: SettingsMenu::new(),
             key_states: [KeyState::default(); IcKey::COUNT],
             super_interrupted: false,
+            modifiers: ModifierKeys::default(),
             adjusting_something: None,
             audio: AudioEngine::new(),
         }
@@ -405,9 +411,14 @@ impl IcShell {
             s.just_released = !s.is_down && s.was_down;
             s.was_down = s.is_down;
         }
+        let key_mode = self.settings_menu.key_mode();
+        self.modifiers.set_mode(key_mode);
+        let effective_states = self.modifiers.apply(&self.key_states);
         let ctx = InputContext {
-            key_states: &self.key_states,
+            key_states: &effective_states,
+            key_mode,
         };
+        let super_backspace = ctx.is_super() && self.key_states[IcKey::Func1 as usize].just_pressed;
         let backspace_closes_menu = self.active_app_idx.is_none()
             && !self.settings_open
             && self.key_states[IcKey::Func1 as usize].just_pressed;
@@ -428,8 +439,11 @@ impl IcShell {
                 self.super_interrupted = true;
             }
             let mut input_consumed_by_shell: bool = false;
-            if ctx.is_down(IcKey::Super) {
+            if ctx.is_super() {
                 match key {
+                    IcKey::Func1 => {
+                        input_consumed_by_shell = true;
+                    }
                     IcKey::Func6 => {
                         self.adjusting_something = Some(Adjustable::Brightness);
                         input_consumed_by_shell = true;
@@ -459,7 +473,7 @@ impl IcShell {
                 if !input_consumed_by_shell {
                     self.apps[app_idx].on_key(key, &ctx);
                 }
-            } else {
+            } else if !input_consumed_by_shell {
                 if self.settings_open {
                     if self.settings_menu.handle_key(key, &ctx, platform) {
                         self.settings_open = false;
@@ -493,7 +507,10 @@ impl IcShell {
             }
         }
         if backspace_closes_menu
-            || (self.key_states[IcKey::Super as usize].just_released && !self.super_interrupted)
+            || super_backspace
+            || (self.key_states[IcKey::Super as usize].just_released
+                && !ctx.is_super()
+                && !self.super_interrupted)
         {
             if self.active_app_idx.is_some() {
                 self.last_active_app_idx = self.active_app_idx;
@@ -526,6 +543,30 @@ impl IcShell {
             Self::draw_adjustable_readout(platform, adjustable, v);
         }
         self.draw_battery(platform);
+        if key_mode != KeyMode::Normal {
+            for (active, inset, color) in [
+                (ctx.is_shifted(), 1, rgb8_hex(0x0000ff)),
+                (
+                    ctx.is_super(),
+                    if ctx.is_shifted() { 3 } else { 1 },
+                    rgb8_hex(0x00ff00),
+                ),
+            ] {
+                if active {
+                    platform.draw_rectangle(
+                        IVec2::splat(inset),
+                        IVec2::new(
+                            CANVAS_WIDTH as i32 - 1 - inset,
+                            CANVAS_HEIGHT as i32 - 1 - inset,
+                        ),
+                        color,
+                        2,
+                        None,
+                    );
+                }
+            }
+        }
+        self.modifiers.set_mode(self.settings_menu.key_mode());
     }
 }
 

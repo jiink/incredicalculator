@@ -4,7 +4,7 @@ use crate::audio_engine::AudioEngine;
 use crate::fonts::FontId;
 use crate::graphics::{Vitmap};
 use crate::graphics;
-use crate::input::IcKey;
+use crate::input::{IcKey, KeyMode};
 use crate::platform::rgb8_hex;
 use crate::platform::IcPlatform;
 use crate::platform::CANVAS_WIDTH;
@@ -728,7 +728,8 @@ impl Calculator {
     }
 
     fn handle_shift_tap(&mut self, ctx: &InputContext) {
-        if self.engine_mode != EngineMode::Scientific {
+        if self.engine_mode != EngineMode::Scientific || ctx.key_mode != KeyMode::Normal {
+            self.shift_tap_pending = false;
             return;
         }
 
@@ -1323,13 +1324,37 @@ mod tests {
             state.just_released = !state.is_down && state.was_down;
             state.was_down = state.is_down;
         }
-        let ctx = InputContext { key_states: states };
+        let ctx = InputContext {
+            key_states: states,
+            key_mode: KeyMode::Normal,
+        };
         for i in 0..IcKey::COUNT {
             if states[i].just_pressed {
                 calculator.on_key(IcKey::from_usize(i).unwrap(), &ctx);
             }
         }
         calculator.handle_shift_tap(&ctx);
+    }
+
+    #[test]
+    fn shift_tap_does_not_insert_a_dot_in_latching_modes() {
+        for key_mode in [KeyMode::Sticky, KeyMode::Toggle] {
+            let mut calculator = Calculator::new(EngineMode::Scientific);
+            let mut states = [KeyState::default(); IcKey::COUNT];
+            states[IcKey::Shift as usize].just_pressed = true;
+            states[IcKey::Shift as usize].is_down = true;
+            calculator.handle_shift_tap(&InputContext {
+                key_states: &states,
+                key_mode,
+            });
+            states[IcKey::Shift as usize].just_pressed = false;
+            states[IcKey::Shift as usize].just_released = true;
+            calculator.handle_shift_tap(&InputContext {
+                key_states: &states,
+                key_mode,
+            });
+            assert_eq!(calculator.current_eq.as_str(), "");
+        }
     }
 
     #[test]

@@ -1185,7 +1185,7 @@ async fn main(spawner: Spawner) {
 
     let mut key_matrix = KeyMatrix::new(matrix_rows, matrix_cols);
     // Sample once before display initialization; later key presses are normal input.
-    let enter_bootsel = key_matrix.scan().iter().any(|&pressed| pressed);
+    let enter_bootsel = key_matrix.scan()[IcKey::Super as usize];
 
     let _led = Output::new(p.PIN_22, Level::Low);
     let rst = p.PIN_47;
