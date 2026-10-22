@@ -19,6 +19,8 @@ Press and release Super alone to open or close the apps menu. In Sticky and Togg
 
 In the scientific calculator's Normal mode, press and release Shift alone to insert a decimal point (`.`). Pressing another key during the tap cancels this shortcut. In Sticky and Toggle modes, the tap controls the modifier instead; use Shift + Num6 or Super + Num0 to enter a decimal point. The programmer calculator is unaffected by the decimal-point shortcut.
 
+The scientific calculator supports implicit multiplication next to parentheses: `3(4)`, `(3)(4)`, and `(3)4` all evaluate to `12`. Function calls such as `sqrt(9)` remain unchanged. Implicit multiplication has the same precedence as `*`.
+
 To run the simulator:
 - `cd incredicalculator_pc && cargo run`
 

@@ -290,11 +290,37 @@ impl ScientificEngine {
     pub fn default() -> Self {
         Self {}
     }
+
+    fn expand_implicit_multiplication(equation: &str) -> String {
+        use exp_rs::{lexer::Lexer, types::TokenKind};
+
+        let mut expanded = String::with_capacity(equation.len());
+        let mut lexer = Lexer::new(equation);
+        let mut previous = TokenKind::End;
+        let mut copied = 0;
+        while let Some(token) = lexer.next_token() {
+            if token.kind == TokenKind::Error {
+                break;
+            }
+            if (token.kind == TokenKind::Open
+                && matches!(previous, TokenKind::Number | TokenKind::Close))
+                || (previous == TokenKind::Close && token.kind == TokenKind::Number)
+            {
+                expanded.push_str(&equation[copied..token.position]);
+                expanded.push('*');
+                copied = token.position;
+            }
+            previous = token.kind;
+        }
+        expanded.push_str(&equation[copied..]);
+        expanded
+    }
 }
 
 impl CalcEngine for ScientificEngine {
     fn evaluate(&self, equation: &str) -> String {
-        match exp_rs::interp(equation, None) {
+        let equation = Self::expand_implicit_multiplication(equation);
+        match exp_rs::interp(&equation, None) {
             Ok(v) => format!("{}", v),
             Err(msg) => msg.to_string(),
         }
@@ -1334,6 +1360,58 @@ mod tests {
             }
         }
         calculator.handle_shift_tap(&ctx);
+    }
+
+    #[test]
+    fn scientific_parentheses_imply_multiplication() {
+        let engine = ScientificEngine::default();
+        for (equation, expected) in [
+            ("3(4)", "12"),
+            ("3 (4)", "12"),
+            ("(3)(4)", "12"),
+            ("(3)4", "12"),
+            ("(3) .5", "1.5"),
+            ("2(3(4))", "24"),
+            ("2(3+4)^2", "98"),
+            ("-3(-4)", "12"),
+            ("1.5(4)", "6"),
+            ("1e-2(4)", "0.04"),
+            ("2(sqrt(9))", "6"),
+            ("sin(0)(4)", "0"),
+        ] {
+            assert_eq!(engine.evaluate(equation), expected, "{equation}");
+        }
+    }
+
+    #[test]
+    fn scientific_preprocessing_preserves_explicit_syntax() {
+        let engine = ScientificEngine::default();
+        for equation in [
+            "3*4",
+            "2+3*4",
+            "sqrt(9)",
+            "sin (0)",
+            "atan2(0,1)",
+            "log10(100)",
+            "pow(2,3)",
+            "1e-2+4",
+            "3+()",
+            "(",
+            "3 4",
+            "unknown2(4)",
+            "3@4",
+            "",
+        ] {
+            assert_eq!(
+                ScientificEngine::expand_implicit_multiplication(equation),
+                equation
+            );
+            let expected = match exp_rs::interp(equation, None) {
+                Ok(value) => format!("{}", value),
+                Err(error) => error.to_string(),
+            };
+            assert_eq!(engine.evaluate(equation), expected, "{equation}");
+        }
     }
 
     #[test]
