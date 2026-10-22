@@ -204,6 +204,33 @@ fn two_super_taps_open_and_close_menu_in_latching_modes() {
 }
 
 #[test]
+fn toggle_super_used_between_taps_does_not_open_menu_when_disengaged() {
+    for key in [IcKey::Num1, IcKey::Shift, IcKey::Func5, IcKey::Func6] {
+        let (mut shell, mut platform, _) = setup(KeyMode::Toggle);
+        tap(&mut shell, &mut platform, IcKey::Super);
+        tap(&mut shell, &mut platform, key);
+        tap(&mut shell, &mut platform, IcKey::Super);
+        assert_eq!(shell.active_app_idx, Some(0), "interrupting key: {key:?}");
+        assert!(!has_border(&platform, 1, 0x00ff00));
+        // A fresh uninterrupted pair must still open the menu.
+        tap(&mut shell, &mut platform, IcKey::Super);
+        tap(&mut shell, &mut platform, IcKey::Super);
+        assert!(shell.active_app_idx.is_none());
+    }
+}
+
+#[test]
+fn toggle_super_used_between_taps_does_not_close_menu_when_disengaged() {
+    let (mut shell, mut platform, _) = setup(KeyMode::Toggle);
+    shell.active_app_idx = None;
+    shell.last_active_app_idx = Some(0);
+    tap(&mut shell, &mut platform, IcKey::Super);
+    tap(&mut shell, &mut platform, IcKey::Shift);
+    tap(&mut shell, &mut platform, IcKey::Super);
+    assert!(shell.active_app_idx.is_none());
+}
+
+#[test]
 fn interrupted_super_release_does_not_open_menu_in_latching_modes() {
     for mode in [KeyMode::Sticky, KeyMode::Toggle] {
         let (mut shell, mut platform, _) = setup(mode);

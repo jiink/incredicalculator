@@ -413,6 +413,7 @@ impl IcShell {
         }
         let key_mode = self.settings_menu.key_mode();
         self.modifiers.set_mode(key_mode);
+        let super_was_latched = self.modifiers.is_super_latched();
         let effective_states = self.modifiers.apply(&self.key_states);
         let ctx = InputContext {
             key_states: &effective_states,
@@ -422,7 +423,8 @@ impl IcShell {
         let backspace_closes_menu = self.active_app_idx.is_none()
             && !self.settings_open
             && self.key_states[IcKey::Func1 as usize].just_pressed;
-        if self.key_states[IcKey::Super as usize].just_pressed {
+        // Keep interruptions across both taps of a latched Super sequence.
+        if self.key_states[IcKey::Super as usize].just_pressed && !super_was_latched {
             self.super_interrupted = false;
         }
         for i in 0..IcKey::COUNT {
@@ -434,7 +436,7 @@ impl IcShell {
             };
             if !self.super_interrupted
                 && key != IcKey::Super
-                && self.key_states[IcKey::Super as usize].is_down
+                && (self.key_states[IcKey::Super as usize].is_down || ctx.is_super())
             {
                 self.super_interrupted = true;
             }
