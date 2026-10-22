@@ -5,6 +5,7 @@ extern crate alloc;
 
 mod backlight;
 mod power;
+mod settings_storage;
 
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use core::{fmt, mem};
@@ -14,6 +15,7 @@ use embassy_embedded_hal::shared_bus::asynch::spi::SpiDeviceWithConfig;
 use embassy_executor::{Executor, Spawner};
 use embassy_futures::select::{Either, Either3, select, select3, select4};
 use embassy_rp::bind_interrupts;
+use embassy_rp::flash::Flash;
 use embassy_rp::gpio::{Input, Level, Output, Pull};
 use embassy_rp::multicore::{Stack, spawn_core1};
 use embassy_rp::peripherals::{PIO0, SPI1};
@@ -37,7 +39,7 @@ use embedded_graphics::primitives::PrimitiveStyleBuilder;
 use embedded_graphics::text::Text;
 use glam::{IVec2, Vec2};
 use incredicalculator_core::input::IcKey;
-use incredicalculator_core::platform::{rgb8_hex, IcPlatform};
+use incredicalculator_core::platform::{IcPlatform, SETTINGS_STORAGE_LEN, rgb8_hex};
 use incredicalculator_core::shell::IcShell;
 use lcd_async::interface::SpiInterface;
 use lcd_async::models::ST7789;
@@ -46,6 +48,7 @@ use lcd_async::raw_framebuf::RawFrameBuf;
 use lcd_async::{Builder, Display};
 use max170xx::Max17048;
 use rgb::RGB8;
+use settings_storage::SettingsStorage;
 use static_cell::{ConstStaticCell, StaticCell};
 use {defmt_rtt as _, panic_probe as _};
 
@@ -195,6 +198,10 @@ struct InputBufferEvent {
 
 pub struct IcRpPlatform<'d> {
     canvas: Option<FrameBuffer>,
+    // Flash access is async, so the main loop loads settings before the first
+    // update and writes `pending_settings_save` after each update.
+    loaded_settings: Option<[u8; SETTINGS_STORAGE_LEN]>,
+    pending_settings_save: Option<[u8; SETTINGS_STORAGE_LEN]>,
     backlight: Pwm<'d>,
     backlight2: Pwm<'d>,
     brightness: u8,
@@ -209,6 +216,8 @@ impl<'d> IcRpPlatform<'d> {
     fn new(backlight: Pwm<'d>, backlight2: Pwm<'d>, canvas: FrameBuffer) -> Self {
         let mut platform = Self {
             canvas: Some(canvas),
+            loaded_settings: None,
+            pending_settings_save: None,
             backlight,
             backlight2,
             brightness: 128,
@@ -452,6 +461,14 @@ impl<'d> IcPlatform for IcRpPlatform<'d> {
     fn set_screen_timeout_seconds(&mut self, seconds: u32) {
         self.screen_timeout_seconds = seconds;
         self.update_backlight();
+    }
+
+    fn load_settings(&mut self) -> Option<[u8; SETTINGS_STORAGE_LEN]> {
+        self.loaded_settings
+    }
+
+    fn save_settings(&mut self, data: &[u8; SETTINGS_STORAGE_LEN]) {
+        self.pending_settings_save = Some(*data);
     }
 }
 
@@ -1299,6 +1316,8 @@ async fn main(spawner: Spawner) {
             Timer::after_secs(1).await;
         }
     }
+    let mut settings_storage = SettingsStorage::new(Flash::new(p.FLASH, p.DMA_CH2));
+    ic_rp_platform.loaded_settings = settings_storage.load().await;
     let spare_canvas = FrameBuffer {
         pixels: CANVAS_DATA1.take(),
     };
@@ -1439,6 +1458,10 @@ async fn main(spawner: Spawner) {
 
             READY_FRAME_BUFFERS.send(ic_rp_platform.take_canvas()).await;
             screen_dirty = false;
+        }
+
+        if let Some(data) = ic_rp_platform.pending_settings_save.take() {
+            settings_storage.save(&data).await;
         }
 
         if icalc.has_active_audio() && !audio_is_running {

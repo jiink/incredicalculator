@@ -3,8 +3,12 @@ MEMORY {
      * The RP2350 has either external or internal flash.
      *
      * 2 MiB is a safe default here, although a Pico 2 has 4 MiB.
+     *
+     * The last 16 KiB (4 sectors) of those 2 MiB are reserved for saved
+     * settings (see `SETTINGS_SECTORS` in settings_storage.rs), so code never
+     * grows into them.
      */
-    FLASH : ORIGIN = 0x10000000, LENGTH = 2048K
+    FLASH : ORIGIN = 0x10000000, LENGTH = 2032K
     /*
      * RAM consists of 8 banks, SRAM0-SRAM7, with a striped mapping.
      * This is usually good for performance, as it distributes load on

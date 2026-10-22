@@ -63,6 +63,7 @@ pub struct IcShell {
     selector_hints_started_at: Option<u64>,
     settings_open: bool,
     settings_menu: SettingsMenu,
+    settings_loaded: bool,
     key_states: [KeyState; IcKey::COUNT],
     super_interrupted: bool,
     modifiers: ModifierKeys,
@@ -88,6 +89,7 @@ impl IcShell {
             selector_hints_started_at: None,
             settings_open: false,
             settings_menu: SettingsMenu::new(),
+            settings_loaded: false,
             key_states: [KeyState::default(); IcKey::COUNT],
             super_interrupted: false,
             modifiers: ModifierKeys::default(),
@@ -406,6 +408,10 @@ impl IcShell {
     }
 
     pub fn update(&mut self, platform: &mut dyn IcPlatform) {
+        if !self.settings_loaded {
+            self.settings_menu.load(platform);
+            self.settings_loaded = true;
+        }
         for s in self.key_states.iter_mut() {
             s.just_pressed = s.is_down && !s.was_down;
             s.just_released = !s.is_down && s.was_down;
@@ -479,6 +485,7 @@ impl IcShell {
                 if self.settings_open {
                     if self.settings_menu.handle_key(key, &ctx, platform) {
                         self.settings_open = false;
+                        self.settings_menu.close(platform);
                     }
                 } else {
                     let action = self
@@ -522,6 +529,7 @@ impl IcShell {
                 self.audio.release_all();
             } else if self.settings_open {
                 self.settings_open = false;
+                self.settings_menu.close(platform);
             } else if let Some(prev) = self.last_active_app_idx {
                 self.active_app_idx = Some(prev);
                 self.apps[prev].on_enter();

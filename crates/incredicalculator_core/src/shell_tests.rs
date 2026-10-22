@@ -1,4 +1,5 @@
 use super::*;
+use crate::platform::SETTINGS_STORAGE_LEN;
 use alloc::rc::Rc;
 use alloc::vec::Vec;
 use core::cell::RefCell;
@@ -9,6 +10,8 @@ type RecordedKeys = Rc<RefCell<Vec<(IcKey, bool, bool)>>>;
 #[derive(Default)]
 struct TestPlatform {
     rectangles: Vec<(IVec2, IVec2, RGB8, u32, Option<RGB8>)>,
+    stored_settings: Option<[u8; SETTINGS_STORAGE_LEN]>,
+    settings_saves: usize,
 }
 
 impl IcPlatform for TestPlatform {
@@ -57,6 +60,13 @@ impl IcPlatform for TestPlatform {
         60
     }
     fn set_screen_timeout_seconds(&mut self, _: u32) {}
+    fn load_settings(&mut self) -> Option<[u8; SETTINGS_STORAGE_LEN]> {
+        self.stored_settings
+    }
+    fn save_settings(&mut self, data: &[u8; SETTINGS_STORAGE_LEN]) {
+        self.stored_settings = Some(*data);
+        self.settings_saves += 1;
+    }
 }
 
 struct RecordingApp(RecordedKeys);
@@ -139,6 +149,40 @@ fn settings_enter_cycles_all_modes_without_entering_text_editor() {
     tap(&mut shell, &mut platform, IcKey::Func1);
     assert!(!shell.settings_open);
     assert!(shell.active_app_idx.is_none());
+}
+
+#[test]
+fn settings_are_saved_on_exit_only_when_changed_and_restored_on_boot() {
+    let mut shell = IcShell::new();
+    let mut platform = TestPlatform::default();
+    shell.active_app_idx = None;
+    shell.update(&mut platform);
+
+    // Opening and leaving without changes does not write storage.
+    tap(&mut shell, &mut platform, IcKey::Num2);
+    assert!(shell.settings_open);
+    tap(&mut shell, &mut platform, IcKey::Func1);
+    assert!(!shell.settings_open);
+    assert_eq!(platform.settings_saves, 0);
+
+    // Cycling the key mode back to where it started is not a change either.
+    tap(&mut shell, &mut platform, IcKey::Num2);
+    tap(&mut shell, &mut platform, IcKey::Num2);
+    for _ in 0..3 {
+        tap(&mut shell, &mut platform, IcKey::Func6);
+    }
+    tap(&mut shell, &mut platform, IcKey::Func1);
+    assert_eq!(platform.settings_saves, 0);
+
+    tap(&mut shell, &mut platform, IcKey::Num2);
+    tap(&mut shell, &mut platform, IcKey::Num2);
+    tap(&mut shell, &mut platform, IcKey::Func6);
+    tap(&mut shell, &mut platform, IcKey::Func1);
+    assert_eq!(platform.settings_saves, 1);
+
+    let mut rebooted = IcShell::new();
+    rebooted.update(&mut platform);
+    assert_eq!(rebooted.settings_menu.key_mode(), KeyMode::Sticky);
 }
 
 #[test]

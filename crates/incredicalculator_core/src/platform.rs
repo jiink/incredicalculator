@@ -4,6 +4,8 @@ use rgb::*;
 
 pub const CANVAS_WIDTH: u32 = 320;
 pub const CANVAS_HEIGHT: u32 = 240;
+/// Size of the opaque settings blob a platform persists between sessions.
+pub const SETTINGS_STORAGE_LEN: usize = 9;
 
 pub trait IcPlatform {
     fn draw_line(&mut self, start: Vec2, end: Vec2, color: RGB8, width: u32);
@@ -46,6 +48,12 @@ pub trait IcPlatform {
     fn set_volume(&mut self, value: u8);
     fn get_screen_timeout_seconds(&self) -> u32;
     fn set_screen_timeout_seconds(&mut self, seconds: u32);
+    /// Returns the blob last passed to `save_settings`, if anything was saved.
+    /// Platforms without persistent storage can keep these defaults.
+    fn load_settings(&mut self) -> Option<[u8; SETTINGS_STORAGE_LEN]> {
+        None
+    }
+    fn save_settings(&mut self, _data: &[u8; SETTINGS_STORAGE_LEN]) {}
 }
 
 #[macro_export]

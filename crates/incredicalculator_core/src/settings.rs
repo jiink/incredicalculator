@@ -1,7 +1,7 @@
 use crate::app::InputContext;
 use crate::fonts::FontId;
 use crate::input::{IcKey, KeyMode};
-use crate::platform::{rgb8_hex, IcPlatform};
+use crate::platform::{rgb8_hex, IcPlatform, SETTINGS_STORAGE_LEN};
 use crate::text::draw_text_f;
 use crate::ui::{MathInput, MathInputMode};
 use glam::{IVec2, Vec2};
@@ -72,6 +72,49 @@ const SETTINGS: [SettingEntry; 2] = [
     },
 ];
 
+// Bump the trailing digit whenever the stored layout changes, so old blobs are
+// ignored instead of being misread.
+const STORED_SETTINGS_MAGIC: [u8; 4] = *b"ICS1";
+
+/// The settings that persist between sessions.
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct StoredSettings {
+    screen_timeout_seconds: u32,
+    key_mode: KeyMode,
+}
+
+impl StoredSettings {
+    // Layout: magic (4), screen timeout LE (4), key mode (1). Integrity
+    // checking is left to the platform's storage.
+    fn encode(&self) -> [u8; SETTINGS_STORAGE_LEN] {
+        let mut bytes = [0; SETTINGS_STORAGE_LEN];
+        bytes[0..4].copy_from_slice(&STORED_SETTINGS_MAGIC);
+        bytes[4..8].copy_from_slice(&self.screen_timeout_seconds.to_le_bytes());
+        bytes[8] = match self.key_mode {
+            KeyMode::Normal => 0,
+            KeyMode::Sticky => 1,
+            KeyMode::Toggle => 2,
+        };
+        bytes
+    }
+
+    fn decode(bytes: &[u8; SETTINGS_STORAGE_LEN]) -> Option<Self> {
+        if bytes[0..4] != STORED_SETTINGS_MAGIC {
+            return None;
+        }
+        let key_mode = match bytes[8] {
+            0 => KeyMode::Normal,
+            1 => KeyMode::Sticky,
+            2 => KeyMode::Toggle,
+            _ => return None,
+        };
+        Some(Self {
+            screen_timeout_seconds: u32::from_le_bytes(bytes[4..8].try_into().unwrap()),
+            key_mode,
+        })
+    }
+}
+
 pub struct SettingsMenu {
     selected_entry: usize,
     first_visible_entry: usize,
@@ -79,6 +122,8 @@ pub struct SettingsMenu {
     sticky_keys_enabled: bool,
     key_mode: KeyMode,
     value_input: MathInput<INPUT_CHAR_LIMIT>,
+    /// What the platform currently has stored, or `None` before `load`.
+    persisted: Option<StoredSettings>,
 }
 
 impl SettingsMenu {
@@ -99,11 +144,40 @@ impl SettingsMenu {
                 RGB8::new(0xff, 0xff, 0x00),
                 None,
             ),
+            persisted: None,
         }
     }
 
     pub fn key_mode(&self) -> KeyMode {
         self.key_mode
+    }
+
+    /// Applies the settings saved by a previous session, if there are any.
+    pub fn load(&mut self, platform: &mut dyn IcPlatform) {
+        if let Some(stored) = platform
+            .load_settings()
+            .and_then(|bytes| StoredSettings::decode(&bytes))
+        {
+            platform.set_screen_timeout_seconds(stored.screen_timeout_seconds);
+            self.key_mode = stored.key_mode;
+        }
+        self.persisted = Some(self.stored_settings(platform));
+    }
+
+    /// Call when leaving the menu: saves the settings only if they changed.
+    pub fn close(&mut self, platform: &mut dyn IcPlatform) {
+        let current = self.stored_settings(platform);
+        if self.persisted != Some(current) {
+            platform.save_settings(&current.encode());
+            self.persisted = Some(current);
+        }
+    }
+
+    fn stored_settings(&self, platform: &dyn IcPlatform) -> StoredSettings {
+        StoredSettings {
+            screen_timeout_seconds: platform.get_screen_timeout_seconds(),
+            key_mode: self.key_mode,
+        }
     }
 
     pub fn open(&mut self) {
