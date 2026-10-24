@@ -902,8 +902,8 @@ impl<'d> KeyMatrix<'d> {
             Some(IcKey::Func5),
         ],
         [
-            Some(IcKey::Num0),
             Some(IcKey::Shift),
+            Some(IcKey::Num0),
             Some(IcKey::Super),
             Some(IcKey::Func6),
         ],

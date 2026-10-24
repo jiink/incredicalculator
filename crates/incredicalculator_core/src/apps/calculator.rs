@@ -12,7 +12,6 @@ use crate::text::{draw_text, text_to_pos, text_vertical_bounds, text_width};
 use alloc::boxed::Box;
 use alloc::string::ToString;
 use alloc::{format, string::String};
-use core::num::ParseIntError;
 use glam::{IVec2, Vec2};
 use rgb::*;
 
@@ -478,17 +477,25 @@ impl ProgrammerEngine {
             binary_selection_idx: 0,
         }
     }
+    // Parses a decimal result into its 32-bit pattern. Accepts both the signed
+    // and unsigned 32-bit ranges, so 0x80000000 and -2147483648 are the same bits.
+    fn parse_32bit(input: &str) -> Option<u32> {
+        let val = input.parse::<i64>().ok()?;
+        if val >= i32::MIN as i64 && val <= u32::MAX as i64 {
+            Some(val as u32)
+        } else {
+            None
+        }
+    }
+
     fn binary_widget_set_bit(
         &self,
         bit_idx: u8,
         buffer: &mut LineBuffer<{ EqEntry::EQUATION_MAX_SIZE }>,
         current_result: &str,
     ) {
-        let current_val = match current_result.parse::<i32>() {
-            Ok(s) => s,
-            Err(_) => 0,
-        };
-        let new_val = current_val ^ (1 << bit_idx);
+        let current_val = Self::parse_32bit(current_result).unwrap_or(0);
+        let new_val = (current_val ^ (1 << bit_idx)) as i32;
         let new_str = format!("{}", new_val);
         buffer.set_content(new_str.as_bytes());
     }
@@ -499,7 +506,7 @@ impl ProgrammerEngine {
         buffer: &mut LineBuffer<{ EqEntry::EQUATION_MAX_SIZE }>,
         current_result: &str,
     ) {
-        let current_val = current_result.parse::<i32>().unwrap_or(0);
+        let current_val = Self::parse_32bit(current_result).unwrap_or(0);
         let is_set = (current_val & (1 << self.binary_selection_idx)) != 0;
 
         if target_state != is_set {
@@ -510,27 +517,16 @@ impl ProgrammerEngine {
     // If we wanted to stick to heapless no_std, then we would use write!()
     // instead of format!() and make a struct with a buffer and cursor and
     // implement as_str and fmt::Write for that
-    fn dec_str_to_hex_str(
-        input: &str,
-        include_prefix: bool,
-        uppercase: bool,
-        is_signed: bool,
-    ) -> Result<String, ParseIntError> {
-        let raw_bits: u32 = if is_signed {
-            let val = input.parse::<i32>()?;
-            val as u32
-        } else {
-            input.parse::<u32>()?
-        };
+    fn bits_to_hex_str(raw_bits: u32, include_prefix: bool, uppercase: bool) -> String {
         let hex_str = if uppercase {
             format!("{:08X}", raw_bits)
         } else {
             format!("{:08x}", raw_bits)
         };
         if include_prefix {
-            Ok(format!("0x{}", hex_str))
+            format!("0x{}", hex_str)
         } else {
-            Ok(hex_str)
+            hex_str
         }
     }
 }
@@ -600,29 +596,19 @@ impl CalcEngine for ProgrammerEngine {
         theme: CalculatorTheme,
     ) {
         let margin = 2;
-        let (result_as_int, result_is_int) = match result_str.parse::<i32>() {
-            Ok(s) => (s, true),
-            Err(_) => (0, false),
-        };
-        if result_is_int {
+        if let Some(result_as_int) = Self::parse_32bit(result_str) {
             // draw hex form of ans
-            let (result_as_hex, hex_err) =
-                match Self::dec_str_to_hex_str(&result_str, true, true, true) {
-                    Ok(s) => (s, false),
-                    Err(_) => (String::new(), true),
-                };
-            if !hex_err {
-                draw_text(
-                    platform,
-                    &result_as_hex,
-                    margin as f32,
-                    228.0,
-                    7.0,
-                    2.0,
-                    theme.emphasis_0,
-                    FontId::Futural,
-                );
-            }
+            let result_as_hex = Self::bits_to_hex_str(result_as_int, true, true);
+            draw_text(
+                platform,
+                &result_as_hex,
+                margin as f32,
+                228.0,
+                7.0,
+                2.0,
+                theme.emphasis_0,
+                FontId::Futural,
+            );
             // draw bin form of ans
             let bin_widget_bit1_x: i32 = 310;
             let bin_widget_bit1_y: i32 = 230;
