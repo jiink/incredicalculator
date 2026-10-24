@@ -28,15 +28,15 @@
         width: 286px;
         height: 430px;
         padding: 0;
-        background: rgba(140, 140, 140, 0.72);
+        background: rgba(209, 208, 208, 0.72);
         border: 2px solid rgba(255, 255, 255, 0.12);
         border-radius: 12px;
         box-shadow: 0 14px 40px rgba(0, 0, 0, 0.35);
       }
       .display-slot {
         position: absolute;
-        left: 23px;
-        top: 10px;
+        left: 34px;
+        top: 20px;
         width: 160px;
         height: 120px;
         display: grid;
@@ -64,7 +64,7 @@
         border: 1px solid rgba(255, 255, 255, 0.28);
         border-radius: 8px;
         color: rgba(255, 255, 255, 0.92);
-        background: rgba(255, 255, 255, 0.12);
+        background: rgba(0, 0, 0, 1.0);
         font-size: 1rem;
         font-weight: 700;
         cursor: pointer;
@@ -80,22 +80,22 @@
         pointer-events: none;
       }
       .virtual-key .main-label {
-        left: 18px;
-        top: 18px;
-        font-size: 1.2rem;
-        color: #000;
+        left: 8px;
+        top: 8px;
+        font-size: 1.5rem;
+        color: #ffffff;
       }
       .virtual-key .shift-label {
         right: 7px;
-        bottom: 8px;
+        top: 8px;
         font-size: 0.75rem;
-        color: #0b3fa3;
+        color: #5b93fc;
       }
       .virtual-key .super-label {
         left: 7px;
         bottom: 8px;
         font-size: 0.7rem;
-        color: #9d2f2f;
+        color: #f18f3f;
       }
       .virtual-key:active,
       .virtual-key.pressed {
@@ -112,7 +112,7 @@
       </div>
 
       <div class="virtual-keypad" aria-label="Calculator keypad">
-        <button class="virtual-key" data-code="Backspace" style="left: 214px; top: 9px;"><span class="main-label">Bk</span><span class="shift-label">&amp;</span><span class="super-label">F1</span></button>
+        <button class="virtual-key" data-code="Backspace" style="left: 214px; top: 9px;"><span class="main-label">⌫</span><span class="shift-label">&amp;</span><span class="super-label">F1</span></button>
         <button class="virtual-key" data-code="Slash" style="left: 214px; top: 78px;"><span class="main-label">/</span><span class="shift-label">|</span><span class="super-label">F2</span></button>
 
         <button class="virtual-key" data-code="Digit7" style="left: 7px; top: 147px;"><span class="main-label">7</span><span class="shift-label">(</span><span class="super-label">Hm</span></button>
@@ -127,12 +127,12 @@
 
         <button class="virtual-key" data-code="Digit1" style="left: 7px; top: 285px;"><span class="main-label">1</span><span class="shift-label">B</span><span class="super-label">End</span></button>
         <button class="virtual-key" data-code="Digit2" style="left: 76px; top: 285px;"><span class="main-label">2</span><span class="shift-label">C</span><span class="super-label">v</span></button>
-        <button class="virtual-key" data-code="Digit3" style="left: 145px; top: 285px;"><span class="main-label">3</span><span class="shift-label">D</span><span class="super-label">Und</span></button>
+        <button class="virtual-key" data-code="Digit3" style="left: 145px; top: 285px;"><span class="main-label">3</span><span class="shift-label">D</span><span class="super-label">↩</span></button>
         <button class="virtual-key" data-code="NumpadAdd" style="left: 214px; top: 285px;"><span class="main-label">+</span><span class="shift-label">&gt;&gt;</span><span class="super-label">🔊</span></button>
 
         <button class="virtual-key" data-code="Digit0" style="left: 7px; top: 354px;"><span class="main-label">0</span><span class="shift-label">A</span><span class="super-label">.</span></button>
-        <button class="virtual-key" data-code="ShiftLeft" style="left: 76px; top: 354px;"><span class="main-label">Shft</span><span class="shift-label"></span><span class="super-label"></span></button>
-        <button class="virtual-key" data-code="ControlLeft" style="left: 145px; top: 354px;"><span class="main-label">§</span><span class="shift-label"></span><span class="super-label"></span></button>
+        <button class="virtual-key" data-code="ShiftLeft" style="left: 76px; top: 354px;"><span class="main-label">⇪</span><span class="shift-label"></span><span class="super-label"></span></button>
+        <button class="virtual-key" data-code="ControlLeft" style="left: 145px; top: 354px;"><span class="main-label">Ⓢ</span><span class="shift-label"></span><span class="super-label"></span></button>
         <button class="virtual-key" data-code="Equal" style="left: 214px; top: 354px;"><span class="main-label">=</span><span class="shift-label">^</span><span class="super-label">🔆</span></button>
       </div>
     </div>
