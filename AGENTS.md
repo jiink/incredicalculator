@@ -14,4 +14,8 @@ For changes in `crates/incredicalculator_core`, validate compilation with:
 
 `cargo build --manifest-path incredicalculator_pc/Cargo.toml`
 
-Do not use `cargo test --manifest-path crates/incredicalculator_core/Cargo.toml` as the default validation command: the core test executable may fail to link because the host test harness does not provide the `critical_section_1_0_acquire` and `critical_section_1_0_release` symbols. Treat that linker failure as an environment/test-harness limitation, not as a failure in the code change. Run core tests only when the required linker support is configured.
+Run the host tests with:
+
+`cargo test -p incredicalculator_pc -p incredicalculator_core -p bitwise_expr`
+
+Include `-p incredicalculator_pc` even though it has no tests of its own: it enables the `std` feature of `critical-section`, which the core tests need to link. Testing `incredicalculator_core` alone fails to link with missing `critical_section_1_0_acquire`/`critical_section_1_0_release` symbols. Plain `cargo test` inside `incredicalculator_pc` only tests that package and runs 0 tests. Do not run tests for `incredicalculator_web` or `incredicalculator_rp` on the host; they target other architectures.
