@@ -1229,6 +1229,26 @@ impl Calculator {
                 theme.emphasis_0,
                 2,
             );
+            let cursor_top = eq_center_y - eq_layout.height * 0.5;
+            let cursor_bottom = eq_center_y + eq_layout.height * 0.5;
+            let cursor_tip_width = 5.0;
+            let cursor_tip_height = 8.0;
+            platform.draw_polygon(
+                &[
+                    Vec2::new(cursor_x - cursor_tip_width, cursor_top - cursor_tip_height),
+                    Vec2::new(cursor_x + cursor_tip_width, cursor_top - cursor_tip_height),
+                    Vec2::new(cursor_x, cursor_top),
+                ],
+                theme.emphasis_0,
+            );
+            platform.draw_polygon(
+                &[
+                    Vec2::new(cursor_x - cursor_tip_width, cursor_bottom + cursor_tip_height),
+                    Vec2::new(cursor_x + cursor_tip_width, cursor_bottom + cursor_tip_height),
+                    Vec2::new(cursor_x, cursor_bottom),
+                ],
+                theme.emphasis_0,
+            );
         }
 
         let result_disp = core::str::from_utf8(&self.current_result[..self.current_result_len])
