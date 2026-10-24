@@ -4,8 +4,11 @@ use std::env;
 use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 fn main() {
+    emit_firmware_version();
+
     let manifest_dir = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
     let assets_dir = manifest_dir.join("assets");
     println!("cargo:rerun-if-changed={}", assets_dir.display());
@@ -55,6 +58,47 @@ fn main() {
     let out_dir = PathBuf::from(env::var_os("OUT_DIR").unwrap());
     fs::write(out_dir.join("generated_graphics.rs"), generated)
         .expect("could not write generated_graphics.rs");
+}
+
+/// Sets `INCREDICALCULATOR_VERSION` for `crate::FIRMWARE_VERSION`.
+///
+/// Uses `git describe --tags --always`: `v2` on a tagged commit, `v2-66-gebf4b83`
+/// for the 66th commit after `v2` (at commit `ebf4b83`), or just the commit hash
+/// when no tag is reachable. Setting the `INCREDICALCULATOR_VERSION` environment
+/// variable overrides this; without either, the version is `unknown`.
+fn emit_firmware_version() {
+    println!("cargo:rerun-if-env-changed=INCREDICALCULATOR_VERSION");
+    let version = env::var("INCREDICALCULATOR_VERSION")
+        .ok()
+        .filter(|version| !version.is_empty())
+        .or_else(|| git(&["describe", "--tags", "--always"]))
+        .unwrap_or_else(|| String::from("unknown"));
+    println!("cargo:rustc-env=INCREDICALCULATOR_VERSION={version}");
+
+    // Rebuild when the checked-out commit, the branch it's on, or the tags move.
+    let mut watched = vec![
+        String::from("HEAD"),
+        String::from("packed-refs"),
+        String::from("refs/tags"),
+    ];
+    watched.extend(git(&["symbolic-ref", "HEAD"]));
+    for name in watched {
+        if let Some(path) = git(&["rev-parse", "--git-path", &name]) {
+            // Cargo treats a missing path as always changed, so skip those.
+            if Path::new(&path).exists() {
+                println!("cargo:rerun-if-changed={path}");
+            }
+        }
+    }
+}
+
+fn git(args: &[&str]) -> Option<String> {
+    let output = Command::new("git").args(args).output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let text = String::from_utf8(output.stdout).ok()?.trim().to_owned();
+    (!text.is_empty()).then_some(text)
 }
 
 fn generated_header() -> String {

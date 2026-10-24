@@ -1,8 +1,9 @@
+use crate::FIRMWARE_VERSION;
 use crate::app::InputContext;
 use crate::fonts::FontId;
 use crate::input::{IcKey, KeyMode};
-use crate::platform::{rgb8_hex, IcPlatform, SETTINGS_STORAGE_LEN};
-use crate::text::draw_text_f;
+use crate::platform::{CANVAS_WIDTH, IcPlatform, SETTINGS_STORAGE_LEN, rgb8_hex};
+use crate::text::{draw_text_f, text_width};
 use crate::ui::{MathInput, MathInputMode};
 use glam::{IVec2, Vec2};
 use rgb::RGB8;
@@ -318,6 +319,17 @@ impl SettingsMenu {
             4.0,
             2.0,
             rgb8_hex(0xffffff),
+            FontId::Futural,
+        );
+        let version_width = text_width(FIRMWARE_VERSION, 4.0, FontId::Futural);
+        draw_text_f(
+            platform,
+            format_args!("{}", FIRMWARE_VERSION),
+            CANVAS_WIDTH as f32 - 5.0 - version_width,
+            230.0,
+            4.0,
+            2.0,
+            rgb8_hex(0x666666),
             FontId::Futural,
         );
     }

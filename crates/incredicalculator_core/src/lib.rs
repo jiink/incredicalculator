@@ -11,6 +11,9 @@ pub mod input;
 pub mod platform;
 pub mod settings;
 pub mod shell;
+
+/// See build.rs.
+pub const FIRMWARE_VERSION: &str = env!("INCREDICALCULATOR_VERSION");
 pub mod graphics {
     use alloc::vec::Vec;
     use glam::{Affine2, Vec2};
