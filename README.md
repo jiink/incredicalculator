@@ -62,3 +62,9 @@ For example, after adding `assets/player-idle.json`, draw its first frame with:
 To get a .uf2 file:
 - cd into incredicalculator_rp and run `cargo uf2` (needs picotool on `PATH`)
 - grab the uf2 file from target/thumbv8m.main-none-eabihf/release
+
+## Nightly builds
+
+Every push to `main` that changes more than Markdown files builds the RP2350 firmware on GitHub Actions (`.github/workflows/nightly.yml`) and replaces the **Nightly** pre-release on the Releases page. The latest UF2 is always at https://github.com/jiink/incredicalculator/releases/download/nightly/incredicalculator_rp.uf2. To rebuild without pushing, open the Actions tab, pick **Nightly**, and click **Run workflow**.
+
+The Settings screen shows the firmware version at the bottom right, from `git describe` over `v`-numbered tags: `v2` is a build of the commit tagged `v2`, and `v2-67-g394ebc3` is the 67th commit after `v2`, at commit `394ebc3`. The workflow manages the `nightly` tag itself, so don't create or move it by hand.

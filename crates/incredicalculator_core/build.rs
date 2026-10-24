@@ -62,7 +62,8 @@ fn main() {
 
 /// Sets `INCREDICALCULATOR_VERSION` for `crate::FIRMWARE_VERSION`.
 ///
-/// Uses `git describe --tags --always`: `v2` on a tagged commit, `v2-66-gebf4b83`
+/// Uses `git describe` over version tags (`v` + digit, so the CI-managed
+/// `nightly` tag is ignored): `v2` on a tagged commit, `v2-66-gebf4b83`
 /// for the 66th commit after `v2` (at commit `ebf4b83`), or just the commit hash
 /// when no tag is reachable. Setting the `INCREDICALCULATOR_VERSION` environment
 /// variable overrides this; without either, the version is `unknown`.
@@ -71,7 +72,7 @@ fn emit_firmware_version() {
     let version = env::var("INCREDICALCULATOR_VERSION")
         .ok()
         .filter(|version| !version.is_empty())
-        .or_else(|| git(&["describe", "--tags", "--always"]))
+        .or_else(|| git(&["describe", "--tags", "--match", "v[0-9]*", "--always"]))
         .unwrap_or_else(|| String::from("unknown"));
     println!("cargo:rustc-env=INCREDICALCULATOR_VERSION={version}");
 

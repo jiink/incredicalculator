@@ -1,0 +1,73 @@
+# Builds the RP2350 firmware on every push to main and publishes it as the
+# "Nightly" pre-release, replacing the previous one. The UF2 is always at
+# https://github.com/jiink/incredicalculator/releases/download/nightly/incredicalculator_rp.uf2
+name: Nightly
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["**.md"]
+  # Adds a "Run workflow" button in the Actions tab.
+  workflow_dispatch:
+
+# Only the newest push matters; cancel an older build that's still running.
+concurrency:
+  group: nightly
+  cancel-in-progress: true
+
+permissions:
+  contents: write # create the release and move the `nightly` tag
+
+env:
+  PICOTOOL_VERSION: 2.3.1
+
+jobs:
+  nightly:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history and tags so the firmware version reads `v2-67-g…`.
+          fetch-depth: 0
+
+      - name: Install Rust (version from rust-toolchain.toml)
+        run: rustup toolchain install
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: rp-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
+          restore-keys: rp-
+
+      - name: Install picotool
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libusb-1.0-0
+          curl -sSfL "https://github.com/raspberrypi/pico-sdk-tools/releases/download/v${PICOTOOL_VERSION}-0/picotool-${PICOTOOL_VERSION}-x86_64-lin.tar.gz" | tar xz -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/picotool" >> "$GITHUB_PATH"
+
+      - name: Build UF2
+        working-directory: incredicalculator_rp
+        run: cargo uf2
+
+      - name: Publish Nightly release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(git describe --tags --match "v[0-9]*" --always)
+          cat > notes.md <<EOF
+          Automatic build of \`main\` at ${GITHUB_SHA::7}, built $(date -u '+%Y-%m-%d %H:%M UTC').
+          Firmware version: \`$version\` (shown at the bottom right of the Settings screen).
+
+          To flash: hold Super while powering on to enter BOOTSEL mode, then drag \`incredicalculator_rp.uf2\` onto the drive that appears.
+          EOF
+          gh release delete nightly --cleanup-tag --yes || true
+          gh release create nightly target/thumbv8m.main-none-eabihf/release/incredicalculator_rp.uf2 \
+            --target "$GITHUB_SHA" \
+            --title "Nightly $version" \
+            --notes-file notes.md \
+            --prerelease \
+            --latest=false
