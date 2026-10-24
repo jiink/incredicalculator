@@ -60,6 +60,5 @@ For example, after adding `assets/player-idle.json`, draw its first frame with:
 
 
 To get a .uf2 file:
-- edit incredicalculator-rp/.cargo/config.toml and uncomment the line that talks about outputting a uf2 file
-- cd into incredicalculator_rp and run `cargo run --release`
+- cd into incredicalculator_rp and run `cargo uf2` (needs picotool on `PATH`)
 - grab the uf2 file from target/thumbv8m.main-none-eabihf/release

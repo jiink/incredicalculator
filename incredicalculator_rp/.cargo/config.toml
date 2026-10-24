@@ -1,15 +1,14 @@
 [target.'cfg(all(target_arch = "arm", target_os = "none"))']
-# You have three choices:
+# You have two choices:
 # A) Use this if you want to flash the target using a debugger (e.g. a Pi Pico)
 #runner = "probe-rs run --chip RP235x"
 
-# B) Use this if you want to produce a .uf2 file you can
-# drag and drop onto the chip's bootloader's storage device
-#runner = ["elf2uf2-rs"]
-
-# C) Use this if you want to program the chip over USB
+# B) Use this if you want to program the chip over USB
 # while it's in bootloader mode
 runner = "picotool load -u -v -x -t elf"
+
+# To produce a .uf2 file you can drag and drop onto the chip's bootloader's
+# storage device instead, run `cargo uf2` (see [alias] below).
 
 [build]
 # for RP2040 use target = "thumbv6m-none-eabi" 
@@ -19,3 +18,14 @@ target = "thumbv8m.main-none-eabihf"
 
 [env]
 DEFMT_LOG = "debug"
+
+[alias]
+# `cargo uf2` builds a release UF2 for RP2350 drag-and-drop at
+# target/thumbv8m.main-none-eabihf/release/incredicalculator_rp.uf2
+# (run from incredicalculator_rp). The target-specific runner overrides the
+# runner chosen above, and the args after `--` follow the ELF path.
+uf2 = [
+    "run", "--release",
+    "--config", "target.thumbv8m.main-none-eabihf.runner=['picotool','uf2','convert','--family','rp2350-arm-s']",
+    "--", "-t", "elf", "../target/thumbv8m.main-none-eabihf/release/incredicalculator_rp.uf2",
+]
