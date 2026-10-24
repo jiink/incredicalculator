@@ -65,6 +65,10 @@ To get a .uf2 file:
 
 ## Nightly builds
 
-Every push to `main` that changes more than Markdown files builds the RP2350 firmware on GitHub Actions (`.github/workflows/nightly.yml`) and replaces the **Nightly** pre-release on the Releases page. The latest UF2 is always at https://github.com/jiink/incredicalculator/releases/download/nightly/incredicalculator_rp.uf2. To rebuild without pushing, open the Actions tab, pick **Nightly**, and click **Run workflow**.
+Every push to `main` that changes more than Markdown files runs `.github/workflows/nightly.yml` on GitHub Actions, which:
+- builds the RP2350 firmware and replaces the **Nightly** pre-release on the Releases page. The latest UF2 is always at https://github.com/jiink/incredicalculator/releases/download/nightly/incredicalculator_rp.uf2.
+- builds the web version and deploys it to GitHub Pages, so the latest `main` runs in any browser, phones included, at https://jiink.github.io/incredicalculator/. This needs **Settings → Pages → Source: GitHub Actions** set once in the repo.
+
+To rebuild without pushing, open the Actions tab, pick **Nightly**, and click **Run workflow**.
 
 The Settings screen shows the firmware version at the bottom right, from `git describe` over `v`-numbered tags: `v2` is a build of the commit tagged `v2`, and `v2-67-g394ebc3` is the 67th commit after `v2`, at commit `394ebc3`. The workflow manages the `nightly` tag itself, so don't create or move it by hand.

@@ -1,6 +1,9 @@
-# Builds the RP2350 firmware on every push to main and publishes it as the
-# "Nightly" pre-release, replacing the previous one. The UF2 is always at
-# https://github.com/jiink/incredicalculator/releases/download/nightly/incredicalculator_rp.uf2
+# On every push to main:
+# - builds the RP2350 firmware and publishes it as the "Nightly" pre-release,
+#   replacing the previous one. The UF2 is always at
+#   https://github.com/jiink/incredicalculator/releases/download/nightly/incredicalculator_rp.uf2
+# - builds the web version and deploys it to GitHub Pages at
+#   https://jiink.github.io/incredicalculator/
 name: Nightly
 
 on:
@@ -15,15 +18,15 @@ concurrency:
   group: nightly
   cancel-in-progress: true
 
-permissions:
-  contents: write # create the release and move the `nightly` tag
-
 env:
   PICOTOOL_VERSION: 2.3.1
+  PAGES_URL: https://jiink.github.io/incredicalculator/
 
 jobs:
-  nightly:
+  firmware:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the release and move the `nightly` tag
     steps:
       - uses: actions/checkout@v4
         with:
@@ -62,6 +65,8 @@ jobs:
           Automatic build of \`main\` at ${GITHUB_SHA::7}, built $(date -u '+%Y-%m-%d %H:%M UTC').
           Firmware version: \`$version\` (shown at the bottom right of the Settings screen).
 
+          **▶ [Try it in your browser](${PAGES_URL})**
+
           To flash: hold Super while powering on to enter BOOTSEL mode, then drag \`incredicalculator_rp.uf2\` onto the drive that appears.
           EOF
           gh release delete nightly --cleanup-tag --yes || true
@@ -71,3 +76,59 @@ jobs:
             --notes-file notes.md \
             --prerelease \
             --latest=false
+
+  web:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust (version from rust-toolchain.toml)
+        run: |
+          rustup toolchain install
+          rustup target add wasm32-unknown-unknown
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: web-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
+          restore-keys: web-
+
+      - name: Install wasm-bindgen (same version as Cargo.lock)
+        run: |
+          version=$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | sed -n 's/^version = "\(.*\)"$/\1/p')
+          curl -sSfL "https://github.com/wasm-bindgen/wasm-bindgen/releases/download/${version}/wasm-bindgen-${version}-x86_64-unknown-linux-musl.tar.gz" | tar xz -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/wasm-bindgen-${version}-x86_64-unknown-linux-musl" >> "$GITHUB_PATH"
+
+      - name: Build web version
+        run: |
+          cargo build --release --target wasm32-unknown-unknown --manifest-path incredicalculator_web/Cargo.toml
+          # The package folder is named after the commit so browsers can't
+          # mix a new index.html with an old cached .wasm.
+          pkg="pkg-${GITHUB_SHA::7}"
+          wasm-bindgen --target web --out-dir "site/$pkg" target/wasm32-unknown-unknown/release/incredicalculator_web.wasm
+          sed "s#'./pkg/#'./$pkg/#" incredicalculator_web/index.html > site/index.html
+          grep -q "$pkg/incredicalculator_web.js" site/index.html
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy-web:
+    needs: web
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
