@@ -98,6 +98,10 @@ fn parse_factor(input: &str) -> IResult<&str, i64> {
             preceded(tag("~"), parse_factor),
             |val| !val
         ),
+        map(
+            preceded(tag("-"), parse_factor),
+            |val: i64| val.wrapping_neg()
+        ),
     ))(input)
 }
 
@@ -333,5 +337,18 @@ mod tests {
         assert_eq!(evaluate("0x01 + 2"), Ok(0x01+2));
         assert_eq!(evaluate("0xC+2"), Ok(0xC+2));
         assert_eq!(evaluate("0xC*2"), Ok(0xC*2));
+    }
+
+    #[test]
+    fn test_negatives() {
+        assert_eq!(evaluate("-5"), Ok(-5));
+        assert_eq!(evaluate("-5 + 3"), Ok(-2));
+        assert_eq!(evaluate("3 - -5"), Ok(8));
+        assert_eq!(evaluate("3 * -5"), Ok(-15));
+        assert_eq!(evaluate("-(2 + 3)"), Ok(-5));
+        assert_eq!(evaluate("--5"), Ok(5));
+        assert_eq!(evaluate("~-1"), Ok(0));
+        assert_eq!(evaluate("-0x10"), Ok(-16));
+        assert_eq!(evaluate("-1 & 0xFF"), Ok(0xFF));
     }
 }
