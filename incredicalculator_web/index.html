@@ -12,9 +12,16 @@
       body {
         margin: 0;
         min-height: 100vh;
+        min-height: 100dvh;
         display: grid;
         place-items: center;
         background: #0b0b12;
+        overflow: hidden;
+      }
+      /* Scaled up by script on touch devices to fill the screen */
+      .calculator-shell {
+        transform: scale(var(--shell-scale, 1));
+        transform-origin: center;
       }
       .calculator-shell {
         position: relative;
@@ -173,6 +180,26 @@
           key_up(event.code);
         }
       });
+
+      const shell = document.querySelector('.calculator-shell');
+      const touchDevice = window.matchMedia('(pointer: coarse)');
+
+      function fitShell() {
+        if (!touchDevice.matches) {
+          shell.style.removeProperty('--shell-scale');
+          return;
+        }
+        const margin = 8;
+        const scale = Math.min(
+          (window.innerWidth - margin * 2) / shell.offsetWidth,
+          (window.innerHeight - margin * 2) / shell.offsetHeight,
+        );
+        shell.style.setProperty('--shell-scale', scale);
+      }
+
+      fitShell();
+      window.addEventListener('resize', fitShell);
+      touchDevice.addEventListener('change', fitShell);
 
       function frame() {
         tick();
