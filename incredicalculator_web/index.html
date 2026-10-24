@@ -18,6 +18,36 @@
         background: #0b0b12;
         overflow: hidden;
       }
+      .info-menu {
+        position: fixed;
+        top: 4px;
+        left: 6px;
+        display: flex;
+        align-items: flex-start;
+        gap: 6px;
+        color: rgba(255, 255, 255, 0.6);
+      }
+      .info-toggle {
+        padding: 0 4px;
+        border: none;
+        border-radius: 4px;
+        background: none;
+        color: inherit;
+        font-size: 18px;
+        line-height: 1;
+        cursor: pointer;
+      }
+      .info-toggle:hover {
+        background: rgba(255, 255, 255, 0.1);
+      }
+      .info-panel {
+        font-size: 13px;
+        line-height: 1.4;
+        pointer-events: none;
+      }
+      #frame-counter {
+        font: 12px monospace;
+      }
       /* Scaled up by script on touch devices to fill the screen */
       .calculator-shell {
         transform: scale(var(--shell-scale, 1));
@@ -106,6 +136,13 @@
     </style>
   </head>
   <body>
+    <div class="info-menu">
+      <button class="info-toggle" aria-label="Show info" aria-expanded="false" aria-controls="info-panel">⋯</button>
+      <div class="info-panel" id="info-panel" hidden>
+        <div>Incredicalculator web simulator</div>
+        <div id="frame-counter">frames: 0</div>
+      </div>
+    </div>
     <div class="calculator-shell">
       <div class="display-slot">
         <canvas id="incredicalculator" width="320" height="240"></canvas>
@@ -140,12 +177,43 @@
     <script type="module">
       import init, { start, key_down, key_up, tick } from './pkg/incredicalculator_web.js';
 
+      // Frames are only rendered after input, or continuously while the
+      // active app asks for realtime updates, to save battery.
+      let frameScheduled = false;
+      let ready = false;
+      let frameCount = 0;
+      const frameCounter = document.getElementById('frame-counter');
+
+      const infoToggle = document.querySelector('.info-toggle');
+      const infoPanel = document.getElementById('info-panel');
+      infoToggle.addEventListener('click', () => {
+        infoPanel.hidden = !infoPanel.hidden;
+        infoToggle.setAttribute('aria-expanded', String(!infoPanel.hidden));
+      });
+
+      function requestFrame() {
+        if (ready && !frameScheduled) {
+          frameScheduled = true;
+          requestAnimationFrame(frame);
+        }
+      }
+
+      function frame() {
+        frameScheduled = false;
+        frameCount += 1;
+        frameCounter.textContent = `frames: ${frameCount}`;
+        if (tick()) {
+          requestFrame();
+        }
+      }
+
       function dispatchKey(code, type) {
         if (type === 'keydown') {
           key_down(code);
         } else {
           key_up(code);
         }
+        requestFrame();
       }
 
       document.querySelectorAll('.virtual-key').forEach((button) => {
@@ -170,14 +238,14 @@
       document.addEventListener('keydown', (event) => {
         if (event.code) {
           event.preventDefault();
-          key_down(event.code);
+          dispatchKey(event.code, 'keydown');
         }
       });
 
       document.addEventListener('keyup', (event) => {
         if (event.code) {
           event.preventDefault();
-          key_up(event.code);
+          dispatchKey(event.code, 'keyup');
         }
       });
 
@@ -201,14 +269,10 @@
       window.addEventListener('resize', fitShell);
       touchDevice.addEventListener('change', fitShell);
 
-      function frame() {
-        tick();
-        requestAnimationFrame(frame);
-      }
-
       await init();
       start();
-      requestAnimationFrame(frame);
+      ready = true;
+      requestFrame();
     </script>
   </body>
 </html>

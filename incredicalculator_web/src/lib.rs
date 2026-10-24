@@ -295,17 +295,21 @@ pub fn key_up(code: &str) {
     });
 }
 
+/// Updates and redraws the shell. Returns whether another frame should be
+/// scheduled right away; otherwise the page waits for the next input, like the
+/// RP firmware does.
 #[wasm_bindgen]
-pub fn tick() {
+pub fn tick() -> bool {
     APP.with(|app| {
         let mut app = app.borrow_mut();
         let Some(app) = app.as_mut() else {
-            return;
+            return false;
         };
         let mut shell = app.shell.borrow_mut();
         let mut platform = app.platform.borrow_mut();
         shell.update(&mut *platform);
-    });
+        shell.requires_realtime_updates()
+    })
 }
 
 #[wasm_bindgen(start)]
