@@ -425,7 +425,6 @@ impl IcShell {
             key_states: &effective_states,
             key_mode,
         };
-        let super_backspace = ctx.is_super() && self.key_states[IcKey::Func1 as usize].just_pressed;
         let backspace_closes_menu = self.active_app_idx.is_none()
             && !self.settings_open
             && self.key_states[IcKey::Func1 as usize].just_pressed;
@@ -449,9 +448,6 @@ impl IcShell {
             let mut input_consumed_by_shell: bool = false;
             if ctx.is_super() {
                 match key {
-                    IcKey::Func1 => {
-                        input_consumed_by_shell = true;
-                    }
                     IcKey::Func6 => {
                         self.adjusting_something = Some(Adjustable::Brightness);
                         input_consumed_by_shell = true;
@@ -516,7 +512,6 @@ impl IcShell {
             }
         }
         if backspace_closes_menu
-            || super_backspace
             || (self.key_states[IcKey::Super as usize].just_released
                 && !ctx.is_super()
                 && !self.super_interrupted)

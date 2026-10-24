@@ -12,6 +12,7 @@ use crate::text::{draw_text, text_to_pos, text_vertical_bounds, text_width};
 use alloc::boxed::Box;
 use alloc::string::ToString;
 use alloc::{format, string::String};
+use bitwise_expr::IntFormat;
 use glam::{IVec2, Vec2};
 use rgb::*;
 
@@ -66,6 +67,8 @@ enum KeyAction {
     Home,
     End,
     Mode,
+    ToggleSigned,
+    CycleBitWidth,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -319,6 +322,8 @@ trait CalcEngine {
         current_result: &str,
     ) -> bool;
     fn has_widget(&self) -> bool;
+    // engine-specific settings, such as the programmer engine's integer format
+    fn on_engine_key(&mut self, _key: KeyAction) {}
     fn get_action(&self, key: IcKey, is_shifted: bool, is_super: bool) -> Option<KeyAction>;
 }
 
@@ -469,20 +474,41 @@ impl CalcEngine for ScientificEngine {
 
 pub struct ProgrammerEngine {
     binary_selection_idx: u8,
+    signed: bool,
+    bit_width: u8,
 }
 
 impl ProgrammerEngine {
     pub fn default() -> Self {
         Self {
             binary_selection_idx: 0,
+            signed: true,
+            bit_width: 32,
         }
     }
-    // Parses a decimal result into its 32-bit pattern. Accepts both the signed
-    // and unsigned 32-bit ranges, so 0x80000000 and -2147483648 are the same bits.
-    fn parse_32bit(input: &str) -> Option<u32> {
+
+    fn int_format(&self) -> IntFormat {
+        IntFormat::new(self.bit_width as u32, self.signed)
+    }
+
+    fn cycle_bit_width(&mut self) {
+        self.bit_width = match self.bit_width {
+            8 => 16,
+            16 => 32,
+            _ => 8,
+        };
+        self.binary_selection_idx = self.binary_selection_idx.min(self.bit_width - 1);
+    }
+
+    // Parses a decimal result into its bit pattern at the current width. Accepts
+    // both the signed and unsigned ranges, so 0x80 and -128 are the same 8 bits.
+    fn parse_bits(&self, input: &str) -> Option<u64> {
         let val = input.parse::<i64>().ok()?;
-        if val >= i32::MIN as i64 && val <= u32::MAX as i64 {
-            Some(val as u32)
+        let fmt = self.int_format();
+        let min = -(1i64 << (fmt.bits - 1));
+        let max = fmt.mask() as i64;
+        if val >= min && val <= max {
+            Some(val as u64 & fmt.mask())
         } else {
             None
         }
@@ -494,8 +520,8 @@ impl ProgrammerEngine {
         buffer: &mut LineBuffer<{ EqEntry::EQUATION_MAX_SIZE }>,
         current_result: &str,
     ) {
-        let current_val = Self::parse_32bit(current_result).unwrap_or(0);
-        let new_val = (current_val ^ (1 << bit_idx)) as i32;
+        let current_val = self.parse_bits(current_result).unwrap_or(0);
+        let new_val = self.int_format().wrap((current_val ^ (1 << bit_idx)) as i64);
         let new_str = format!("{}", new_val);
         buffer.set_content(new_str.as_bytes());
     }
@@ -506,7 +532,7 @@ impl ProgrammerEngine {
         buffer: &mut LineBuffer<{ EqEntry::EQUATION_MAX_SIZE }>,
         current_result: &str,
     ) {
-        let current_val = Self::parse_32bit(current_result).unwrap_or(0);
+        let current_val = self.parse_bits(current_result).unwrap_or(0);
         let is_set = (current_val & (1 << self.binary_selection_idx)) != 0;
 
         if target_state != is_set {
@@ -517,11 +543,16 @@ impl ProgrammerEngine {
     // If we wanted to stick to heapless no_std, then we would use write!()
     // instead of format!() and make a struct with a buffer and cursor and
     // implement as_str and fmt::Write for that
-    fn bits_to_hex_str(raw_bits: u32, include_prefix: bool, uppercase: bool) -> String {
+    fn bits_to_hex_str(
+        raw_bits: u64,
+        digits: usize,
+        include_prefix: bool,
+        uppercase: bool,
+    ) -> String {
         let hex_str = if uppercase {
-            format!("{:08X}", raw_bits)
+            format!("{:0width$X}", raw_bits, width = digits)
         } else {
-            format!("{:08x}", raw_bits)
+            format!("{:0width$x}", raw_bits, width = digits)
         };
         if include_prefix {
             format!("0x{}", hex_str)
@@ -529,11 +560,23 @@ impl ProgrammerEngine {
             hex_str
         }
     }
+
+    fn format_label(&self) -> String {
+        format!("{}{}", if self.signed { 'i' } else { 'u' }, self.bit_width)
+    }
 }
 
 impl CalcEngine for ProgrammerEngine {
     fn evaluate(&self, equation: &str) -> String {
-        bitwise_expr::evaluate_str(equation)
+        bitwise_expr::evaluate_str_as(equation, self.int_format())
+    }
+
+    fn on_engine_key(&mut self, key: KeyAction) {
+        match key {
+            KeyAction::ToggleSigned => self.signed = !self.signed,
+            KeyAction::CycleBitWidth => self.cycle_bit_width(),
+            _ => {}
+        }
     }
     fn has_widget(&self) -> bool {
         true
@@ -546,7 +589,7 @@ impl CalcEngine for ProgrammerEngine {
     ) -> bool {
         match key {
             KeyAction::MoveUp => {
-                let in_top_row = self.binary_selection_idx > 15;
+                let in_top_row = self.binary_selection_idx > 15 || self.bit_width <= 16;
                 if in_top_row {
                     // go back to focus equation
                     return false;
@@ -561,7 +604,7 @@ impl CalcEngine for ProgrammerEngine {
                 }
             }
             KeyAction::MoveLeft => {
-                if self.binary_selection_idx < 31 {
+                if self.binary_selection_idx < self.bit_width - 1 {
                     self.binary_selection_idx += 1;
                 }
             }
@@ -596,9 +639,20 @@ impl CalcEngine for ProgrammerEngine {
         theme: CalculatorTheme,
     ) {
         let margin = 2;
-        if let Some(result_as_int) = Self::parse_32bit(result_str) {
+        draw_text(
+            platform,
+            &self.format_label(),
+            margin as f32 + 2.0,
+            12.0,
+            6.0,
+            2.0,
+            theme.subtle,
+            FontId::Futural,
+        );
+        if let Some(result_as_int) = self.parse_bits(result_str) {
             // draw hex form of ans
-            let result_as_hex = Self::bits_to_hex_str(result_as_int, true, true);
+            let result_as_hex =
+                Self::bits_to_hex_str(result_as_int, self.bit_width as usize / 4, true, true);
             draw_text(
                 platform,
                 &result_as_hex,
@@ -616,7 +670,7 @@ impl CalcEngine for ProgrammerEngine {
             let bin_widget_element_margin: i32 = 2;
             let gap_4bit: i32 = 3;
             let gap_8bit: i32 = 6;
-            for i in 0..32 {
+            for i in 0..self.bit_width as i32 {
                 let row_idx = i % 16;
                 let extra_gap = (row_idx / 4) * gap_4bit + (row_idx / 8) * gap_8bit;
                 let bit_x: i32 = bin_widget_bit1_x
@@ -708,8 +762,8 @@ impl CalcEngine for ProgrammerEngine {
                 IcKey::Num7 => Some(KeyAction::Home),
                 IcKey::Num8 => Some(KeyAction::MoveUp),
                 IcKey::Num9 => Some(KeyAction::Clear),
-                IcKey::Func1 => None,
-                IcKey::Func2 => None,
+                IcKey::Func1 => Some(KeyAction::ToggleSigned),
+                IcKey::Func2 => Some(KeyAction::CycleBitWidth),
                 IcKey::Func3 => None,
                 IcKey::Func4 => None,
                 IcKey::Func5 => None,
@@ -1368,7 +1422,10 @@ impl IcApp for Calculator {
                 KeyAction::MoveRight => self.ui_nav(NavDir::Right),
                 KeyAction::Home => self.current_eq.move_cursor_home(),
                 KeyAction::End => self.current_eq.move_cursor_end(),
-                KeyAction::Mode => ()
+                KeyAction::Mode => (),
+                KeyAction::ToggleSigned | KeyAction::CycleBitWidth => {
+                    self.engine.on_engine_key(act)
+                }
             }
             self.update_realtime_result();
         }

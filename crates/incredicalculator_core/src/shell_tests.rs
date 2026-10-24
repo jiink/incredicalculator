@@ -208,22 +208,15 @@ fn sticky_and_toggle_shift_reach_apps_and_show_blue_indicator() {
 }
 
 #[test]
-fn latched_super_shows_green_and_provides_menu_access_without_app_backspace() {
+fn latched_super_shows_green_and_passes_func1_to_app() {
     for mode in [KeyMode::Sticky, KeyMode::Toggle] {
         let (mut shell, mut platform, recorded) = setup(mode);
         tap(&mut shell, &mut platform, IcKey::Super);
         assert_eq!(shell.active_app_idx, Some(0));
         assert!(has_border(&platform, 1, 0x00ff00));
         tap(&mut shell, &mut platform, IcKey::Func1);
-        assert!(shell.active_app_idx.is_none());
-        assert!(
-            !recorded
-                .borrow()
-                .iter()
-                .any(|(key, _, _)| *key == IcKey::Func1)
-        );
-        tap(&mut shell, &mut platform, IcKey::Func1);
         assert_eq!(shell.active_app_idx, Some(0));
+        assert!(recorded.borrow().contains(&(IcKey::Func1, false, true)));
     }
 }
 
