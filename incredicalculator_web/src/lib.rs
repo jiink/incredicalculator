@@ -15,6 +15,7 @@ thread_local! {
 struct BrowserState {
     shell: Rc<RefCell<IcShell>>,
     platform: Rc<RefCell<BrowserPlatform>>,
+    pcm_buffer: Vec<i16>,
 }
 
 use incredicalculator_core::input::IcKey;
@@ -295,6 +296,35 @@ pub fn key_up(code: &str) {
     });
 }
 
+/// Fills `out` with mono 48 kHz samples in the -1.0..1.0 range expected by Web
+/// Audio. Writes silence until the shell has started.
+#[wasm_bindgen]
+pub fn fill_audio(out: &mut [f32]) {
+    APP.with(|app| {
+        let mut app = app.borrow_mut();
+        let Some(app) = app.as_mut() else {
+            out.fill(0.0);
+            return;
+        };
+        app.pcm_buffer.resize(out.len(), 0);
+        app.shell.borrow_mut().fill_audio(&mut app.pcm_buffer);
+        for (dst, &sample) in out.iter_mut().zip(app.pcm_buffer.iter()) {
+            *dst = sample as f32 / 32768.0;
+        }
+    });
+}
+
+/// Whether the synth can still produce sound, so the page can suspend audio
+/// output while silent.
+#[wasm_bindgen]
+pub fn has_active_audio() -> bool {
+    APP.with(|app| {
+        app.borrow()
+            .as_ref()
+            .is_some_and(|app| app.shell.borrow().has_active_audio())
+    })
+}
+
 /// Updates and redraws the shell. Returns whether another frame should be
 /// scheduled right away; otherwise the page waits for the next input, like the
 /// RP firmware does.
@@ -346,6 +376,10 @@ pub fn start() {
     }));
 
     APP.with(|slot| {
-        *slot.borrow_mut() = Some(BrowserState { shell: Rc::clone(&shell), platform: Rc::clone(&platform) });
+        *slot.borrow_mut() = Some(BrowserState {
+            shell: Rc::clone(&shell),
+            platform: Rc::clone(&platform),
+            pcm_buffer: Vec::new(),
+        });
     });
 }

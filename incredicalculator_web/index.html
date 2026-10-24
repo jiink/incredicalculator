@@ -175,7 +175,7 @@
     </div>
 
     <script type="module">
-      import init, { start, key_down, key_up, tick } from './pkg/incredicalculator_web.js';
+      import init, { start, key_down, key_up, tick, fill_audio, has_active_audio } from './pkg/incredicalculator_web.js';
 
       // Frames are only rendered after input, or continuously while the
       // active app asks for realtime updates, to save battery.
@@ -205,6 +205,47 @@
         if (tick()) {
           requestFrame();
         }
+        // Notes start and stop during `tick`.
+        updateAudio();
+      }
+
+      // Audio is pulled from the shell at 48 kHz mono, like the PC version.
+      // The context is suspended whenever the synth is silent, like the RP
+      // firmware stopping I2S, so idle pages don't run the audio callback.
+      let audioCtx = null;
+
+      function startAudio() {
+        if (!ready) {
+          return;
+        }
+        if (!audioCtx) {
+          audioCtx = new AudioContext({ sampleRate: 48000 });
+          // ScriptProcessorNode is deprecated, but runs on the main thread
+          // where the wasm shell lives, which AudioWorklet does not.
+          const node = audioCtx.createScriptProcessor(1024, 1, 1);
+          node.onaudioprocess = (event) => {
+            fill_audio(event.outputBuffer.getChannelData(0));
+            // A pending frame may be about to start a note.
+            if (!frameScheduled && !has_active_audio()) {
+              audioCtx.suspend();
+            }
+          };
+          node.connect(audioCtx.destination);
+        }
+        // Browsers only allow audio to start from a user gesture, so resume
+        // from input handlers; `frame` suspends again if nothing plays.
+        audioCtx.resume();
+      }
+
+      function updateAudio() {
+        if (!audioCtx) {
+          return;
+        }
+        if (has_active_audio()) {
+          audioCtx.resume();
+        } else if (audioCtx.state === 'running') {
+          audioCtx.suspend();
+        }
       }
 
       function dispatchKey(code, type) {
@@ -213,6 +254,7 @@
         } else {
           key_up(code);
         }
+        startAudio();
         requestFrame();
       }
 

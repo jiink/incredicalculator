@@ -1215,6 +1215,7 @@ impl Calculator {
             FontId::Futural,
         );
         if self.focused_ui == FocusUi::Equation && self.history_selection.is_none() {
+            // draw cursor
             let cursor_x = text_to_pos(
                 equation_disp,
                 margin,
@@ -1225,7 +1226,7 @@ impl Calculator {
             platform.draw_line(
                 Vec2::new(cursor_x, eq_center_y - eq_layout.height * 0.5),
                 Vec2::new(cursor_x, eq_center_y + eq_layout.height * 0.5),
-                theme.emphasis_2,
+                theme.emphasis_0,
                 2,
             );
         }
