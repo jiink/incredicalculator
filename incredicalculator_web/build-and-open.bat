@@ -1,0 +1,1 @@
+powershell -File build-and-open.ps1

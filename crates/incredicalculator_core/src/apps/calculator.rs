@@ -676,7 +676,7 @@ impl CalcEngine for ProgrammerEngine {
         } else {
             draw_text(
                 platform,
-                "It worked!",
+                "Programmer",
                 margin as f32,
                 222.0,
                 10.0,
