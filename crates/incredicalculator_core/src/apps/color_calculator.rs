@@ -1,13 +1,12 @@
 use crate::app::{IcApp, InputContext};
 use crate::audio_engine::AudioEngine;
-use crate::fonts::FontId;
 use crate::graphics::{self, Vitmap, SAMPLE_GRAPHIC};
 use crate::input::IcKey;
 use crate::platform::{IcPlatform, CANVAS_WIDTH};
-use crate::text::{draw_text, draw_text_f};
+use crate::text::{TextStyle, draw_text, draw_text_f};
 use crate::ui::{MathInput, MathInputDirection, MathInputEvent, MathInputMode};
 use alloc::format;
-use glam::IVec2;
+use glam::{IVec2, Vec2};
 use rgb::RGB8;
 
 const INPUT_CAPACITY: usize = 6;
@@ -228,12 +227,8 @@ impl ColorCalculator {
         draw_text(
             platform,
             mode_label,
-            8.0,
-            y_offset,
-            6.0,
-            2.0,
-            LOCAL_COLOR_FG_0,
-            FontId::Futural,
+            Vec2::new(8.0, y_offset),
+            TextStyle::new(6.0, LOCAL_COLOR_FG_0),
         );
 
         match self.mode {
@@ -310,44 +305,28 @@ impl IcApp for ColorCalculator {
         draw_text(
             platform,
             self.name(),
-            8.0,
-            15.0,
-            6.0,
-            2.0,
-            LOCAL_COLOR_FG_0,
-            FontId::Futural,
+            Vec2::new(8.0, 15.0),
+            TextStyle::new(6.0, LOCAL_COLOR_FG_0),
         );
         draw_text(
             platform,
             "Press F1-F4",
-            8.0,
-            35.0,
-            6.0,
-            2.0,
-            LOCAL_COLOR_FG_SUBTLE_0,
-            FontId::Futural,
+            Vec2::new(8.0, 35.0),
+            TextStyle::new(6.0, LOCAL_COLOR_FG_SUBTLE_0),
         );
         self.draw_input(platform);
         let conv_y_offset = 124.0;
         draw_text_f(
             platform,
             format_args!("HEX 0x{:06X}", self.rgb24()),
-            8.0,
-            conv_y_offset,
-            6.0,
-            2.0,
-            LOCAL_COLOR_FG_0,
-            FontId::Futural,
+            Vec2::new(8.0, conv_y_offset),
+            TextStyle::new(6.0, LOCAL_COLOR_FG_0),
         );
         draw_text_f(
             platform,
             format_args!("DEC ({}, {}, {})", self.color.r, self.color.g, self.color.b),
-            8.0,
-            conv_y_offset + 20.0,
-            6.0,
-            2.0,
-            LOCAL_COLOR_FG_0,
-            FontId::Futural,
+            Vec2::new(8.0, conv_y_offset + 20.0),
+            TextStyle::new(6.0, LOCAL_COLOR_FG_0),
         );
         draw_text_f(
             platform,
@@ -355,24 +334,16 @@ impl IcApp for ColorCalculator {
                 "FLOAT ({:.3}, {:.3}, {:.3})",
                 self.color.r as f32 / 255.0,
                 self.color.g as f32 / 255.0,
-                self.color.b as f32 / 255.0,
+                self.color.b as f32 / 255.0
             ),
-            8.0,
-            conv_y_offset + 40.0,
-            6.0,
-            2.0,
-            LOCAL_COLOR_FG_0,
-            FontId::Futural,
+            Vec2::new(8.0, conv_y_offset + 40.0),
+            TextStyle::new(6.0, LOCAL_COLOR_FG_0),
         );
         draw_text_f(
             platform,
             format_args!("RGB565 0x{:04X}", self.to_rgb565()),
-            8.0,
-            conv_y_offset + 60.0,
-            6.0,
-            2.0,
-            LOCAL_COLOR_FG_0,
-            FontId::Futural,
+            Vec2::new(8.0, conv_y_offset + 60.0),
+            TextStyle::new(6.0, LOCAL_COLOR_FG_0),
         );
     }
 }

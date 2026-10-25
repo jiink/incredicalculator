@@ -1,9 +1,8 @@
 use crate::FIRMWARE_VERSION;
 use crate::app::InputContext;
-use crate::fonts::FontId;
 use crate::input::{IcKey, KeyMode};
 use crate::platform::{CANVAS_WIDTH, IcPlatform, SETTINGS_STORAGE_LEN, rgb8_hex};
-use crate::text::{draw_text_f, text_width};
+use crate::text::{HAlign, TextStyle, draw_text_f};
 use crate::ui::{MathInput, MathInputMode};
 use glam::{IVec2, Vec2};
 use rgb::RGB8;
@@ -253,12 +252,8 @@ impl SettingsMenu {
         draw_text_f(
             platform,
             format_args!("Settings"),
-            5.0,
-            12.0,
-            6.0,
-            2.0,
-            rgb8_hex(0xffffff),
-            FontId::Futural,
+            Vec2::new(5.0, 12.0),
+            TextStyle::new(6.0, rgb8_hex(0xffffff)),
         );
 
         let visible_count = SETTINGS.len().min(VISIBLE_ENTRIES);
@@ -278,12 +273,8 @@ impl SettingsMenu {
             draw_text_f(
                 platform,
                 format_args!("{}", entry.label),
-                11.0,
-                (y + 19) as f32,
-                5.0,
-                2.0,
-                rgb8_hex(0xffffff),
-                FontId::Futural,
+                Vec2::new(11.0, (y + 19) as f32),
+                TextStyle::new(5.0, rgb8_hex(0xffffff)),
             );
 
             if selected && self.editing_value {
@@ -299,12 +290,8 @@ impl SettingsMenu {
         draw_text_f(
             platform,
             format_args!("{} / {}", self.selected_entry + 1, SETTINGS.len()),
-            280.0,
-            204.0,
-            4.0,
-            2.0,
-            rgb8_hex(0xaaaaaa),
-            FontId::Futural,
+            Vec2::new(280.0, 204.0),
+            TextStyle::new(4.0, rgb8_hex(0xaaaaaa)),
         );
         let instructions = if self.editing_value {
             ""
@@ -314,23 +301,14 @@ impl SettingsMenu {
         draw_text_f(
             platform,
             format_args!("{}", instructions),
-            5.0,
-            230.0,
-            4.0,
-            2.0,
-            rgb8_hex(0xffffff),
-            FontId::Futural,
+            Vec2::new(5.0, 230.0),
+            TextStyle::new(4.0, rgb8_hex(0xffffff)),
         );
-        let version_width = text_width(FIRMWARE_VERSION, 4.0, FontId::Futural);
         draw_text_f(
             platform,
             format_args!("{}", FIRMWARE_VERSION),
-            CANVAS_WIDTH as f32 - 5.0 - version_width,
-            230.0,
-            4.0,
-            2.0,
-            rgb8_hex(0x666666),
-            FontId::Futural,
+            Vec2::new(CANVAS_WIDTH as f32 - 5.0, 230.0),
+            TextStyle::new(4.0, rgb8_hex(0x666666)).align(HAlign::Right),
         );
     }
 
@@ -383,24 +361,16 @@ fn draw_entry_value(platform: &mut dyn IcPlatform, value: EntryValue, y: i32, co
             draw_text_f(
                 platform,
                 format_args!("{}{}", value, suffix),
-                205.0,
-                (y + 19) as f32,
-                5.0,
-                2.0,
-                color,
-                FontId::Futural,
+                Vec2::new(205.0, (y + 19) as f32),
+                TextStyle::new(5.0, color),
             );
         }
         EntryValue::Choice { label } => {
             draw_text_f(
                 platform,
                 format_args!("{}", label),
-                205.0,
-                (y + 19) as f32,
-                5.0,
-                2.0,
-                color,
-                FontId::Futural,
+                Vec2::new(205.0, (y + 19) as f32),
+                TextStyle::new(5.0, color),
             );
         }
         EntryValue::Checkbox { checked } => {

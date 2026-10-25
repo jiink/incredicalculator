@@ -6,7 +6,6 @@ use crate::apps::SoundTest;
 use crate::apps::{Calculator, EngineMode};
 use crate::apps::{FaceCalculator, RangeMapperCalculator};
 use crate::audio_engine::AudioEngine;
-use crate::fonts::FontId;
 use crate::graphics;
 use crate::graphics::{draw_vitmap, Vitmap};
 use crate::input::IcKey;
@@ -166,24 +165,16 @@ impl IcShell {
                 draw_text_f(
                     platform,
                     format_args!("{}", pct),
-                    x_pos,
-                    12.0,
-                    5.0,
-                    2.0,
-                    Rgb::new(0, 0, 0),
-                    FontId::Futural,
+                    Vec2::new(x_pos, 12.0),
+                    TextStyle::new(5.0, Rgb::new(0, 0, 0)),
                 );
             }
             None => {
                 draw_text_f(
                     platform,
                     format_args!("N/A"),
-                    284.0,
-                    12.0,
-                    5.0,
-                    2.0,
-                    Rgb::new(0, 0, 0),
-                    FontId::Futural,
+                    Vec2::new(284.0, 12.0),
+                    TextStyle::new(5.0, Rgb::new(0, 0, 0)),
                 );
             }
         }
@@ -257,12 +248,8 @@ impl IcShell {
         draw_text_f(
             platform,
             format_args!("{:?}", adjustable),
-            start.x as f32 + 3.0,
-            start.y as f32 - 20.0,
-            5.0,
-            2.0,
-            rgb8_hex(0xFFFFFF),
-            FontId::Futural,
+            Vec2::new(start.x as f32 + 3.0, start.y as f32 - 20.0),
+            TextStyle::new(5.0, rgb8_hex(0xFFFFFF)),
         );
     }
 
@@ -353,12 +340,8 @@ impl IcShell {
         draw_text_f(
             platform,
             format_args!("Apps - Page {} of {}", self.selector_page + 1, page_count),
-            5.0,
-            12.0,
-            6.0,
-            2.0,
-            rgb8_hex(0xffffff),
-            FontId::Futural,
+            Vec2::new(5.0, 12.0),
+            TextStyle::new(6.0, rgb8_hex(0xffffff)),
         );
 
         let cards = self.selector_cards();
@@ -385,23 +368,15 @@ impl IcShell {
                 draw_text_f(
                     platform,
                     format_args!("{}", button_number(card.button)),
-                    hint_start.x as f32 + 6.0,
-                    hint_start.y as f32 + 19.0,
-                    10.0,
-                    4.0,
-                    shadow_color,
-                    FontId::Futural,
+                    Vec2::new(hint_start.x as f32 + 6.0, hint_start.y as f32 + 19.0),
+                    TextStyle::new(10.0, shadow_color).thickness(4.0),
                 );
                 let text_color = mix_colors(rgb8_hex(0xffffff), card.color, opacity);
                 draw_text_f(
                     platform,
                     format_args!("{}", button_number(card.button)),
-                    hint_start.x as f32 + 4.0,
-                    hint_start.y as f32 + 17.0,
-                    10.0,
-                    4.0,
-                    text_color,
-                    FontId::Futural,
+                    Vec2::new(hint_start.x as f32 + 4.0, hint_start.y as f32 + 17.0),
+                    TextStyle::new(10.0, text_color).thickness(4.0),
                 );
             }
         }

@@ -2,7 +2,7 @@ use crate::app::InputContext;
 use crate::fonts::{self, FontId};
 use crate::input::IcKey;
 use crate::platform::{rgb8_hex, IcPlatform};
-use crate::text::{draw_text, text_to_pos, text_vertical_bounds};
+use crate::text::{TextStyle, draw_text, text_to_pos, text_vertical_bounds};
 use glam::{IVec2, Vec2};
 use rgb::RGB8;
 
@@ -441,12 +441,12 @@ impl<const N: usize> MathInput<N> {
             draw_text(
                 platform,
                 display_text,
-                text_x,
-                text_y,
-                text_scale,
-                2.0,
-                rgb8_hex(if has_focus { 0x000000 } else { 0xffffff }),
-                font_id,
+                Vec2::new(text_x, text_y),
+                TextStyle::new(
+                    text_scale,
+                    rgb8_hex(if has_focus { 0x000000 } else { 0xffffff }),
+                )
+                .font(font_id),
             );
         }
 

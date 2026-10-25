@@ -61,41 +61,108 @@ fn draw_stroke_point(platform: &mut dyn IcPlatform, sx: f32, sy: f32, color: RGB
     );
 }
 
+/// Sum of glyph advances up to the end of the first line in `text`, in screen
+/// pixels. Carriage returns are ignored
+fn line_width(font: &'static HersheyFont, font_scale: f32, text: &[u8]) -> f32 {
+    let mut width = 0.0;
+    for &c in text {
+        if c == b'\n' {
+            break;
+        }
+        if c == b'\r' {
+            continue;
+        }
+        width += glyph_advance(font, c, get_glyph(font, c)) * font_scale;
+    }
+    width
+}
+
 // -----------------------------------------------------------------------------
 // PUBLIC RENDERING API
 // -----------------------------------------------------------------------------
 
+/// Horizontal alignment of each line of text relative to the anchor X.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum HAlign {
+    /// The anchor is the left edge of each line.
+    #[default]
+    Left,
+    /// The anchor is the horizontal center of each line.
+    Center,
+    /// The anchor is the right edge of each line.
+    Right,
+}
+
+impl HAlign {
+    #[inline]
+    fn factor(self) -> f32 {
+        match self {
+            HAlign::Left => 0.0,
+            HAlign::Center => 0.5,
+            HAlign::Right => 1.0,
+        }
+    }
+}
+
+
+#[derive(Clone, Copy, Debug)]
+pub struct TextStyle {
+    pub scale: f32,
+    pub color: RGB8,
+    pub thickness: f32,
+    pub font: fonts::FontId,
+    pub align: HAlign,
+}
+
+impl TextStyle {
+    pub const fn new(scale: f32, color: RGB8) -> Self {
+        Self {
+            scale,
+            color,
+            thickness: 2.0,
+            font: fonts::FontId::Futural,
+            align: HAlign::Left,
+        }
+    }
+
+    pub const fn align(self, align: HAlign) -> Self {
+        Self { align, ..self }
+    }
+
+    pub const fn thickness(self, thickness: f32) -> Self {
+        Self { thickness, ..self }
+    }
+
+    pub const fn font(self, font: fonts::FontId) -> Self {
+        Self { font, ..self }
+    }
+}
+
 /// Draw text using a selected Hershey font.
 ///
-/// `x` / `y` are the text origin used by the old renderer.
-/// `scale` converts Hershey units to screen pixels.
-///
-/// Because the platform code supplied only exposes draw_line, `thickness`
-/// is derived from scale. If you want explicit thickness, add it as another
-/// argument and replace the `scale.round()` line below.
-pub fn draw_text(
-    platform: &mut dyn IcPlatform,
-    text: &str,
-    x: f32,
-    y: f32,
-    scale: f32,
-    thickness: f32,
-    color: RGB8,
-    font_id: fonts::FontId,
-) {
-    let font = fonts::get_font(font_id);
-    let font_scale = scale / font.units_per_em;
+/// `pos.x` is the anchor for every line, interpreted according to
+/// `style.align`. `pos.y` is the origin of the first line; following lines
+/// advance by the font's line height.
+pub fn draw_text(platform: &mut dyn IcPlatform, text: &str, pos: Vec2, style: TextStyle) {
+    let font = fonts::get_font(style.font);
+    let font_scale = style.scale / font.units_per_em;
     if font_scale <= 0.0 {
         return;
     }
 
-    let mut current_x = x;
-    let mut current_y = y;
+    let bytes = text.as_bytes();
+    let align = style.align.factor();
+    let line_x = |line: &[u8]| pos.x - line_width(font, font_scale, line) * align;
+    let thickness = style.thickness as u32;
+    let color = style.color;
+
+    let mut current_x = line_x(bytes);
+    let mut current_y = pos.y;
     let line_height = font.line_height as f32 * font_scale;
 
-    for c in text.bytes() {
+    for (i, &c) in bytes.iter().enumerate() {
         if c == b'\n' {
-            current_x = x;
+            current_x = line_x(&bytes[i + 1..]);
             current_y += line_height;
             continue;
         }
@@ -129,7 +196,7 @@ pub fn draw_text(
                     Vec2::new(last_sx, last_sy),
                     Vec2::new(sx, sy),
                     color,
-                    thickness as u32,
+                    thickness,
                 );
             } else {
                 // Draw isolated points only when this vertex is a one-point
@@ -138,7 +205,7 @@ pub fn draw_text(
                 let next_is_lift = !is_last && glyph.vertices[index + 1] == HERSHEY_LIFT;
 
                 if glyph.vertices.len() == 1 || is_last || next_is_lift {
-                    draw_stroke_point(platform, sx, sy, color, thickness as u32);
+                    draw_stroke_point(platform, sx, sy, color, thickness);
                 }
             }
 
@@ -155,23 +222,20 @@ pub fn draw_text(
 pub fn draw_text_f(
     platform: &mut dyn IcPlatform,
     arg: fmt::Arguments<'_>,
-    x: f32,
-    y: f32,
-    scale: f32,
-    thickness: f32,
-    color: RGB8,
-    font_id: fonts::FontId,
+    pos: Vec2,
+    style: TextStyle,
 ) {
     let mut buf = [0u8; 128];
 
     let text = format_no_std::show(&mut buf, arg).unwrap();
-    draw_text(platform, text, x, y, scale, thickness, color, font_id);
+    draw_text(platform, text, pos, style);
 }
 
-/// Return the X position after `cursor` characters.
+/// Return the X position after `cursor` characters of left-aligned text
+/// drawn at `x`.
 ///
-/// This follows the behavior of your existing text_to_pos helper and treats
-/// newline/carriage-return as line-control characters.
+/// Newlines reset to `x` and carriage returns are ignored, matching
+/// draw_text. Neither counts toward `cursor`.
 pub fn text_to_pos(text: &str, x: f32, scale: f32, cursor: usize, font_id: fonts::FontId) -> f32 {
     let font = fonts::get_font(font_id);
     let font_scale = scale / font.units_per_em;
@@ -190,12 +254,11 @@ pub fn text_to_pos(text: &str, x: f32, scale: f32, cursor: usize, font_id: fonts
         }
 
         if c == b'\r' {
-            current_x = x;
             continue;
         }
 
         let glyph = get_glyph(font, c);
-        let advance_x = glyph_advance(font, c, glyph) * font_scale; // Fixed!
+        let advance_x = glyph_advance(font, c, glyph) * font_scale;
 
         current_x += advance_x;
         counter += 1;
@@ -207,8 +270,18 @@ pub fn text_to_pos(text: &str, x: f32, scale: f32, cursor: usize, font_id: fonts
     current_x
 }
 
+/// Width of the widest line in `text`, in screen pixels.
 pub fn text_width(text: &str, scale: f32, font_id: fonts::FontId) -> f32 {
-    text_to_pos(text, 0.0, scale, text.len(), font_id)
+    let font = fonts::get_font(font_id);
+    let font_scale = scale / font.units_per_em;
+    if font_scale <= 0.0 {
+        return 0.0;
+    }
+
+    text.as_bytes()
+        .split(|&c| c == b'\n')
+        .map(|line| line_width(font, font_scale, line))
+        .fold(0.0, f32::max)
 }
 
 pub fn text_vertical_bounds(text: &str, font_id: fonts::FontId) -> Option<(f32, f32)> {
@@ -230,3 +303,7 @@ pub fn text_vertical_bounds(text: &str, font_id: fonts::FontId) -> Option<(f32, 
 
     (min_y <= max_y).then_some((min_y, max_y))
 }
+
+#[cfg(test)]
+#[path = "text_tests.rs"]
+mod tests;

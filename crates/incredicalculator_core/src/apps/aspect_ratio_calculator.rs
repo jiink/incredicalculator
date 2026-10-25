@@ -1,5 +1,4 @@
 use crate::audio_engine;
-use crate::fonts::FontId;
 use crate::graphics::{Vitmap};
 use crate::graphics;
 use crate::platform::rgb8_hex;
@@ -8,7 +7,10 @@ use glam::{IVec2, Vec2};
 use num_traits::{abs, clamp_max};
 use rgb::RGB8;
 
-use crate::{app::IcApp, text::draw_text};
+use crate::{
+    app::IcApp,
+    text::{TextStyle, draw_text},
+};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum FocusUi {
@@ -303,12 +305,8 @@ impl IcApp for AspectRatioCalculator {
         draw_text(
             platform,
             "Aspect Ratio Calculator",
-            5.0,
-            12.0,
-            6.0,
-            2.0,
-            RGB8::new(0, 0, 0),
-            FontId::Futural,
+            Vec2::new(5.0, 12.0),
+            TextStyle::new(6.0, RGB8::new(0, 0, 0)),
         );
         self.input_box_width1
             .draw(platform, self.focused_ui == FocusUi::Width1);

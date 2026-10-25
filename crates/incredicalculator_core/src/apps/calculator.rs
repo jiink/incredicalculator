@@ -8,7 +8,7 @@ use crate::input::{IcKey, KeyMode};
 use crate::platform::rgb8_hex;
 use crate::platform::IcPlatform;
 use crate::platform::CANVAS_WIDTH;
-use crate::text::{draw_text, text_to_pos, text_vertical_bounds, text_width};
+use crate::text::{TextStyle, draw_text, text_to_pos, text_vertical_bounds, text_width};
 use alloc::boxed::Box;
 use alloc::string::ToString;
 use alloc::{format, string::String};
@@ -379,12 +379,8 @@ impl CalcEngine for ScientificEngine {
         draw_text(
             platform,
             "Scientific",
-            2.0,
-            222.0,
-            10.0,
-            2.0,
-            theme.subtle,
-            FontId::Futural,
+            Vec2::new(2.0, 222.0),
+            TextStyle::new(10.0, theme.subtle),
         );
     }
 
@@ -642,12 +638,8 @@ impl CalcEngine for ProgrammerEngine {
         draw_text(
             platform,
             &self.format_label(),
-            margin as f32 + 2.0,
-            12.0,
-            6.0,
-            2.0,
-            theme.subtle,
-            FontId::Futural,
+            Vec2::new(margin as f32 + 2.0, 12.0),
+            TextStyle::new(6.0, theme.subtle),
         );
         if let Some(result_as_int) = self.parse_bits(result_str) {
             // draw hex form of ans
@@ -656,12 +648,8 @@ impl CalcEngine for ProgrammerEngine {
             draw_text(
                 platform,
                 &result_as_hex,
-                margin as f32,
-                228.0,
-                7.0,
-                2.0,
-                theme.emphasis_0,
-                FontId::Futural,
+                Vec2::new(margin as f32, 228.0),
+                TextStyle::new(7.0, theme.emphasis_0),
             );
             // draw bin form of ans
             let bin_widget_bit1_x: i32 = 310;
@@ -717,12 +705,8 @@ impl CalcEngine for ProgrammerEngine {
             draw_text(
                 platform,
                 "Programmer",
-                margin as f32,
-                222.0,
-                10.0,
-                2.0,
-                theme.subtle,
-                FontId::Futural,
+                Vec2::new(margin as f32, 222.0),
+                TextStyle::new(10.0, theme.subtle),
             );
         }
     }
@@ -1165,12 +1149,8 @@ impl Calculator {
                     draw_text(
                         platform,
                         "*",
-                        (CANVAS_WIDTH - margin - 10) as f32,
-                        marker_layout.y,
-                        marker_layout.scale,
-                        2.0,
-                        theme.background,
-                        FontId::Futural,
+                        Vec2::new((CANVAS_WIDTH - margin - 10) as f32, marker_layout.y),
+                        TextStyle::new(marker_layout.scale, theme.background),
                     );
                     h_exp_col = theme.foreground;
                     h_ans_col = theme.foreground;
@@ -1183,12 +1163,8 @@ impl Calculator {
             draw_text(
                 platform,
                 eq_disp,
-                text_x,
-                eq_layout.y,
-                eq_layout.scale,
-                2.0,
-                h_exp_col,
-                FontId::Futural,
+                Vec2::new(text_x, eq_layout.y),
+                TextStyle::new(eq_layout.scale, h_exp_col),
             );
             let ans_disp =
                 core::str::from_utf8(&entry.result[..entry.result_len]).unwrap_or("Invalid UTF-8");
@@ -1204,22 +1180,14 @@ impl Calculator {
             draw_text(
                 platform,
                 "=",
-                text_x,
-                equals_layout.y,
-                equals_layout.scale,
-                2.0,
-                theme.subtle,
-                FontId::Futural,
+                Vec2::new(text_x, equals_layout.y),
+                TextStyle::new(equals_layout.scale, theme.subtle),
             );
             draw_text(
                 platform,
                 ans_disp,
-                text_x + 14.0,
-                ans_layout.y,
-                ans_layout.scale,
-                2.0,
-                h_ans_col,
-                FontId::Futural,
+                Vec2::new(text_x + 14.0, ans_layout.y),
+                TextStyle::new(ans_layout.scale, h_ans_col),
             );
 
             platform.draw_line(
@@ -1247,12 +1215,8 @@ impl Calculator {
         draw_text(
             platform,
             equation_disp,
-            margin,
-            eq_layout.y,
-            eq_layout.scale,
-            3.0,
-            theme.foreground,
-            FontId::Futural,
+            Vec2::new(margin, eq_layout.y),
+            TextStyle::new(eq_layout.scale, theme.foreground).thickness(3.0),
         );
         if self.focused_ui == FocusUi::Equation && self.history_selection.is_none() {
             // draw cursor
@@ -1305,22 +1269,14 @@ impl Calculator {
         draw_text(
             platform,
             "=",
-            margin,
-            equals_layout.y,
-            equals_layout.scale,
-            2.0,
-            theme.emphasis_2,
-            FontId::Futural,
+            Vec2::new(margin, equals_layout.y),
+            TextStyle::new(equals_layout.scale, theme.emphasis_2),
         );
         draw_text(
             platform,
             result_disp,
-            margin + 24.0,
-            ans_layout.y,
-            ans_layout.scale,
-            4.0,
-            theme.foreground,
-            FontId::Futural,
+            Vec2::new(margin + 24.0, ans_layout.y),
+            TextStyle::new(ans_layout.scale, theme.foreground).thickness(4.0),
         );
     }
 }

@@ -1,10 +1,9 @@
 use crate::app::{IcApp, InputContext};
 use crate::audio_engine::{AudioEngine, AudioPatch, NoteId};
-use crate::fonts::FontId;
 use crate::graphics::{self, draw_vitmap, Vitmap, SAMPLE_GRAPHIC};
 use crate::input::IcKey;
 use crate::platform::rgb8_hex;
-use crate::text;
+use crate::text::{self, TextStyle};
 use glam::Vec2;
 use rgb::RGB8;
 
@@ -111,12 +110,8 @@ impl IcApp for SoundTest {
         text::draw_text_f(
             platform,
             format_args!("Held: {} / {}", held_notes, crate::audio_engine::MAX_VOICES),
-            4.0,
-            4.0,
-            3.0,
-            2.0,
-            RGB8::new(0, 0, 0),
-            FontId::Futural,
+            Vec2::new(4.0, 4.0),
+            TextStyle::new(6.0, RGB8::new(0, 0, 0)),
         );
         text::draw_text_f(
             platform,
@@ -126,47 +121,31 @@ impl IcApp for SoundTest {
                     "Off"
                 } else {
                     "On"
-                },
+                }
             ),
-            4.0,
-            28.0,
-            2.0,
-            2.0,
-            RGB8::new(0, 0, 0),
-            FontId::Futural,
+            Vec2::new(4.0, 28.0),
+            TextStyle::new(6.0, RGB8::new(0, 0, 0)),
         );
         text::draw_text_f(
             platform,
             format_args!("F3 Attack: {} ms", self.patch.attack_ms),
-            4.0,
-            48.0,
-            2.0,
-            2.0,
-            RGB8::new(0, 0, 0),
-            FontId::Futural,
+            Vec2::new(4.0, 48.0),
+            TextStyle::new(6.0, RGB8::new(0, 0, 0)),
         );
         text::draw_text_f(
             platform,
             format_args!("F4 Release: {} ms", self.patch.release_ms),
-            4.0,
-            68.0,
-            2.0,
-            2.0,
-            RGB8::new(0, 0, 0),
-            FontId::Futural,
+            Vec2::new(4.0, 68.0),
+            TextStyle::new(6.0, RGB8::new(0, 0, 0)),
         );
         text::draw_text_f(
             platform,
             format_args!(
                 "F5/F6 Triangle/Square: {}/{}",
-                self.patch.triangle_mix, self.patch.square_mix,
+                self.patch.triangle_mix, self.patch.square_mix
             ),
-            4.0,
-            88.0,
-            2.0,
-            2.0,
-            RGB8::new(0, 0, 0),
-            FontId::Futural,
+            Vec2::new(4.0, 88.0),
+            TextStyle::new(6.0, RGB8::new(0, 0, 0)),
         );
     }
 

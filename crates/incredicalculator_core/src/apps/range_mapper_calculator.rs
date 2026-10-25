@@ -1,5 +1,4 @@
 use crate::audio_engine;
-use crate::fonts::FontId;
 use crate::graphics::{Vitmap};
 use crate::graphics;
 use crate::input::IcKey;
@@ -7,9 +6,9 @@ use crate::ui::{MathInput, MathInputDirection, MathInputEvent, MathInputMode};
 use crate::{
     app::IcApp,
     platform::{rgb8_hex, IcPlatform},
-    text::{draw_text, draw_text_f},
+    text::{TextStyle, draw_text, draw_text_f},
 };
-use glam::IVec2;
+use glam::{IVec2, Vec2};
 
 const INPUT_CHAR_LIMIT: usize = 24;
 
@@ -205,62 +204,38 @@ impl IcApp for RangeMapperCalculator {
         draw_text_f(
             platform,
             format_args!("{}", self.answer),
-            49.0,
-            175.0,
-            10.0,
-            2.0,
-            rgb8_hex(0xffffff),
-            FontId::Futural,
+            Vec2::new(49.0, 175.0),
+            TextStyle::new(10.0, rgb8_hex(0xffffff)),
         );
         draw_text(
             platform,
             "Map",
-            3.0,
-            24.0,
-            6.0,
-            2.0,
-            rgb8_hex(0xffffff),
-            FontId::Futural,
+            Vec2::new(3.0, 24.0),
+            TextStyle::new(6.0, rgb8_hex(0xffffff)),
         );
         draw_text(
             platform,
             "from",
-            3.0,
-            73.0,
-            6.0,
-            2.0,
-            rgb8_hex(0xffffff),
-            FontId::Futural,
+            Vec2::new(3.0, 73.0),
+            TextStyle::new(6.0, rgb8_hex(0xffffff)),
         );
         draw_text(
             platform,
             "to",
-            3.0,
-            119.0,
-            6.0,
-            2.0,
-            rgb8_hex(0xffffff),
-            FontId::Futural,
+            Vec2::new(3.0, 119.0),
+            TextStyle::new(6.0, rgb8_hex(0xffffff)),
         );
         draw_text(
             platform,
             "=",
-            32.0,
-            167.0,
-            6.0,
-            2.0,
-            rgb8_hex(0xffffff),
-            FontId::Futural,
+            Vec2::new(32.0, 167.0),
+            TextStyle::new(6.0, rgb8_hex(0xffffff)),
         );
         draw_text(
             platform,
             "X = C + ((X-A)*(D-C) / B-A)",
-            3.0,
-            227.0,
-            6.0,
-            2.0,
-            rgb8_hex(0x3A9AFF),
-            FontId::Futural,
+            Vec2::new(3.0, 227.0),
+            TextStyle::new(6.0, rgb8_hex(0x3A9AFF)),
         )
     }
 }
