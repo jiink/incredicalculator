@@ -48,6 +48,21 @@
       #frame-counter {
         font: 12px monospace;
       }
+      .info-panel button {
+        margin-top: 4px;
+        pointer-events: auto;
+        cursor: pointer;
+      }
+      .info-menu {
+        z-index: 2;
+      }
+      /* Moved out of the (transformed) shell and sized by script so each
+         canvas pixel covers exactly one screen pixel */
+      canvas.pixel-perfect {
+        position: fixed;
+        z-index: 1;
+        image-rendering: pixelated;
+      }
       /* Scaled up by script on touch devices to fill the screen */
       .calculator-shell {
         transform: scale(var(--shell-scale, 1));
@@ -141,6 +156,7 @@
       <div class="info-panel" id="info-panel" hidden>
         <div>Incredicalculator web simulator</div>
         <div id="frame-counter">frames: 0</div>
+        <button id="pixel-perfect-toggle" aria-pressed="false">1:1 pixels</button>
       </div>
     </div>
     <div class="calculator-shell">
@@ -310,6 +326,69 @@
       fitShell();
       window.addEventListener('resize', fitShell);
       touchDevice.addEventListener('change', fitShell);
+
+      // 1:1 mode shows the canvas at its native resolution in device pixels,
+      // centred over the display slot with its bottom edge on the slot's.
+      const canvas = document.getElementById('incredicalculator');
+      const displaySlot = document.querySelector('.display-slot');
+      const pixelToggle = document.getElementById('pixel-perfect-toggle');
+      let pixelPerfect = false;
+
+      function layoutCanvas() {
+        if (!pixelPerfect) {
+          return;
+        }
+        const dpr = window.devicePixelRatio || 1;
+        const slot = displaySlot.getBoundingClientRect();
+        const width = canvas.width;
+        const height = canvas.height;
+        // Work in whole device pixels so the canvas lands on the pixel grid.
+        const clamp = (value, max) => Math.min(Math.max(value, 0), Math.max(max, 0));
+        const left = clamp(
+          Math.round((slot.left + slot.width / 2) * dpr - width / 2),
+          Math.floor(window.innerWidth * dpr) - width,
+        );
+        const top = clamp(
+          Math.round(slot.bottom * dpr) - height,
+          Math.floor(window.innerHeight * dpr) - height,
+        );
+        canvas.style.left = `${left / dpr}px`;
+        canvas.style.top = `${top / dpr}px`;
+        canvas.style.width = `${width / dpr}px`;
+        canvas.style.height = `${height / dpr}px`;
+      }
+
+      // Zooming fires `resize`, but moving to a monitor with a different
+      // scale may not, so also watch the current resolution.
+      let resolutionQuery = null;
+      function watchResolution() {
+        resolutionQuery?.removeEventListener('change', onResolutionChange);
+        resolutionQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+        resolutionQuery.addEventListener('change', onResolutionChange);
+      }
+      function onResolutionChange() {
+        watchResolution();
+        layoutCanvas();
+      }
+      watchResolution();
+
+      pixelToggle.addEventListener('click', () => {
+        pixelPerfect = !pixelPerfect;
+        pixelToggle.setAttribute('aria-pressed', String(pixelPerfect));
+        pixelToggle.textContent = pixelPerfect ? 'Fit to display' : '1:1 pixels';
+        if (pixelPerfect) {
+          // The shell's transform would make `position: fixed` relative to
+          // it, and the slot clips overflow, so move the canvas to the body.
+          document.body.appendChild(canvas);
+          canvas.classList.add('pixel-perfect');
+          layoutCanvas();
+        } else {
+          canvas.classList.remove('pixel-perfect');
+          canvas.removeAttribute('style');
+          displaySlot.appendChild(canvas);
+        }
+      });
+      window.addEventListener('resize', layoutCanvas);
 
       await init();
       start();

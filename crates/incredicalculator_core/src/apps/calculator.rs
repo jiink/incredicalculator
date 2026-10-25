@@ -2,12 +2,12 @@ use crate::app::IcApp;
 use crate::app::InputContext;
 use crate::audio_engine::AudioEngine;
 use crate::fonts::{self, FontId};
-use crate::graphics::{Vitmap};
 use crate::graphics;
+use crate::graphics::Vitmap;
 use crate::input::{IcKey, KeyMode};
-use crate::platform::rgb8_hex;
-use crate::platform::IcPlatform;
 use crate::platform::CANVAS_WIDTH;
+use crate::platform::IcPlatform;
+use crate::platform::rgb8_hex;
 use crate::text::{TextStyle, draw_text, text_to_pos, text_vertical_bounds, text_width};
 use alloc::boxed::Box;
 use alloc::string::ToString;
@@ -517,7 +517,9 @@ impl ProgrammerEngine {
         current_result: &str,
     ) {
         let current_val = self.parse_bits(current_result).unwrap_or(0);
-        let new_val = self.int_format().wrap((current_val ^ (1 << bit_idx)) as i64);
+        let new_val = self
+            .int_format()
+            .wrap((current_val ^ (1 << bit_idx)) as i64);
         let new_str = format!("{}", new_val);
         buffer.set_content(new_str.as_bytes());
     }
@@ -558,7 +560,11 @@ impl ProgrammerEngine {
     }
 
     fn format_label(&self) -> String {
-        format!("{}{}", if self.signed { 'i' } else { 'u' }, self.bit_width)
+        format!(
+            "{} {}-bit",
+            if self.signed { "signed" } else { "unsigned" },
+            self.bit_width
+        )
     }
 }
 
@@ -640,6 +646,12 @@ impl CalcEngine for ProgrammerEngine {
             &self.format_label(),
             Vec2::new(margin as f32 + 2.0, 12.0),
             TextStyle::new(6.0, theme.subtle),
+        );
+        draw_text(
+            platform,
+            "F1/F2: Cycle",
+            Vec2::new(278.0, 12.0),
+            TextStyle::new(6.0, theme.subtle).align(crate::text::HAlign::Right),
         );
         if let Some(result_as_int) = self.parse_bits(result_str) {
             // draw hex form of ans
@@ -809,7 +821,7 @@ impl Calculator {
             focused_ui: FocusUi::Equation,
             engine: match engine_mode {
                 EngineMode::Programmer => Box::new(ProgrammerEngine::default()),
-                EngineMode::Scientific => Box::new(ScientificEngine::default())
+                EngineMode::Scientific => Box::new(ScientificEngine::default()),
             },
             engine_mode: engine_mode,
             shift_tap_pending: false,
@@ -1247,8 +1259,14 @@ impl Calculator {
             );
             platform.draw_polygon(
                 &[
-                    Vec2::new(cursor_x - cursor_tip_width, cursor_bottom + cursor_tip_height),
-                    Vec2::new(cursor_x + cursor_tip_width, cursor_bottom + cursor_tip_height),
+                    Vec2::new(
+                        cursor_x - cursor_tip_width,
+                        cursor_bottom + cursor_tip_height,
+                    ),
+                    Vec2::new(
+                        cursor_x + cursor_tip_width,
+                        cursor_bottom + cursor_tip_height,
+                    ),
                     Vec2::new(cursor_x, cursor_bottom),
                 ],
                 theme.emphasis_0,
@@ -1289,14 +1307,14 @@ impl IcApp for Calculator {
     fn icon(&self) -> &'static Vitmap {
         match self.engine_mode {
             EngineMode::Programmer => &graphics::CODE_ICON,
-            EngineMode::Scientific => &graphics::SCIENTIFIC_ICON
-        } 
+            EngineMode::Scientific => &graphics::SCIENTIFIC_ICON,
+        }
     }
 
     fn color(&self) -> RGB8 {
         match self.engine_mode {
             EngineMode::Programmer => PROGRAMMER_THEME.background,
-            EngineMode::Scientific => SCIENTIFIC_THEME.background    
+            EngineMode::Scientific => SCIENTIFIC_THEME.background,
         }
     }
 
