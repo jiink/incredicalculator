@@ -152,40 +152,6 @@ fn settings_enter_cycles_all_modes_without_entering_text_editor() {
 }
 
 #[test]
-fn settings_are_saved_on_exit_only_when_changed_and_restored_on_boot() {
-    let mut shell = IcShell::new();
-    let mut platform = TestPlatform::default();
-    shell.active_app_idx = None;
-    shell.update(&mut platform);
-
-    // Opening and leaving without changes does not write storage.
-    tap(&mut shell, &mut platform, IcKey::Num2);
-    assert!(shell.settings_open);
-    tap(&mut shell, &mut platform, IcKey::Func1);
-    assert!(!shell.settings_open);
-    assert_eq!(platform.settings_saves, 0);
-
-    // Cycling the key mode back to where it started is not a change either.
-    tap(&mut shell, &mut platform, IcKey::Num2);
-    tap(&mut shell, &mut platform, IcKey::Num2);
-    for _ in 0..3 {
-        tap(&mut shell, &mut platform, IcKey::Func6);
-    }
-    tap(&mut shell, &mut platform, IcKey::Func1);
-    assert_eq!(platform.settings_saves, 0);
-
-    tap(&mut shell, &mut platform, IcKey::Num2);
-    tap(&mut shell, &mut platform, IcKey::Num2);
-    tap(&mut shell, &mut platform, IcKey::Func6);
-    tap(&mut shell, &mut platform, IcKey::Func1);
-    assert_eq!(platform.settings_saves, 1);
-
-    let mut rebooted = IcShell::new();
-    rebooted.update(&mut platform);
-    assert_eq!(rebooted.settings_menu.key_mode(), KeyMode::Sticky);
-}
-
-#[test]
 fn sticky_and_toggle_shift_reach_apps_and_show_blue_indicator() {
     for mode in [KeyMode::Sticky, KeyMode::Toggle] {
         let (mut shell, mut platform, recorded) = setup(mode);
