@@ -7,17 +7,19 @@ use crate::apps::{Calculator, EngineMode};
 use crate::apps::{FaceCalculator, RangeMapperCalculator};
 use crate::audio_engine::AudioEngine;
 use crate::graphics;
-use crate::graphics::{draw_vitmap, Vitmap};
+use crate::graphics::draw_vitmap_aff;
+use crate::graphics::{Vitmap, draw_vitmap};
 use crate::input::IcKey;
 use crate::input::{KeyMode, KeyState, ModifierKeys};
 use crate::platform::rgb8_hex;
-use crate::platform::{IcPlatform, CANVAS_HEIGHT, CANVAS_WIDTH};
+use crate::platform::{CANVAS_HEIGHT, CANVAS_WIDTH, IcPlatform};
 use crate::settings::SettingsMenu;
 use crate::text::*;
 use alloc::boxed::Box;
+use glam::Affine2;
 use glam::{IVec2, Vec2};
-use num_traits::clamp;
 use num_traits::FromPrimitive;
+use num_traits::clamp;
 use rgb::Rgb;
 use rgb::*;
 
@@ -156,11 +158,12 @@ impl IcShell {
             );
         }
         if platform.is_charging() {
-            draw_text_f(
+            draw_vitmap(
                 platform,
-                format_args!("S"),
-                Vec2::new((batt_icon_pos.x - 3) as f32, 12.0),
-                TextStyle::new(5.0, Rgb::new(0xff, 0xff, 0xff)).align(HAlign::Right),
+                &graphics::CHARGING,
+                0,
+                Vec2::new((batt_icon_pos.x - 10) as f32, 12.0),
+                Vec2::new(1.0, 1.0),
             );
         }
         match batt_percentage {

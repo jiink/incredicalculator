@@ -99,6 +99,29 @@ pub mod graphics {
             |point: Point| transform.transform_point2(Vec2::new(point.x, point.y));
 
         for polygon in frame.shapes {
+            let border_width = if polygon.border_width > 0.0 {
+                (polygon.border_width as u32).max(1)
+            } else {
+                0
+            };
+            if border_width > 0 && polygon.points.len() >= 2 {
+                let border_color = RGB8::new(
+                    polygon.border_color.r,
+                    polygon.border_color.g,
+                    polygon.border_color.b,
+                );
+                let edge_count = if polygon.open {
+                    polygon.points.len() - 1
+                } else {
+                    polygon.points.len()
+                };
+                for index in 0..edge_count {
+                    let start = transform_point(polygon.points[index]);
+                    let end = transform_point(polygon.points[(index + 1) % polygon.points.len()]);
+                    platform.draw_line(start, end, border_color, border_width);
+                }
+            }
+
             if !polygon.open && polygon.points.len() >= 3 {
                 let points: Vec<Vec2> = polygon
                     .points
@@ -110,31 +133,6 @@ pub mod graphics {
                     &points,
                     RGB8::new(polygon.color.r, polygon.color.g, polygon.color.b),
                 );
-            }
-
-            let border_width = if polygon.border_width > 0.0 {
-                (polygon.border_width as u32).max(1)
-            } else {
-                0
-            };
-            if border_width == 0 || polygon.points.len() < 2 {
-                continue;
-            }
-
-            let border_color = RGB8::new(
-                polygon.border_color.r,
-                polygon.border_color.g,
-                polygon.border_color.b,
-            );
-            let edge_count = if polygon.open {
-                polygon.points.len() - 1
-            } else {
-                polygon.points.len()
-            };
-            for index in 0..edge_count {
-                let start = transform_point(polygon.points[index]);
-                let end = transform_point(polygon.points[(index + 1) % polygon.points.len()]);
-                platform.draw_line(start, end, border_color, border_width);
             }
         }
 

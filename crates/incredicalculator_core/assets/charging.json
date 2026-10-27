@@ -1,0 +1,59 @@
+{
+  "meta": {
+    "version": "1.0",
+    "name": "charging"
+  },
+  "actions": [
+    {
+      "name": "Default",
+      "frames": [
+        {
+          "shapes": [
+            {
+              "points": [
+                {
+                  "x": 1,
+                  "y": -8
+                },
+                {
+                  "x": -7,
+                  "y": 2
+                },
+                {
+                  "x": 0,
+                  "y": 2
+                },
+                {
+                  "x": -1,
+                  "y": 8
+                },
+                {
+                  "x": 7,
+                  "y": -2
+                },
+                {
+                  "x": 0,
+                  "y": -2
+                }
+              ],
+              "color": {
+                "r": 255,
+                "g": 255,
+                "b": 255,
+                "a": 255
+              },
+              "borderWidth": 2,
+              "borderColor": {
+                "r": 0,
+                "g": 0,
+                "b": 0
+              },
+              "open": false
+            }
+          ]
+        }
+      ],
+      "loop": true
+    }
+  ]
+}

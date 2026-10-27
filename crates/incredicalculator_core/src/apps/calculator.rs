@@ -561,8 +561,8 @@ impl ProgrammerEngine {
 
     fn format_label(&self) -> String {
         format!(
-            "{} {}-bit",
-            if self.signed { "signed" } else { "unsigned" },
+            "{}int{}",
+            if self.signed { "u" } else { "" },
             self.bit_width
         )
     }
@@ -650,7 +650,7 @@ impl CalcEngine for ProgrammerEngine {
         draw_text(
             platform,
             "F1/F2: Cycle",
-            Vec2::new(278.0, 12.0),
+            Vec2::new(262.0, 12.0),
             TextStyle::new(6.0, theme.subtle).align(crate::text::HAlign::Right),
         );
         if let Some(result_as_int) = self.parse_bits(result_str) {

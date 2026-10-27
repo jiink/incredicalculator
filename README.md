@@ -58,8 +58,10 @@ To run the browser build:
 
 For example, after adding `assets/player-idle.json`, draw its first frame with:
 
+See here for authoring vitmaps: https://github.com/jiink/vitmap-tools
 
-To get a .uf2 file:
+
+## To get a .uf2 file:
 - cd into incredicalculator_rp and run `cargo uf2` (needs picotool on `PATH`)
 - grab the uf2 file from target/thumbv8m.main-none-eabihf/release
 
