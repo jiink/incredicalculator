@@ -204,6 +204,7 @@ pub struct IcRpPlatform<'d> {
     pending_settings_save: Option<[u8; SETTINGS_STORAGE_LEN]>,
     backlight: Pwm<'d>,
     backlight2: Pwm<'d>,
+    charging_status: Input<'d>,
     brightness: u8,
     applied_brightness: Option<u8>,
     display_sleep_requested: Option<bool>,
@@ -213,13 +214,19 @@ pub struct IcRpPlatform<'d> {
 }
 
 impl<'d> IcRpPlatform<'d> {
-    fn new(backlight: Pwm<'d>, backlight2: Pwm<'d>, canvas: FrameBuffer) -> Self {
+    fn new(
+        backlight: Pwm<'d>,
+        backlight2: Pwm<'d>,
+        charging_status: Input<'d>,
+        canvas: FrameBuffer,
+    ) -> Self {
         let mut platform = Self {
             canvas: Some(canvas),
             loaded_settings: None,
             pending_settings_save: None,
             backlight,
             backlight2,
+            charging_status,
             brightness: 128,
             applied_brightness: None,
             display_sleep_requested: None,
@@ -435,6 +442,10 @@ impl<'d> IcPlatform for IcRpPlatform<'d> {
             0.. => Some(s),
             _ => None,
         }
+    }
+
+    fn is_charging(&self) -> bool {
+        self.charging_status.is_low()
     }
 
     fn get_brightness(&self) -> u8 {
@@ -1214,6 +1225,8 @@ async fn main(spawner: Spawner) {
     let bare_display_bl = p.PIN_41;
     let lcd_spi_bus = p.SPI1;
     let audio_shutdown_n = Output::new(p.PIN_27, Level::Low);
+    // low = charging, floating = not charging
+    let charging_status = Input::new(p.PIN_1, Pull::Up);
 
     // ST7789 datasheet: "If not used, please fix this pin at VDDI or DGND."
     let _tft_unused_d0 = Output::new(p.PIN_33, Level::Low);
@@ -1290,7 +1303,8 @@ async fn main(spawner: Spawner) {
     let initial_canvas = FrameBuffer {
         pixels: CANVAS_DATA0.take(),
     };
-    let mut ic_rp_platform = IcRpPlatform::new(backlight, backlight2, initial_canvas);
+    let mut ic_rp_platform =
+        IcRpPlatform::new(backlight, backlight2, charging_status, initial_canvas);
     if enter_bootsel {
         ic_rp_platform.clear(rgb8_hex(0x5B6EE1));
         let mut fbuf = RawFrameBuf::<Rgb565, _>::new(

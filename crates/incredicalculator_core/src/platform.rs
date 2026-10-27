@@ -42,6 +42,9 @@ pub trait IcPlatform {
     fn log(&mut self, arg: fmt::Arguments);
     fn millis(&self) -> u64;
     fn get_battery_soc(&self) -> Option<i32>;
+    fn is_charging(&self) -> bool {
+        false
+    }
     fn get_brightness(&self) -> u8;
     fn set_brightness(&mut self, value: u8);
     fn get_volume(&self) -> u8;

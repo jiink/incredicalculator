@@ -155,6 +155,14 @@ impl IcShell {
                 Some(RGB::new(0xff, 0xff, 0xff)),
             );
         }
+        if platform.is_charging() {
+            draw_text_f(
+                platform,
+                format_args!("S"),
+                Vec2::new((batt_icon_pos.x - 3) as f32, 12.0),
+                TextStyle::new(5.0, Rgb::new(0xff, 0xff, 0xff)).align(HAlign::Right),
+            );
+        }
         match batt_percentage {
             Some(pct) => {
                 let x_pos = match pct {
