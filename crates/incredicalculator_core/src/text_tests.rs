@@ -110,3 +110,22 @@ fn alignment_applies_per_line() {
     let text = alloc::format!("{first}\n{second}");
     assert_same(&draw(&text, 100.0, HAlign::Right), &expected);
 }
+
+#[test]
+fn text_height_matches_drawn_strokes() {
+    for text in ["Shift+Super", "ag\nMM", "1\n\n2"] {
+        let lines = draw(text, 0.0, HAlign::Left);
+        let (min_y, max_y) = lines
+            .iter()
+            .flat_map(|(a, b)| [a.y, b.y])
+            .fold((f32::INFINITY, f32::NEG_INFINITY), |(lo, hi), y| {
+                (lo.min(y), hi.max(y))
+            });
+        let (top, bottom) = text_ink_bounds(text, SCALE, fonts::FontId::Futural).unwrap();
+        assert!((top + 20.0 - min_y).abs() < 1e-3, "{text:?}");
+        assert!((bottom + 20.0 - max_y).abs() < 1e-3, "{text:?}");
+        let height = text_height(text, SCALE, fonts::FontId::Futural);
+        assert!((height - (max_y - min_y)).abs() < 1e-3, "{text:?}");
+    }
+    assert_eq!(text_height("", SCALE, fonts::FontId::Futural), 0.0);
+}

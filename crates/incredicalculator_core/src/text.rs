@@ -284,6 +284,34 @@ pub fn text_width(text: &str, scale: f32, font_id: fonts::FontId) -> f32 {
         .fold(0.0, f32::max)
 }
 
+/// Top and bottom of the drawn strokes, in screen pixels relative to the
+/// `pos.y` passed to draw_text. Later lines are offset by the line height.
+pub fn text_ink_bounds(text: &str, scale: f32, font_id: fonts::FontId) -> Option<(f32, f32)> {
+    let font = fonts::get_font(font_id);
+    let font_scale = scale / font.units_per_em;
+    let mut bounds: Option<(f32, f32)> = None;
+
+    for (line_index, line) in text.split('\n').enumerate() {
+        let Some((min_y, max_y)) = text_vertical_bounds(line, font_id) else {
+            continue;
+        };
+        let line_y = line_index as f32 * font.line_height as f32;
+        let top = (line_y + min_y) * font_scale;
+        let bottom = (line_y + max_y) * font_scale;
+        bounds = Some(match bounds {
+            Some((t, b)) => (t.min(top), b.max(bottom)),
+            None => (top, bottom),
+        });
+    }
+
+    bounds
+}
+
+/// Height of the drawn strokes in `text`, in screen pixels.
+pub fn text_height(text: &str, scale: f32, font_id: fonts::FontId) -> f32 {
+    text_ink_bounds(text, scale, font_id).map_or(0.0, |(top, bottom)| bottom - top)
+}
+
 pub fn text_vertical_bounds(text: &str, font_id: fonts::FontId) -> Option<(f32, f32)> {
     let font = fonts::get_font(font_id);
     let mut min_y = f32::INFINITY;

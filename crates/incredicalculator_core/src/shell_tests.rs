@@ -355,3 +355,20 @@ fn shell_consumed_chord_uses_up_sticky_super() {
     );
     assert!(!has_border(&platform, 1, 0x00ff00));
 }
+
+#[test]
+fn startup_help_shows_until_first_key_press() {
+    for key in [IcKey::Num5, IcKey::Shift, IcKey::Super] {
+        let mut shell = IcShell::new();
+        let mut platform = TestPlatform::default();
+        shell.update(&mut platform);
+        shell.update(&mut platform);
+        assert!(shell.show_startup_help);
+        shell.key_down(key);
+        shell.update(&mut platform);
+        assert!(!shell.show_startup_help, "{key:?}");
+        shell.key_up(key);
+        shell.update(&mut platform);
+        assert!(!shell.show_startup_help, "{key:?}");
+    }
+}

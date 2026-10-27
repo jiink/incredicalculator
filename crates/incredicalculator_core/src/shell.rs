@@ -64,6 +64,7 @@ pub struct IcShell {
     settings_menu: SettingsMenu,
     settings_loaded: bool,
     key_states: [KeyState; IcKey::COUNT],
+    show_startup_help: bool,
     modifiers: ModifierKeys,
     adjusting_something: Option<Adjustable>,
     audio: AudioEngine,
@@ -89,6 +90,7 @@ impl IcShell {
             settings_menu: SettingsMenu::new(),
             settings_loaded: false,
             key_states: [KeyState::default(); IcKey::COUNT],
+            show_startup_help: true,
             modifiers: ModifierKeys::default(),
             adjusting_something: None,
             audio: AudioEngine::new(),
@@ -251,6 +253,34 @@ impl IcShell {
         );
     }
 
+    fn draw_startup_help(platform: &mut dyn IcPlatform) {
+        let text = "Shift+Super: open apps menu";
+        let style = TextStyle::new(6.0, rgb8_hex(0xffffff)).align(HAlign::Center);
+        let padding = 10.0;
+        let margin = 12.0;
+        let center_x = CANVAS_WIDTH as f32 / 2.0;
+        let half_w = text_width(text, style.scale, style.font) / 2.0 + padding;
+        let (ink_top, _) = text_ink_bounds(text, style.scale, style.font).unwrap_or_default();
+        let box_h = text_height(text, style.scale, style.font) + padding * 2.0;
+        let end_y = CANVAS_HEIGHT as f32 - margin;
+        let start = Vec2::new(center_x - half_w, end_y - box_h);
+        let end = Vec2::new(center_x + half_w, end_y);
+        platform.draw_rectangle_rounded(
+            start.as_ivec2(),
+            end.as_ivec2(),
+            rgb8_hex(0xffffff),
+            2,
+            Some(rgb8_hex(0x222222)),
+            6,
+        );
+        draw_text(
+            platform,
+            text,
+            Vec2::new(center_x, start.y + padding - ink_top),
+            style,
+        );
+    }
+
     fn selector_cards(&self) -> [SelectorCard<'_>; 9] {
         let mut cards = [
             SelectorCard {
@@ -373,7 +403,7 @@ impl IcShell {
                 draw_text_f(
                     platform,
                     format_args!("{}", button_number(card.button)),
-                    Vec2::new(hint_start.x as f32 + 4.0, hint_start.y as f32 + 17.0),
+                    Vec2::new(hint_start.x as f32 + 4.0, hint_start.y as f32 + 20.0),
                     TextStyle::new(10.0, text_color).thickness(4.0),
                 );
             }
@@ -407,6 +437,9 @@ impl IcShell {
             key_states: &effective_states,
             key_mode,
         };
+        if self.key_states.iter().any(|state| state.just_pressed) {
+            self.show_startup_help = false;
+        }
         let backspace_closes_menu = self.active_app_idx.is_none()
             && !self.settings_open
             && self.key_states[IcKey::Func1 as usize].just_pressed;
@@ -519,6 +552,9 @@ impl IcShell {
             Self::draw_adjustable_readout(platform, adjustable, v);
         }
         self.draw_battery(platform);
+        if self.show_startup_help {
+            Self::draw_startup_help(platform);
+        }
         if key_mode != KeyMode::Normal {
             for (active, inset, color) in [
                 (ctx.is_shifted(), 1, rgb8_hex(0x0000ff)),
