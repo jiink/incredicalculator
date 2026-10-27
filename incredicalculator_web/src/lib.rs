@@ -6,7 +6,7 @@ use glam::{IVec2, Vec2};
 use rgb::RGB8;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-use web_sys::{console, window, CanvasRenderingContext2d, HtmlCanvasElement};
+use web_sys::{console, window, CanvasRenderingContext2d, HtmlCanvasElement, Storage};
 
 thread_local! {
     static APP: RefCell<Option<BrowserState>> = RefCell::new(None);
@@ -19,7 +19,9 @@ struct BrowserState {
 }
 
 use incredicalculator_core::input::IcKey;
-use incredicalculator_core::platform::{IcPlatform, CANVAS_HEIGHT, CANVAS_WIDTH};
+use incredicalculator_core::platform::{
+    IcPlatform, CANVAS_HEIGHT, CANVAS_WIDTH, SETTINGS_STORAGE_LEN,
+};
 use incredicalculator_core::shell::IcShell;
 
 struct BrowserPlatform {
@@ -218,6 +220,40 @@ impl IcPlatform for BrowserPlatform {
     fn set_screen_timeout_seconds(&mut self, seconds: u32) {
         self.screen_timeout_seconds = seconds;
     }
+
+    fn load_settings(&mut self) -> Option<[u8; SETTINGS_STORAGE_LEN]> {
+        let hex = local_storage()?.get_item(SETTINGS_STORAGE_KEY).ok()??;
+        decode_hex(&hex)
+    }
+
+    fn save_settings(&mut self, data: &[u8; SETTINGS_STORAGE_LEN]) {
+        let Some(storage) = local_storage() else {
+            return;
+        };
+        let hex: String = data.iter().map(|b| format!("{:02x}", b)).collect();
+        if storage.set_item(SETTINGS_STORAGE_KEY, &hex).is_err() {
+            console::warn_1(&"failed to save settings to localStorage".into());
+        }
+    }
+}
+
+/// localStorage key holding the settings blob as a hex string.
+const SETTINGS_STORAGE_KEY: &str = "incredicalculator.settings";
+
+/// Returns `None` when storage is unavailable, e.g. blocked by privacy settings.
+fn local_storage() -> Option<Storage> {
+    window()?.local_storage().ok()?
+}
+
+fn decode_hex(hex: &str) -> Option<[u8; SETTINGS_STORAGE_LEN]> {
+    if hex.len() != SETTINGS_STORAGE_LEN * 2 || !hex.is_ascii() {
+        return None;
+    }
+    let mut bytes = [0; SETTINGS_STORAGE_LEN];
+    for (byte, pair) in bytes.iter_mut().zip(hex.as_bytes().chunks(2)) {
+        *byte = u8::from_str_radix(core::str::from_utf8(pair).ok()?, 16).ok()?;
+    }
+    Some(bytes)
 }
 
 fn map_code(code: &str) -> Option<IcKey> {

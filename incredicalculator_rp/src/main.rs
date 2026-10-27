@@ -225,7 +225,7 @@ impl<'d> IcRpPlatform<'d> {
             display_sleep_requested: None,
             last_key_activity: Instant::now(),
             volume: 100,
-            screen_timeout_seconds: 30,
+            screen_timeout_seconds: 120,
         };
         platform.update_backlight();
         platform

@@ -133,7 +133,7 @@ impl SettingsMenu {
             first_visible_entry: 0,
             editing_value: false,
             sticky_keys_enabled: false,
-            key_mode: KeyMode::Normal,
+            key_mode: KeyMode::Toggle,
             value_input: MathInput::new(
                 IVec2::new(200, 38),
                 IVec2::new(112, 23),

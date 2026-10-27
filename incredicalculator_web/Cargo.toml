@@ -25,4 +25,5 @@ features = [
   "Window",
   "console",
   "Performance",
+  "Storage",
 ]
