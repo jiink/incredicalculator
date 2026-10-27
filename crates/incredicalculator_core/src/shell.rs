@@ -64,7 +64,6 @@ pub struct IcShell {
     settings_menu: SettingsMenu,
     settings_loaded: bool,
     key_states: [KeyState; IcKey::COUNT],
-    super_interrupted: bool,
     modifiers: ModifierKeys,
     adjusting_something: Option<Adjustable>,
     audio: AudioEngine,
@@ -90,7 +89,6 @@ impl IcShell {
             settings_menu: SettingsMenu::new(),
             settings_loaded: false,
             key_states: [KeyState::default(); IcKey::COUNT],
-            super_interrupted: false,
             modifiers: ModifierKeys::default(),
             adjusting_something: None,
             audio: AudioEngine::new(),
@@ -394,8 +392,17 @@ impl IcShell {
         }
         let key_mode = self.settings_menu.key_mode();
         self.modifiers.set_mode(key_mode);
-        let super_was_latched = self.modifiers.is_super_latched();
-        let effective_states = self.modifiers.apply(&self.key_states);
+        let mut effective_states = self.modifiers.apply(&self.key_states);
+        // Super + Shift toggles the menu; latched modifiers count toward the chord.
+        let menu_chord = effective_states[IcKey::Super as usize].is_down
+            && effective_states[IcKey::Shift as usize].is_down
+            && (self.key_states[IcKey::Super as usize].just_pressed
+                || self.key_states[IcKey::Shift as usize].just_pressed);
+        if menu_chord {
+            self.modifiers.clear_latches();
+            effective_states[IcKey::Super as usize].is_down = false;
+            effective_states[IcKey::Shift as usize].is_down = false;
+        }
         let ctx = InputContext {
             key_states: &effective_states,
             key_mode,
@@ -403,10 +410,6 @@ impl IcShell {
         let backspace_closes_menu = self.active_app_idx.is_none()
             && !self.settings_open
             && self.key_states[IcKey::Func1 as usize].just_pressed;
-        // Keep interruptions across both taps of a latched Super sequence.
-        if self.key_states[IcKey::Super as usize].just_pressed && !super_was_latched {
-            self.super_interrupted = false;
-        }
         for i in 0..IcKey::COUNT {
             if !self.key_states[i].just_pressed {
                 continue;
@@ -414,11 +417,8 @@ impl IcShell {
             let Some(key) = IcKey::from_usize(i) else {
                 continue;
             };
-            if !self.super_interrupted
-                && key != IcKey::Super
-                && (self.key_states[IcKey::Super as usize].is_down || ctx.is_super())
-            {
-                self.super_interrupted = true;
+            if menu_chord && matches!(key, IcKey::Shift | IcKey::Super) {
+                continue;
             }
             let mut input_consumed_by_shell: bool = false;
             if ctx.is_super() {
@@ -486,11 +486,7 @@ impl IcShell {
                 }
             }
         }
-        if backspace_closes_menu
-            || (self.key_states[IcKey::Super as usize].just_released
-                && !ctx.is_super()
-                && !self.super_interrupted)
-        {
+        if backspace_closes_menu || menu_chord {
             if self.active_app_idx.is_some() {
                 self.last_active_app_idx = self.active_app_idx;
                 self.active_app_idx = None;

@@ -220,83 +220,90 @@ fn latched_super_shows_green_and_passes_func1_to_app() {
     }
 }
 
+fn chord(shell: &mut IcShell, platform: &mut TestPlatform, first: IcKey, second: IcKey) {
+    shell.key_down(first);
+    shell.update(platform);
+    shell.key_down(second);
+    shell.update(platform);
+    shell.key_up(second);
+    shell.update(platform);
+    shell.key_up(first);
+    shell.update(platform);
+}
+
 #[test]
-fn two_super_taps_open_and_close_menu_in_latching_modes() {
-    for mode in [KeyMode::Sticky, KeyMode::Toggle] {
-        let (mut shell, mut platform, _) = setup(mode);
-        for expected_app in [None, Some(0)] {
-            let previous_app = shell.active_app_idx;
-            tap(&mut shell, &mut platform, IcKey::Super);
-            assert_eq!(shell.active_app_idx, previous_app);
-            assert!(has_border(&platform, 1, 0x00ff00));
-            shell.key_down(IcKey::Super);
-            shell.update(&mut platform);
-            assert_eq!(shell.active_app_idx, previous_app);
-            shell.key_up(IcKey::Super);
-            shell.update(&mut platform);
-            assert_eq!(shell.active_app_idx, expected_app);
+fn held_super_shift_chord_opens_and_closes_menu_in_every_mode() {
+    for mode in [KeyMode::Normal, KeyMode::Sticky, KeyMode::Toggle] {
+        for (first, second) in [(IcKey::Super, IcKey::Shift), (IcKey::Shift, IcKey::Super)] {
+            let (mut shell, mut platform, _) = setup(mode);
+            chord(&mut shell, &mut platform, first, second);
+            assert!(shell.active_app_idx.is_none(), "{mode:?} {first:?}");
+            assert!(!has_border(&platform, 1, 0x0000ff));
+            assert!(!has_border(&platform, 1, 0x00ff00));
+            chord(&mut shell, &mut platform, first, second);
+            assert_eq!(shell.active_app_idx, Some(0), "{mode:?} {first:?}");
+            assert!(!has_border(&platform, 1, 0x0000ff));
             assert!(!has_border(&platform, 1, 0x00ff00));
         }
     }
 }
 
 #[test]
-fn toggle_super_used_between_taps_does_not_open_menu_when_disengaged() {
-    for key in [IcKey::Num1, IcKey::Shift, IcKey::Func5, IcKey::Func6] {
-        let (mut shell, mut platform, _) = setup(KeyMode::Toggle);
-        tap(&mut shell, &mut platform, IcKey::Super);
-        tap(&mut shell, &mut platform, key);
-        tap(&mut shell, &mut platform, IcKey::Super);
-        assert_eq!(shell.active_app_idx, Some(0), "interrupting key: {key:?}");
-        assert!(!has_border(&platform, 1, 0x00ff00));
-        // A fresh uninterrupted pair must still open the menu.
-        tap(&mut shell, &mut platform, IcKey::Super);
-        tap(&mut shell, &mut platform, IcKey::Super);
-        assert!(shell.active_app_idx.is_none());
-    }
-}
-
-#[test]
-fn toggle_super_used_between_taps_does_not_close_menu_when_disengaged() {
-    let (mut shell, mut platform, _) = setup(KeyMode::Toggle);
-    shell.active_app_idx = None;
-    shell.last_active_app_idx = Some(0);
-    tap(&mut shell, &mut platform, IcKey::Super);
-    tap(&mut shell, &mut platform, IcKey::Shift);
-    tap(&mut shell, &mut platform, IcKey::Super);
+fn simultaneous_super_shift_press_toggles_menu_once() {
+    let (mut shell, mut platform, _) = setup(KeyMode::Normal);
+    shell.key_down(IcKey::Super);
+    shell.key_down(IcKey::Shift);
+    shell.update(&mut platform);
+    assert!(shell.active_app_idx.is_none());
+    shell.key_up(IcKey::Super);
+    shell.key_up(IcKey::Shift);
+    shell.update(&mut platform);
     assert!(shell.active_app_idx.is_none());
 }
 
 #[test]
-fn interrupted_super_release_does_not_open_menu_in_latching_modes() {
+fn latched_modifier_taps_form_menu_chord_and_are_cleared() {
     for mode in [KeyMode::Sticky, KeyMode::Toggle] {
-        let (mut shell, mut platform, _) = setup(mode);
-        tap(&mut shell, &mut platform, IcKey::Super);
-        shell.key_down(IcKey::Super);
-        shell.update(&mut platform);
-        tap(&mut shell, &mut platform, IcKey::Num1);
-        shell.key_up(IcKey::Super);
-        shell.update(&mut platform);
-        assert_eq!(shell.active_app_idx, Some(0));
+        for (first, second) in [(IcKey::Super, IcKey::Shift), (IcKey::Shift, IcKey::Super)] {
+            let (mut shell, mut platform, recorded) = setup(mode);
+            tap(&mut shell, &mut platform, first);
+            assert_eq!(shell.active_app_idx, Some(0));
+            tap(&mut shell, &mut platform, second);
+            assert!(shell.active_app_idx.is_none(), "{mode:?} {first:?}");
+            assert!(!has_border(&platform, 1, 0x0000ff));
+            assert!(!has_border(&platform, 1, 0x00ff00));
+            tap(&mut shell, &mut platform, first);
+            tap(&mut shell, &mut platform, second);
+            assert_eq!(shell.active_app_idx, Some(0), "{mode:?} {first:?}");
+            // Neither modifier stays latched after the chord.
+            tap(&mut shell, &mut platform, IcKey::Num1);
+            assert!(recorded.borrow().contains(&(IcKey::Num1, false, false)));
+        }
     }
 }
 
 #[test]
-fn both_modifier_borders_are_visible_without_filling_the_screen() {
-    let (mut shell, mut platform, _) = setup(KeyMode::Sticky);
-    tap(&mut shell, &mut platform, IcKey::Shift);
-    tap(&mut shell, &mut platform, IcKey::Super);
-    assert!(has_border(&platform, 1, 0x0000ff));
-    assert!(has_border(&platform, 3, 0x00ff00));
+fn super_alone_no_longer_toggles_menu() {
+    for mode in [KeyMode::Normal, KeyMode::Sticky, KeyMode::Toggle] {
+        let (mut shell, mut platform, _) = setup(mode);
+        tap(&mut shell, &mut platform, IcKey::Super);
+        tap(&mut shell, &mut platform, IcKey::Super);
+        assert_eq!(shell.active_app_idx, Some(0), "{mode:?}");
+        shell.active_app_idx = None;
+        shell.last_active_app_idx = Some(0);
+        tap(&mut shell, &mut platform, IcKey::Super);
+        tap(&mut shell, &mut platform, IcKey::Super);
+        assert!(shell.active_app_idx.is_none(), "{mode:?}");
+    }
 }
 
 #[test]
-fn normal_super_tap_and_menu_backspace_work_but_app_backspace_stays_in_app() {
+fn normal_menu_chord_and_menu_backspace_work_but_app_backspace_stays_in_app() {
     let (mut shell, mut platform, recorded) = setup(KeyMode::Normal);
     tap(&mut shell, &mut platform, IcKey::Func1);
     assert_eq!(shell.active_app_idx, Some(0));
     assert!(recorded.borrow().contains(&(IcKey::Func1, false, false)));
-    tap(&mut shell, &mut platform, IcKey::Super);
+    chord(&mut shell, &mut platform, IcKey::Super, IcKey::Shift);
     assert!(shell.active_app_idx.is_none());
     tap(&mut shell, &mut platform, IcKey::Func1);
     assert_eq!(shell.active_app_idx, Some(0));

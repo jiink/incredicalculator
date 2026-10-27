@@ -66,15 +66,15 @@ pub struct ModifierKeys {
 }
 
 impl ModifierKeys {
-    pub fn is_super_latched(&self) -> bool {
-        self.super_key.active
+    pub fn clear_latches(&mut self) {
+        self.shift = ModifierLatch::default();
+        self.super_key = ModifierLatch::default();
     }
 
     pub fn set_mode(&mut self, mode: KeyMode) {
         if self.mode != mode {
             self.mode = mode;
-            self.shift = ModifierLatch::default();
-            self.super_key = ModifierLatch::default();
+            self.clear_latches();
         }
     }
 
