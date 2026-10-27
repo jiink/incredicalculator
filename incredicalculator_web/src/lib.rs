@@ -245,6 +245,15 @@ fn local_storage() -> Option<Storage> {
     window()?.local_storage().ok()?
 }
 
+/// Deletes the saved settings. The running shell keeps its current values, so
+/// the page reloads afterwards to start from the defaults.
+#[wasm_bindgen]
+pub fn clear_settings() {
+    if let Some(storage) = local_storage() {
+        let _ = storage.remove_item(SETTINGS_STORAGE_KEY);
+    }
+}
+
 fn decode_hex(hex: &str) -> Option<[u8; SETTINGS_STORAGE_LEN]> {
     if hex.len() != SETTINGS_STORAGE_LEN * 2 || !hex.is_ascii() {
         return None;

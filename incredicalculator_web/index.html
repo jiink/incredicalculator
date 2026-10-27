@@ -49,6 +49,7 @@
         font: 12px monospace;
       }
       .info-panel button {
+        display: block;
         margin-top: 4px;
         pointer-events: auto;
         cursor: pointer;
@@ -157,6 +158,7 @@
         <div>Incredicalculator web simulator</div>
         <div id="frame-counter">frames: 0</div>
         <button id="pixel-perfect-toggle" aria-pressed="false">1:1 pixels</button>
+        <button id="clear-settings">Clear settings</button>
       </div>
     </div>
     <div class="calculator-shell">
@@ -191,7 +193,7 @@
     </div>
 
     <script type="module">
-      import init, { start, key_down, key_up, tick, fill_audio, has_active_audio } from './pkg/incredicalculator_web.js';
+      import init, { start, key_down, key_up, tick, fill_audio, has_active_audio, clear_settings } from './pkg/incredicalculator_web.js';
 
       // Frames are only rendered after input, or continuously while the
       // active app asks for realtime updates, to save battery.
@@ -205,6 +207,13 @@
       infoToggle.addEventListener('click', () => {
         infoPanel.hidden = !infoPanel.hidden;
         infoToggle.setAttribute('aria-expanded', String(!infoPanel.hidden));
+      });
+
+      document.getElementById('clear-settings').addEventListener('click', () => {
+        if (ready && confirm('Reset all settings to their defaults?')) {
+          clear_settings();
+          location.reload();
+        }
       });
 
       function requestFrame() {
