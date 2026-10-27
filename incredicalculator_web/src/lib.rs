@@ -24,6 +24,12 @@ use incredicalculator_core::platform::{
 };
 use incredicalculator_core::shell::IcShell;
 
+const RENDER_SCALE: f64 = 2.0;
+
+fn scaled(v: impl Into<f64>) -> f64 {
+    v.into() * RENDER_SCALE
+}
+
 struct BrowserPlatform {
     ctx: CanvasRenderingContext2d,
     start_ms: f64,
@@ -61,9 +67,9 @@ impl BrowserPlatform {
 impl IcPlatform for BrowserPlatform {
     fn draw_line(&mut self, start: Vec2, end: Vec2, color: RGB8, width: u32) {
         self.ctx.begin_path();
-        self.ctx.move_to(start.x as f64, start.y as f64);
-        self.ctx.line_to(end.x as f64, end.y as f64);
-        self.ctx.set_line_width(width as f64);
+        self.ctx.move_to(scaled(start.x), scaled(start.y));
+        self.ctx.line_to(scaled(end.x), scaled(end.y));
+        self.ctx.set_line_width(scaled(width));
         self.ctx.set_line_cap("round");
         self.ctx.set_line_join("round");
         self.ctx
@@ -77,9 +83,9 @@ impl IcPlatform for BrowserPlatform {
         }
 
         self.ctx.begin_path();
-        self.ctx.move_to(points[0].x as f64, points[0].y as f64);
+        self.ctx.move_to(scaled(points[0].x), scaled(points[0].y));
         for point in points.iter().skip(1) {
-            self.ctx.line_to(point.x as f64, point.y as f64);
+            self.ctx.line_to(scaled(point.x), scaled(point.y));
         }
         self.ctx.close_path();
         self.ctx
@@ -95,10 +101,10 @@ impl IcPlatform for BrowserPlatform {
         stroke_width: u32,
         fill_color: Option<RGB8>,
     ) {
-        let x = start.x.min(end.x) as f64;
-        let y = start.y.min(end.y) as f64;
-        let w = (start.x.abs_diff(end.x) as f64).max(0.0);
-        let h = (start.y.abs_diff(end.y) as f64).max(0.0);
+        let x = scaled(start.x.min(end.x));
+        let y = scaled(start.y.min(end.y));
+        let w = scaled(start.x.abs_diff(end.x));
+        let h = scaled(start.y.abs_diff(end.y));
 
         if let Some(fill) = fill_color {
             self.ctx
@@ -109,7 +115,7 @@ impl IcPlatform for BrowserPlatform {
         if stroke_width > 0 {
             self.ctx
                 .set_stroke_style(&JsValue::from_str(&Self::rgb_css(stroke_color)));
-            self.ctx.set_line_width(stroke_width as f64);
+            self.ctx.set_line_width(scaled(stroke_width));
             self.ctx.stroke_rect(x, y, w, h);
         }
     }
@@ -123,11 +129,11 @@ impl IcPlatform for BrowserPlatform {
         fill_color: Option<RGB8>,
         corner_radius: u32,
     ) {
-        let x = start.x.min(end.x) as f64;
-        let y = start.y.min(end.y) as f64;
-        let w = (start.x.abs_diff(end.x) as f64).max(0.0);
-        let h = (start.y.abs_diff(end.y) as f64).max(0.0);
-        let r = corner_radius as f64;
+        let x = scaled(start.x.min(end.x));
+        let y = scaled(start.y.min(end.y));
+        let w = scaled(start.x.abs_diff(end.x));
+        let h = scaled(start.y.abs_diff(end.y));
+        let r = scaled(corner_radius);
 
         self.rounded_rect_path(x, y, w, h, r);
 
@@ -140,7 +146,7 @@ impl IcPlatform for BrowserPlatform {
         if stroke_width > 0 {
             self.ctx
                 .set_stroke_style(&JsValue::from_str(&Self::rgb_css(stroke_color)));
-            self.ctx.set_line_width(stroke_width as f64);
+            self.ctx.set_line_width(scaled(stroke_width));
             self.ctx.stroke();
         }
     }
@@ -155,9 +161,9 @@ impl IcPlatform for BrowserPlatform {
         fill_color: Option<RGB8>,
     ) {
         self.ctx.begin_path();
-        self.ctx.move_to(vertex1.x as f64, vertex1.y as f64);
-        self.ctx.line_to(vertex2.x as f64, vertex2.y as f64);
-        self.ctx.line_to(vertex3.x as f64, vertex3.y as f64);
+        self.ctx.move_to(scaled(vertex1.x), scaled(vertex1.y));
+        self.ctx.line_to(scaled(vertex2.x), scaled(vertex2.y));
+        self.ctx.line_to(scaled(vertex3.x), scaled(vertex3.y));
         self.ctx.close_path();
 
         if let Some(fill) = fill_color {
@@ -169,7 +175,7 @@ impl IcPlatform for BrowserPlatform {
         if stroke_width > 0 {
             self.ctx
                 .set_stroke_style(&JsValue::from_str(&Self::rgb_css(stroke_color)));
-            self.ctx.set_line_width(stroke_width as f64);
+            self.ctx.set_line_width(scaled(stroke_width));
             self.ctx.stroke();
         }
     }
@@ -178,7 +184,7 @@ impl IcPlatform for BrowserPlatform {
         self.ctx
             .set_fill_style(&JsValue::from_str(&Self::rgb_css(color)));
         self.ctx
-            .fill_rect(0.0, 0.0, CANVAS_WIDTH as f64, CANVAS_HEIGHT as f64);
+            .fill_rect(0.0, 0.0, scaled(CANVAS_WIDTH), scaled(CANVAS_HEIGHT));
     }
 
     fn log(&mut self, arg: fmt::Arguments) {
@@ -400,8 +406,8 @@ pub fn start() {
         .dyn_into::<HtmlCanvasElement>()
         .expect("element is not a canvas");
 
-    canvas.set_width(CANVAS_WIDTH);
-    canvas.set_height(CANVAS_HEIGHT);
+    canvas.set_width(scaled(CANVAS_WIDTH) as u32);
+    canvas.set_height(scaled(CANVAS_HEIGHT) as u32);
 
     let context = canvas
         .get_context("2d")
