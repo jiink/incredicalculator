@@ -2,6 +2,7 @@ use crate::app::IcApp;
 use crate::app::InputContext;
 use crate::apps::AspectRatioCalculator;
 use crate::apps::ColorCalculator;
+use crate::apps::ChordPad;
 use crate::apps::ScaleKeys;
 use crate::apps::SoundTest;
 use crate::apps::{Calculator, EngineMode};
@@ -54,7 +55,7 @@ pub enum Adjustable {
 }
 
 pub struct IcShell {
-    apps: [Box<dyn IcApp>; 8], // INCREASE THIS SIZE WHEN ADDING NEW APPS
+    apps: [Box<dyn IcApp>; 9], // INCREASE THIS SIZE WHEN ADDING NEW APPS
     active_app_idx: Option<usize>,
     last_active_app_idx: Option<usize>,
     selector_page: usize,
@@ -81,6 +82,7 @@ impl IcShell {
                 Box::new(ColorCalculator::new()),
                 Box::new(SoundTest::new()),
                 Box::new(ScaleKeys::new()),
+                Box::new(ChordPad::new()),
                 Box::new(FaceCalculator::new()),
             ],
             active_app_idx: Some(0),

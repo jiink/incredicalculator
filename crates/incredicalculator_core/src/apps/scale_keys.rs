@@ -1,37 +1,20 @@
+use super::music::{
+    self, CELL_COLOR, DEFAULT_OCTAVE, DIM_TEXT_COLOR, HELD_CELL_COLOR, KEY_COUNT, KEYPAD_CELL_W,
+    MAX_OCTAVE, MIN_OCTAVE, NOTE_NAMES, NUMBER_KEYS, PANEL_LEFT, ROOT_CELL_COLOR, SOUND_PRESETS,
+    SOUNDING_CELL_COLOR, SOUNDING_TEXT_COLOR, TEXT_COLOR,
+};
 use crate::app::{IcApp, InputContext};
-use crate::audio_engine::{AudioEngine, AudioPatch, MAX_VOICES, NoteId};
+use crate::audio_engine::{AudioEngine, MAX_VOICES, NoteId};
 use crate::graphics::{self, Vitmap};
 use crate::input::IcKey;
 use crate::platform::{IcPlatform, rgb8_hex};
 use crate::text::{self, HAlign, TextStyle};
-use glam::{IVec2, Vec2};
+use glam::Vec2;
 use rgb::RGB8;
 
 const DIRECT_SOURCE_BASE: u32 = 0x534b_0000;
 const ARP_SOURCE_BASE: u32 = 0x534b_0100;
 
-/// Indexed by key number; pitch rises up the keypad from 0 to 9.
-const NUMBER_KEYS: [IcKey; KEY_COUNT] = [
-    IcKey::Num0,
-    IcKey::Num1,
-    IcKey::Num2,
-    IcKey::Num3,
-    IcKey::Num4,
-    IcKey::Num5,
-    IcKey::Num6,
-    IcKey::Num7,
-    IcKey::Num8,
-    IcKey::Num9,
-];
-const KEY_COUNT: usize = 10;
-
-const NOTE_NAMES: [&str; 12] = [
-    "C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B",
-];
-
-const MIN_OCTAVE: i8 = 1;
-const MAX_OCTAVE: i8 = 7;
-const DEFAULT_OCTAVE: i8 = 4;
 const MIN_BPM: u16 = 40;
 const MAX_BPM: u16 = 240;
 const BPM_STEP: u16 = 5;
@@ -39,15 +22,6 @@ const DEFAULT_BPM: u16 = 120;
 const MAX_ARP_OCTAVES: u8 = 3;
 /// Portion of each arp step during which the note is gated on.
 const ARP_GATE_PERCENT: u64 = 60;
-
-const BG_COLOR: RGB8 = rgb8_hex(0x1d1b3a);
-const TEXT_COLOR: RGB8 = rgb8_hex(0xffffff);
-const DIM_TEXT_COLOR: RGB8 = rgb8_hex(0xa9a6d6);
-const CELL_COLOR: RGB8 = rgb8_hex(0x34306a);
-const ROOT_CELL_COLOR: RGB8 = rgb8_hex(0x4a3f8f);
-const HELD_CELL_COLOR: RGB8 = rgb8_hex(0x7a5cff);
-const SOUNDING_CELL_COLOR: RGB8 = rgb8_hex(0xffc94a);
-const SOUNDING_TEXT_COLOR: RGB8 = rgb8_hex(0x1d1b3a);
 
 struct Scale {
     name: &'static str,
@@ -90,64 +64,6 @@ const SCALES: [Scale; 9] = [
     Scale {
         name: "Chromatic",
         steps: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
-    },
-];
-
-struct SoundPreset {
-    name: &'static str,
-    patch: AudioPatch,
-}
-
-const SOUND_PRESETS: [SoundPreset; 5] = [
-    SoundPreset {
-        name: "Soft",
-        patch: AudioPatch {
-            attack_ms: 20,
-            release_ms: 600,
-            triangle_mix: 204,
-            square_mix: 0,
-            vibrato_depth_cents: 5,
-        },
-    },
-    SoundPreset {
-        name: "Pluck",
-        patch: AudioPatch {
-            attack_ms: 0,
-            release_ms: 250,
-            triangle_mix: 170,
-            square_mix: 34,
-            vibrato_depth_cents: 0,
-        },
-    },
-    SoundPreset {
-        name: "Reed",
-        patch: AudioPatch {
-            attack_ms: 30,
-            release_ms: 300,
-            triangle_mix: 102,
-            square_mix: 102,
-            vibrato_depth_cents: 8,
-        },
-    },
-    SoundPreset {
-        name: "Chip",
-        patch: AudioPatch {
-            attack_ms: 0,
-            release_ms: 80,
-            triangle_mix: 0,
-            square_mix: 204,
-            vibrato_depth_cents: 0,
-        },
-    },
-    SoundPreset {
-        name: "Pad",
-        patch: AudioPatch {
-            attack_ms: 500,
-            release_ms: 2_500,
-            triangle_mix: 170,
-            square_mix: 34,
-            vibrato_depth_cents: 6,
-        },
     },
 ];
 
@@ -332,19 +248,11 @@ impl ScaleKeys {
     }
 
     fn cycle_scale(&mut self, forward: bool) {
-        self.scale_idx = if forward {
-            (self.scale_idx + 1) % SCALES.len()
-        } else {
-            (self.scale_idx + SCALES.len() - 1) % SCALES.len()
-        };
+        self.scale_idx = music::cycle(self.scale_idx, SCALES.len(), forward);
     }
 
     fn cycle_sound(&mut self, forward: bool) {
-        self.sound_idx = if forward {
-            (self.sound_idx + 1) % SOUND_PRESETS.len()
-        } else {
-            (self.sound_idx + SOUND_PRESETS.len() - 1) % SOUND_PRESETS.len()
-        };
+        self.sound_idx = music::cycle(self.sound_idx, SOUND_PRESETS.len(), forward);
     }
 
     fn update_held_keys(&mut self, ctx: &InputContext) {
@@ -487,46 +395,33 @@ impl ScaleKeys {
     }
 
     fn draw(&self, platform: &mut dyn IcPlatform, ctx: &InputContext) {
-        platform.clear(BG_COLOR);
-
-        text::draw_text_f(
+        music::draw_header(
             platform,
             format_args!("{} {}", NOTE_NAMES[self.root as usize], self.scale().name),
-            Vec2::new(8.0, 17.0),
-            TextStyle::new(8.0, TEXT_COLOR),
-        );
-        text::draw_text_f(
-            platform,
             format_args!(
                 "Octave {}   Sound: {}",
                 self.octave, SOUND_PRESETS[self.sound_idx].name
             ),
-            Vec2::new(8.0, 44.0),
-            TextStyle::new(5.0, DIM_TEXT_COLOR),
         );
 
         self.draw_keypad(platform, ctx.is_shifted());
         self.draw_arp_panel(platform);
-        self.draw_function_column(platform, ctx);
+        let labels = music::function_labels(
+            ctx,
+            &["Arp", "Latch", "Oct-", "Oct+", "BPM-", "BPM+"],
+            &["Rate", "ArpOct", "Root-", "Root+", "Scl-", "Scl+"],
+            ["Snd+", "Snd-", "", ""],
+        );
+        let latch_lit = self.latch && !ctx.is_super() && !ctx.is_shifted();
+        music::draw_function_column(platform, &labels, latch_lit.then_some(1));
     }
 
-    /// Mirrors the device's keypad: 7-8-9 on top, 0 alone at the bottom left.
     fn draw_keypad(&self, platform: &mut dyn IcPlatform, shifted: bool) {
-        const CELL_W: i32 = 44;
-        const CELL_H: i32 = 42;
-        const GAP: i32 = 3;
-        const LEFT: i32 = 8;
-        const TOP: i32 = 56;
         let steps_len = self.scale().steps.len() as i16;
         let active = self.active_notes();
 
         for key_idx in 0..KEY_COUNT {
-            let (col, row) = match key_idx {
-                0 => (0, 3),
-                n => ((n - 1) % 3, 2 - (n - 1) / 3),
-            };
-            let x = LEFT + col as i32 * (CELL_W + GAP);
-            let y = TOP + row as i32 * (CELL_H + GAP);
+            let origin = music::keypad_cell_origin(key_idx);
             let active_note = active[key_idx].or(self.held[key_idx]);
             let sounding = match self.arp_mode {
                 ArpMode::Off => active_note.is_some(),
@@ -546,20 +441,14 @@ impl ScaleKeys {
             } else {
                 TEXT_COLOR
             };
-            platform.draw_rectangle_rounded(
-                IVec2::new(x, y),
-                IVec2::new(x + CELL_W, y + CELL_H),
-                fill,
-                0,
-                Some(fill),
-                4,
-            );
+            music::draw_keypad_cell(platform, origin, fill);
 
-            let center_x = (x + CELL_W / 2) as f32;
+            let center_x = (origin.x + KEYPAD_CELL_W / 2) as f32;
+            let y = origin.y as f32;
             text::draw_text_f(
                 platform,
                 format_args!("{}", key_idx),
-                Vec2::new(center_x, y as f32 + 17.0),
+                Vec2::new(center_x, y + 17.0),
                 TextStyle::new(6.0, text_color).align(HAlign::Center),
             );
             // Idle keys preview what Shift would play.
@@ -571,16 +460,16 @@ impl ScaleKeys {
                 format_args!(
                     "{}{}",
                     NOTE_NAMES[midi_note as usize % 12],
-                    midi_note as i16 / 12 - 1
+                    music::octave_of(midi_note)
                 ),
-                Vec2::new(center_x, y as f32 + 33.0),
+                Vec2::new(center_x, y + 33.0),
                 TextStyle::new(4.5, text_color).align(HAlign::Center),
             );
         }
     }
 
     fn draw_arp_panel(&self, platform: &mut dyn IcPlatform) {
-        const LEFT: f32 = 158.0;
+        const LEFT: f32 = PANEL_LEFT;
         text::draw_text(
             platform,
             "Arp",
@@ -620,48 +509,6 @@ impl ScaleKeys {
                 "Latch",
                 Vec2::new(LEFT, 190.0),
                 TextStyle::new(5.0, SOUNDING_CELL_COLOR),
-            );
-        }
-    }
-
-    /// Labels for F1-F6, which run down the right side of the device,
-    /// following the held modifier.
-    fn draw_function_column(&self, platform: &mut dyn IcPlatform, ctx: &InputContext) {
-        const LEFT: i32 = 262;
-        const RIGHT: i32 = 312;
-        const CELL_H: i32 = 28;
-        const GAP: i32 = 2;
-        // Fits between the shell's battery and its modifier icon.
-        const TOP: i32 = 25;
-        let labels = if ctx.is_super() {
-            ["Snd+", "Snd-", "", "", "Vol", "Light"]
-        } else if ctx.is_shifted() {
-            ["Rate", "ArpOct", "Root-", "Root+", "Scl-", "Scl+"]
-        } else {
-            ["Arp", "Latch", "Oct-", "Oct+", "BPM-", "BPM+"]
-        };
-        let latch_lit = !ctx.is_super() && !ctx.is_shifted() && self.latch;
-
-        for (idx, label) in labels.iter().enumerate() {
-            if label.is_empty() {
-                continue;
-            }
-            let y = TOP + idx as i32 * (CELL_H + GAP);
-            let lit = idx == 1 && latch_lit;
-            let fill = if lit { HELD_CELL_COLOR } else { CELL_COLOR };
-            platform.draw_rectangle_rounded(
-                IVec2::new(LEFT, y),
-                IVec2::new(RIGHT, y + CELL_H),
-                fill,
-                0,
-                Some(fill),
-                4,
-            );
-            text::draw_text(
-                platform,
-                label,
-                Vec2::new((LEFT + RIGHT) as f32 / 2.0, y as f32 + 15.0),
-                TextStyle::new(4.0, TEXT_COLOR).align(HAlign::Center),
             );
         }
     }
