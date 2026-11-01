@@ -68,6 +68,7 @@ pub struct IcShell {
     key_states: [KeyState; IcKey::COUNT],
     show_startup_help: bool,
     modifiers: ModifierKeys,
+    shift_was_engaged: bool,
     adjusting_something: Option<Adjustable>,
     audio: AudioEngine,
 }
@@ -94,6 +95,7 @@ impl IcShell {
             key_states: [KeyState::default(); IcKey::COUNT],
             show_startup_help: true,
             modifiers: ModifierKeys::default(),
+            shift_was_engaged: false,
             adjusting_something: None,
             audio: AudioEngine::new(),
         }
@@ -485,10 +487,14 @@ impl IcShell {
             effective_states[IcKey::Super as usize].is_down = false;
             effective_states[IcKey::Shift as usize].is_down = false;
         }
+        let shift_engaged = effective_states[IcKey::Shift as usize].is_down;
         let ctx = InputContext {
             key_states: &effective_states,
             key_mode,
+            shift_engaged: shift_engaged && !self.shift_was_engaged,
+            shift_disengaged: !shift_engaged && self.shift_was_engaged,
         };
+        self.shift_was_engaged = shift_engaged;
         if self.key_states.iter().any(|state| state.just_pressed) {
             self.show_startup_help = false;
         }

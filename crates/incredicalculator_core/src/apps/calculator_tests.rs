@@ -1,23 +1,62 @@
 use super::*;
-use crate::input::KeyState;
+use crate::input::{KeyMode, KeyState, ModifierKeys};
 use num_traits::FromPrimitive;
 
-fn shift_tap_frame(calculator: &mut Calculator, states: &mut [KeyState; IcKey::COUNT]) {
-    for state in states.iter_mut() {
-        state.just_pressed = state.is_down && !state.was_down;
-        state.just_released = !state.is_down && state.was_down;
-        state.was_down = state.is_down;
-    }
-    let ctx = InputContext {
-        key_states: states,
-        key_mode: KeyMode::Normal,
-    };
-    for i in 0..IcKey::COUNT {
-        if states[i].just_pressed {
-            calculator.on_key(IcKey::from_usize(i).unwrap(), &ctx);
+struct ShiftTapHarness {
+    states: [KeyState; IcKey::COUNT],
+    modifiers: ModifierKeys,
+    key_mode: KeyMode,
+    shift_was_engaged: bool,
+}
+
+impl ShiftTapHarness {
+    fn new(key_mode: KeyMode) -> Self {
+        let mut modifiers = ModifierKeys::default();
+        modifiers.set_mode(key_mode);
+        Self {
+            states: [KeyState::default(); IcKey::COUNT],
+            modifiers,
+            key_mode,
+            shift_was_engaged: false,
         }
     }
-    calculator.handle_shift_tap(&ctx);
+
+    fn set(&mut self, key: IcKey, down: bool) {
+        self.states[key as usize].is_down = down;
+    }
+
+    fn frame(&mut self, calculator: &mut Calculator) {
+        for state in self.states.iter_mut() {
+            state.just_pressed = state.is_down && !state.was_down;
+            state.just_released = !state.is_down && state.was_down;
+            state.was_down = state.is_down;
+        }
+        let effective = self.modifiers.apply(&self.states);
+        let shift_engaged = effective[IcKey::Shift as usize].is_down;
+        let ctx = InputContext {
+            key_states: &effective,
+            key_mode: self.key_mode,
+            shift_engaged: shift_engaged && !self.shift_was_engaged,
+            shift_disengaged: !shift_engaged && self.shift_was_engaged,
+        };
+        self.shift_was_engaged = shift_engaged;
+        for i in 0..IcKey::COUNT {
+            if effective[i].just_pressed {
+                calculator.on_key(IcKey::from_usize(i).unwrap(), &ctx);
+            }
+        }
+        calculator.handle_shift_tap(&ctx);
+    }
+
+    fn press(&mut self, calculator: &mut Calculator, key: IcKey) {
+        self.set(key, true);
+        self.frame(calculator);
+    }
+
+    fn release(&mut self, calculator: &mut Calculator, key: IcKey) {
+        self.set(key, false);
+        self.frame(calculator);
+    }
 }
 
 #[test]
@@ -129,38 +168,15 @@ fn scientific_preprocessing_preserves_explicit_syntax() {
 }
 
 #[test]
-fn shift_tap_does_not_insert_a_dot_in_latching_modes() {
-    for key_mode in [KeyMode::Sticky, KeyMode::Toggle] {
-        let mut calculator = Calculator::new(EngineMode::Scientific);
-        let mut states = [KeyState::default(); IcKey::COUNT];
-        states[IcKey::Shift as usize].just_pressed = true;
-        states[IcKey::Shift as usize].is_down = true;
-        calculator.handle_shift_tap(&InputContext {
-            key_states: &states,
-            key_mode,
-        });
-        states[IcKey::Shift as usize].just_pressed = false;
-        states[IcKey::Shift as usize].just_released = true;
-        calculator.handle_shift_tap(&InputContext {
-            key_states: &states,
-            key_mode,
-        });
-        assert_eq!(calculator.current_eq.as_str(), "");
-    }
-}
-
-#[test]
 fn shift_tap_inserts_once_on_release_and_updates_result() {
     let mut calculator = Calculator::new(EngineMode::Scientific);
     calculator.current_eq.insert_char(b'1');
-    let mut states = [KeyState::default(); IcKey::COUNT];
-    states[IcKey::Shift as usize].is_down = true;
-    shift_tap_frame(&mut calculator, &mut states);
-    shift_tap_frame(&mut calculator, &mut states);
+    let mut h = ShiftTapHarness::new(KeyMode::Normal);
+    h.press(&mut calculator, IcKey::Shift);
+    h.frame(&mut calculator);
     assert_eq!(calculator.current_eq.as_str(), "1");
-    states[IcKey::Shift as usize].is_down = false;
-    shift_tap_frame(&mut calculator, &mut states);
-    shift_tap_frame(&mut calculator, &mut states);
+    h.release(&mut calculator, IcKey::Shift);
+    h.frame(&mut calculator);
     assert_eq!(calculator.current_eq.as_str(), "1.");
     assert_eq!(
         &calculator.current_result[..calculator.current_result_len],
@@ -170,55 +186,88 @@ fn shift_tap_inserts_once_on_release_and_updates_result() {
 
 #[test]
 fn shift_tap_is_cancelled_by_every_other_key() {
-    for i in 0..IcKey::COUNT {
-        if i == IcKey::Shift as usize {
-            continue;
+    for key_mode in [KeyMode::Normal, KeyMode::Sticky, KeyMode::Toggle] {
+        for i in 0..IcKey::COUNT {
+            let key = IcKey::from_usize(i).unwrap();
+            if key == IcKey::Shift {
+                continue;
+            }
+            let mut calculator = Calculator::new(EngineMode::Scientific);
+            let mut h = ShiftTapHarness::new(key_mode);
+            h.press(&mut calculator, IcKey::Shift);
+            h.press(&mut calculator, key);
+            h.release(&mut calculator, key);
+            let len = calculator.current_eq.len;
+            h.release(&mut calculator, IcKey::Shift);
+            if key_mode != KeyMode::Normal {
+                h.press(&mut calculator, IcKey::Shift);
+                h.release(&mut calculator, IcKey::Shift);
+            }
+            assert_eq!(
+                calculator.current_eq.len, len,
+                "{key_mode:?} interrupting key {i}"
+            );
         }
-        let mut calculator = Calculator::new(EngineMode::Scientific);
-        let mut states = [KeyState::default(); IcKey::COUNT];
-        states[IcKey::Shift as usize].is_down = true;
-        shift_tap_frame(&mut calculator, &mut states);
-        states[i].is_down = true;
-        shift_tap_frame(&mut calculator, &mut states);
-        states[i].is_down = false;
-        shift_tap_frame(&mut calculator, &mut states);
-        let len = calculator.current_eq.len;
-        states[IcKey::Shift as usize].is_down = false;
-        shift_tap_frame(&mut calculator, &mut states);
-        assert_eq!(calculator.current_eq.len, len, "interrupting key {i}");
     }
 }
 
 #[test]
-fn shift_tap_rejects_overlapping_keys_including_release_frame() {
-    for key_first in [false, true] {
+fn shift_tap_rejects_key_pressed_on_release_frame() {
+    let mut calculator = Calculator::new(EngineMode::Scientific);
+    let mut h = ShiftTapHarness::new(KeyMode::Normal);
+    h.press(&mut calculator, IcKey::Shift);
+    h.set(IcKey::Shift, false);
+    h.set(IcKey::Num1, true);
+    h.frame(&mut calculator);
+    assert_eq!(calculator.current_eq.as_str(), "1");
+}
+
+#[test]
+fn shift_tap_while_key_already_held_inserts_a_dot() {
+    let mut calculator = Calculator::new(EngineMode::Scientific);
+    let mut h = ShiftTapHarness::new(KeyMode::Normal);
+    h.press(&mut calculator, IcKey::Num1);
+    h.press(&mut calculator, IcKey::Shift);
+    h.release(&mut calculator, IcKey::Shift);
+    h.release(&mut calculator, IcKey::Num1);
+    assert_eq!(calculator.current_eq.as_str(), "1.");
+}
+
+#[test]
+fn latching_modes_insert_a_dot_when_shift_is_engaged_then_disengaged() {
+    for key_mode in [KeyMode::Sticky, KeyMode::Toggle] {
         let mut calculator = Calculator::new(EngineMode::Scientific);
-        let mut states = [KeyState::default(); IcKey::COUNT];
-        if key_first {
-            states[IcKey::Num1 as usize].is_down = true;
-            shift_tap_frame(&mut calculator, &mut states);
-        }
-        states[IcKey::Shift as usize].is_down = true;
-        shift_tap_frame(&mut calculator, &mut states);
-        states[IcKey::Shift as usize].is_down = false;
-        states[IcKey::Num1 as usize].is_down = true;
-        shift_tap_frame(&mut calculator, &mut states);
-        assert!(!calculator.current_eq.as_str().contains('.'));
+        let mut h = ShiftTapHarness::new(key_mode);
+        h.press(&mut calculator, IcKey::Shift);
+        h.release(&mut calculator, IcKey::Shift);
+        assert_eq!(calculator.current_eq.as_str(), "", "{key_mode:?}");
+        h.press(&mut calculator, IcKey::Shift);
+        h.release(&mut calculator, IcKey::Shift);
+        assert_eq!(calculator.current_eq.as_str(), ".", "{key_mode:?}");
     }
+}
+
+#[test]
+fn sticky_shift_used_by_a_key_does_not_insert_a_dot() {
+    let mut calculator = Calculator::new(EngineMode::Scientific);
+    let mut h = ShiftTapHarness::new(KeyMode::Sticky);
+    h.press(&mut calculator, IcKey::Shift);
+    h.release(&mut calculator, IcKey::Shift);
+    h.press(&mut calculator, IcKey::Num1);
+    h.release(&mut calculator, IcKey::Num1);
+    assert!(!calculator.current_eq.as_str().contains('.'));
 }
 
 #[test]
 fn shift_tap_does_not_affect_programmer_or_survive_reentry() {
     for mode in [EngineMode::Programmer, EngineMode::Scientific] {
         let mut calculator = Calculator::new(mode);
-        let mut states = [KeyState::default(); IcKey::COUNT];
-        states[IcKey::Shift as usize].is_down = true;
-        shift_tap_frame(&mut calculator, &mut states);
+        let mut h = ShiftTapHarness::new(KeyMode::Normal);
+        h.press(&mut calculator, IcKey::Shift);
         if mode == EngineMode::Scientific {
             calculator.on_enter();
         }
-        states[IcKey::Shift as usize].is_down = false;
-        shift_tap_frame(&mut calculator, &mut states);
+        h.release(&mut calculator, IcKey::Shift);
         assert_eq!(calculator.current_eq.as_str(), "");
     }
 }

@@ -8,6 +8,10 @@ pub struct InputContext<'a> {
     /// Physical key transitions with effective (possibly latched) modifier held states.
     pub key_states: &'a [KeyState; IcKey::COUNT],
     pub key_mode: KeyMode,
+    /// Effective shift turned on this frame (physical press, or latch in Sticky/Toggle).
+    pub shift_engaged: bool,
+    /// Effective shift turned off this frame.
+    pub shift_disengaged: bool,
 }
 
 impl<'a> InputContext<'a> {

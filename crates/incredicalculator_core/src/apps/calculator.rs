@@ -4,7 +4,7 @@ use crate::audio_engine::AudioEngine;
 use crate::fonts::{self, FontId};
 use crate::graphics;
 use crate::graphics::Vitmap;
-use crate::input::{IcKey, KeyMode};
+use crate::input::IcKey;
 use crate::platform::CANVAS_WIDTH;
 use crate::platform::IcPlatform;
 use crate::platform::rgb8_hex;
@@ -829,23 +829,24 @@ impl Calculator {
     }
 
     fn handle_shift_tap(&mut self, ctx: &InputContext) {
-        if self.engine_mode != EngineMode::Scientific || ctx.key_mode != KeyMode::Normal {
+        if self.engine_mode != EngineMode::Scientific {
             self.shift_tap_pending = false;
             return;
         }
 
-        let shift = &ctx.key_states[IcKey::Shift as usize];
-        if shift.just_pressed {
+        // A tap is shift engaging then disengaging (which takes two presses in
+        // Sticky/Toggle). Keys already held when shift engages don't count;
+        // only key edges in between interrupt. Edges are raw, so shell-consumed
+        // keys also interrupt the tap.
+        if ctx.shift_engaged {
             self.shift_tap_pending = true;
         }
-        // Inspect raw states so shell-consumed keys also interrupt the tap.
         if ctx.key_states.iter().enumerate().any(|(i, state)| {
-            i != IcKey::Shift as usize
-                && (state.is_down || state.just_pressed || state.just_released)
+            i != IcKey::Shift as usize && (state.just_pressed || state.just_released)
         }) {
             self.shift_tap_pending = false;
         }
-        if shift.just_released {
+        if ctx.shift_disengaged {
             if self.shift_tap_pending {
                 self.current_eq.insert_char(b'.');
                 self.update_realtime_result();

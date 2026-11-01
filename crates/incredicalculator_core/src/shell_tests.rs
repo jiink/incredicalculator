@@ -109,6 +109,8 @@ fn setup(mode: KeyMode) -> (IcShell, TestPlatform, RecordedKeys) {
     let ctx = InputContext {
         key_states: &states,
         key_mode: KeyMode::Normal,
+        shift_engaged: false,
+        shift_disengaged: false,
     };
     shell
         .settings_menu
