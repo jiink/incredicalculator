@@ -180,3 +180,74 @@ fn latching_modes_insert_a_dot_when_shift_is_engaged_then_disengaged() {
     }
 }
 
+fn press_with(calculator: &mut Calculator, modifiers: &[IcKey], key: IcKey) {
+    let mut states = [KeyState::default(); IcKey::COUNT];
+    for &modifier in modifiers {
+        states[modifier as usize].is_down = true;
+    }
+    let ctx = InputContext {
+        key_states: &states,
+        key_mode: KeyMode::Normal,
+        shift_engaged: false,
+        shift_disengaged: false,
+    };
+    calculator.on_key(key, &ctx);
+}
+
+fn undo(calculator: &mut Calculator) {
+    press_with(calculator, &[IcKey::Super], IcKey::Num3);
+}
+
+#[test]
+fn super_num3_undoes_one_key_press_at_a_time() {
+    let mut calculator = Calculator::new(EngineMode::Scientific);
+    press_with(&mut calculator, &[], IcKey::Num1);
+    press_with(&mut calculator, &[], IcKey::Num2);
+    press_with(&mut calculator, &[IcKey::Shift], IcKey::Num0);
+    assert_eq!(calculator.current_eq.as_str(), "12sin(");
+
+    // cursor moves are not undo steps, but undo restores the cursor
+    press_with(&mut calculator, &[IcKey::Super], IcKey::Num7);
+    undo(&mut calculator);
+    assert_eq!(calculator.current_eq.as_str(), "12");
+    assert_eq!(calculator.current_eq.cursor, 2);
+    assert_eq!(calculator.current_result_len, 2);
+
+    undo(&mut calculator);
+    assert_eq!(calculator.current_eq.as_str(), "1");
+    undo(&mut calculator);
+    assert_eq!(calculator.current_eq.as_str(), "");
+    undo(&mut calculator);
+    assert_eq!(calculator.current_eq.as_str(), "");
+}
+
+#[test]
+fn undo_restores_cleared_and_submitted_equations() {
+    let mut calculator = Calculator::new(EngineMode::Programmer);
+    press_with(&mut calculator, &[], IcKey::Num4);
+    press_with(&mut calculator, &[IcKey::Super], IcKey::Num9);
+    assert_eq!(calculator.current_eq.as_str(), "");
+    undo(&mut calculator);
+    assert_eq!(calculator.current_eq.as_str(), "4");
+
+    press_with(&mut calculator, &[], IcKey::Func6);
+    assert_eq!(calculator.current_eq.as_str(), "");
+    assert_eq!(calculator.eq_history_len, 1);
+    undo(&mut calculator);
+    assert_eq!(calculator.current_eq.as_str(), "4");
+    assert_eq!(calculator.eq_history_len, 1);
+}
+
+#[test]
+fn shift_tap_dot_is_an_undo_step() {
+    let mut calculator = Calculator::new(EngineMode::Scientific);
+    let mut h = ShiftTapHarness::new(KeyMode::Normal);
+    h.press(&mut calculator, IcKey::Num1);
+    h.release(&mut calculator, IcKey::Num1);
+    h.press(&mut calculator, IcKey::Shift);
+    h.release(&mut calculator, IcKey::Shift);
+    assert_eq!(calculator.current_eq.as_str(), "1.");
+
+    undo(&mut calculator);
+    assert_eq!(calculator.current_eq.as_str(), "1");
+}

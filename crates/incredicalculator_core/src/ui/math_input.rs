@@ -3,6 +3,7 @@ use crate::fonts::{self, FontId};
 use crate::input::IcKey;
 use crate::platform::{rgb8_hex, IcPlatform};
 use crate::text::{TextStyle, draw_text, text_to_pos, text_vertical_bounds};
+use crate::ui::undo::{TextSnapshot, UndoHistory};
 use glam::{IVec2, Vec2};
 use rgb::RGB8;
 
@@ -61,7 +62,21 @@ impl<const N: usize> TextBuffer<N> {
     }
 
     fn as_str(&self) -> &str {
-        core::str::from_utf8(&self.data[..self.len]).unwrap_or("")
+        core::str::from_utf8(self.as_bytes()).unwrap_or("")
+    }
+
+    fn as_bytes(&self) -> &[u8] {
+        &self.data[..self.len]
+    }
+
+    fn snapshot(&self) -> TextSnapshot<N> {
+        TextSnapshot::new(self.as_bytes(), self.cursor)
+    }
+
+    fn restore(&mut self, snapshot: &TextSnapshot<N>) {
+        self.data = snapshot.data;
+        self.len = snapshot.len;
+        self.cursor = snapshot.cursor;
     }
 
     fn insert_byte(&mut self, byte: u8) -> bool {
@@ -168,6 +183,7 @@ impl<const N: usize> TextBuffer<N> {
 pub struct MathInput<const N: usize> {
     mode: MathInputMode,
     buffer: TextBuffer<N>,
+    undo_history: UndoHistory<N>,
     pub pos: IVec2,
     pub size: IVec2,
     min_text_scale: f32,
@@ -194,6 +210,7 @@ impl<const N: usize> MathInput<N> {
         Self {
             mode,
             buffer: TextBuffer::new(),
+            undo_history: UndoHistory::new(),
             pos,
             size,
             min_text_scale,
@@ -265,11 +282,25 @@ impl<const N: usize> MathInput<N> {
         }
 
         self.buffer.set_bytes(text.as_bytes());
+        self.undo_history.clear();
         Ok(())
     }
 
     pub fn clear(&mut self) {
         self.buffer.clear();
+        self.undo_history.clear();
+    }
+
+    /// Reverts the last edit made through `handle_key`. Returns false if
+    /// there is nothing to undo.
+    pub fn undo(&mut self) -> bool {
+        match self.undo_history.pop() {
+            Some(snapshot) => {
+                self.buffer.restore(&snapshot);
+                true
+            }
+            None => false,
+        }
     }
 
     pub fn home(&mut self) {
@@ -314,6 +345,18 @@ impl<const N: usize> MathInput<N> {
 
     /// Navigation that leaves this input is returned for the app to handle.
     pub fn handle_key(&mut self, key: IcKey, ctx: &InputContext) -> MathInputEvent {
+        if ctx.is_super() && !ctx.is_shifted() && key == IcKey::Num3 {
+            return Self::changed_from(self.undo());
+        }
+
+        let before = self.buffer.snapshot();
+        let event = self.apply_key(key, ctx);
+        self.undo_history
+            .record_if_changed(before, self.buffer.as_bytes());
+        event
+    }
+
+    fn apply_key(&mut self, key: IcKey, ctx: &InputContext) -> MathInputEvent {
         if ctx.is_shifted() {
             return self.handle_shifted_key(key);
         }
@@ -560,5 +603,93 @@ impl<const N: usize> MathInput<N> {
             }
             MathInputMode::Hexadecimal => ch.is_ascii_hexdigit(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::input::{KeyMode, KeyState};
+
+    fn input() -> MathInput<8> {
+        MathInput::new(
+            IVec2::ZERO,
+            IVec2::new(40, 20),
+            MathInputMode::Expression,
+            1.0,
+            1.0,
+            RGB8::default(),
+            RGB8::default(),
+            None,
+        )
+    }
+
+    fn press_with(input: &mut MathInput<8>, modifiers: &[IcKey], key: IcKey) -> MathInputEvent {
+        let mut states = [KeyState::default(); IcKey::COUNT];
+        for &modifier in modifiers {
+            states[modifier as usize].is_down = true;
+        }
+        let ctx = InputContext {
+            key_states: &states,
+            key_mode: KeyMode::Normal,
+            shift_engaged: false,
+            shift_disengaged: false,
+        };
+        input.handle_key(key, &ctx)
+    }
+
+    fn undo(input: &mut MathInput<8>) -> MathInputEvent {
+        press_with(input, &[IcKey::Super], IcKey::Num3)
+    }
+
+    #[test]
+    fn super_num3_undoes_edits_in_reverse_order() {
+        let mut input = input();
+        press_with(&mut input, &[], IcKey::Num1);
+        press_with(&mut input, &[], IcKey::Num2);
+        press_with(&mut input, &[IcKey::Shift], IcKey::Num7);
+        press_with(&mut input, &[], IcKey::Func1);
+        press_with(&mut input, &[IcKey::Super], IcKey::Num4);
+        press_with(&mut input, &[IcKey::Super], IcKey::Num9);
+        assert_eq!(input.text(), "");
+
+        assert_eq!(undo(&mut input), MathInputEvent::Changed);
+        assert_eq!(input.text(), "12");
+        assert_eq!(input.cursor(), 1);
+        undo(&mut input);
+        assert_eq!(input.text(), "12(");
+        assert_eq!(input.cursor(), 3);
+        undo(&mut input);
+        assert_eq!(input.text(), "12");
+        undo(&mut input);
+        assert_eq!(input.text(), "1");
+        undo(&mut input);
+        assert_eq!(input.text(), "");
+        assert_eq!(undo(&mut input), MathInputEvent::Handled);
+    }
+
+    #[test]
+    fn rejected_keys_are_not_undo_steps() {
+        let mut input = input();
+        press_with(&mut input, &[], IcKey::Num5);
+        // backspace at the start changes nothing
+        press_with(&mut input, &[IcKey::Super], IcKey::Num7);
+        press_with(&mut input, &[], IcKey::Func1);
+        undo(&mut input);
+        assert_eq!(input.text(), "");
+    }
+
+    #[test]
+    fn programmatic_set_text_and_clear_reset_history() {
+        let mut input = input();
+        press_with(&mut input, &[], IcKey::Num1);
+        input.set_text("42").unwrap();
+        assert_eq!(undo(&mut input), MathInputEvent::Handled);
+        assert_eq!(input.text(), "42");
+
+        press_with(&mut input, &[], IcKey::Num3);
+        input.clear();
+        assert_eq!(undo(&mut input), MathInputEvent::Handled);
+        assert_eq!(input.text(), "");
     }
 }

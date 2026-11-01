@@ -121,7 +121,7 @@ impl Stroke {
             Stroke::Fixed(width) => width,
             Stroke::Relative(weight) => scale * weight,
         };
-        width.round().max(1.0) as u32
+        width.max(1.0) as u32
     }
 }
 

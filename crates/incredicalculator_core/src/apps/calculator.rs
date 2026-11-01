@@ -9,6 +9,7 @@ use crate::platform::CANVAS_WIDTH;
 use crate::platform::IcPlatform;
 use crate::platform::rgb8_hex;
 use crate::text::{TextStyle, draw_text, text_to_pos, text_vertical_bounds, text_width};
+use crate::ui::{TextSnapshot, UndoHistory};
 use alloc::boxed::Box;
 use alloc::string::ToString;
 use alloc::{format, string::String};
@@ -69,6 +70,7 @@ enum KeyAction {
     Mode,
     ToggleSigned,
     CycleBitWidth,
+    Undo,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -288,7 +290,21 @@ impl<const N: usize> LineBuffer<N> {
     }
 
     pub fn as_str(&self) -> &str {
-        core::str::from_utf8(&self.data[..self.len]).unwrap_or("Invalid UTF-8")
+        core::str::from_utf8(self.as_bytes()).unwrap_or("Invalid UTF-8")
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.data[..self.len]
+    }
+
+    pub fn snapshot(&self) -> TextSnapshot<N> {
+        TextSnapshot::new(self.as_bytes(), self.cursor)
+    }
+
+    pub fn restore(&mut self, snapshot: &TextSnapshot<N>) {
+        self.data = snapshot.data;
+        self.len = snapshot.len;
+        self.cursor = snapshot.cursor;
     }
 
     pub fn set_content(&mut self, content: &[u8]) {
@@ -425,7 +441,7 @@ impl CalcEngine for ScientificEngine {
                 IcKey::Num0 => Some(KeyAction::InsertChar(b'.')),
                 IcKey::Num1 => Some(KeyAction::End),
                 IcKey::Num2 => Some(KeyAction::MoveDown),
-                IcKey::Num3 => None,
+                IcKey::Num3 => Some(KeyAction::Undo),
                 IcKey::Num4 => Some(KeyAction::MoveLeft),
                 IcKey::Num5 => Some(KeyAction::Mode),
                 IcKey::Num6 => Some(KeyAction::MoveRight),
@@ -751,7 +767,7 @@ impl CalcEngine for ProgrammerEngine {
                 IcKey::Num0 => Some(KeyAction::InsertChar(b'.')),
                 IcKey::Num1 => Some(KeyAction::End),
                 IcKey::Num2 => Some(KeyAction::MoveDown),
-                IcKey::Num3 => None,
+                IcKey::Num3 => Some(KeyAction::Undo),
                 IcKey::Num4 => Some(KeyAction::MoveLeft),
                 IcKey::Num5 => Some(KeyAction::Mode),
                 IcKey::Num6 => Some(KeyAction::MoveRight),
@@ -796,6 +812,7 @@ impl CalcEngine for ProgrammerEngine {
 
 pub struct Calculator {
     current_eq: LineBuffer<{ EqEntry::EQUATION_MAX_SIZE }>,
+    undo_history: UndoHistory<{ EqEntry::EQUATION_MAX_SIZE }>,
     eq_history: [EqEntry; EQ_HISTORY_MAX],
     eq_history_len: usize,
     eq_history_write_idx: usize,
@@ -812,6 +829,7 @@ impl Calculator {
     pub fn new(engine_mode: EngineMode) -> Calculator {
         Calculator {
             current_eq: LineBuffer::default(),
+            undo_history: UndoHistory::new(),
             eq_history: [EqEntry::default(); EQ_HISTORY_MAX],
             eq_history_len: 0,
             eq_history_write_idx: 0,
@@ -848,7 +866,10 @@ impl Calculator {
         }
         if ctx.shift_disengaged {
             if self.shift_tap_pending {
+                let before = self.current_eq.snapshot();
                 self.current_eq.insert_char(b'.');
+                self.undo_history
+                    .record_if_changed(before, self.current_eq.as_bytes());
                 self.update_realtime_result();
             }
             self.shift_tap_pending = false;
@@ -969,6 +990,90 @@ impl Calculator {
         self.history_append(&new_hist_entry);
         self.current_eq.clear();
         self.current_result_len = 0;
+    }
+
+    fn undo(&mut self) {
+        if let Some(snapshot) = self.undo_history.pop() {
+            self.current_eq.restore(&snapshot);
+            self.history_selection = None;
+        }
+    }
+
+    fn apply_action(&mut self, act: KeyAction) {
+        if self.focused_ui == FocusUi::Widget {
+            let current_result_str =
+                core::str::from_utf8(&self.current_result[..self.current_result_len])
+                    .unwrap_or("0");
+            let handled = self
+                .engine
+                .on_widget_key(act, &mut self.current_eq, current_result_str);
+            if !handled {
+                if act == KeyAction::MoveUp {
+                    self.focused_ui = FocusUi::Equation;
+                    return;
+                }
+            } else {
+                self.update_realtime_result();
+                return;
+            }
+        }
+        match act {
+            KeyAction::InsertChar(c) => self.current_eq.insert_char(c),
+            KeyAction::InsertChar2(c1, c2) => {
+                self.current_eq.insert_char(c1);
+                self.current_eq.insert_char(c2);
+            }
+            KeyAction::InsertChar3(c1, c2, c3) => {
+                self.current_eq.insert_char(c1);
+                self.current_eq.insert_char(c2);
+                self.current_eq.insert_char(c3);
+            }
+            KeyAction::InsertChar4(c1, c2, c3, c4) => {
+                self.current_eq.insert_char(c1);
+                self.current_eq.insert_char(c2);
+                self.current_eq.insert_char(c3);
+                self.current_eq.insert_char(c4);
+            }
+            KeyAction::InsertChar5(c1, c2, c3, c4, c5) => {
+                self.current_eq.insert_char(c1);
+                self.current_eq.insert_char(c2);
+                self.current_eq.insert_char(c3);
+                self.current_eq.insert_char(c4);
+                self.current_eq.insert_char(c5);
+            }
+            KeyAction::Backspace => {
+                if self.history_selection.is_none() {
+                    self.current_eq.backspace()
+                } else {
+                    self.delete_current_history_entry()
+                }
+            }
+            KeyAction::Clear => {
+                if self.current_eq.len == 0 {
+                    self.clear_history();
+                } else {
+                    self.current_eq.clear();
+                }
+            }
+            KeyAction::Delete => self.current_eq.backspace_del(),
+            KeyAction::Enter => {
+                if self.history_selection.is_none() {
+                    self.run_equation();
+                } else {
+                    self.copy_from_history();
+                }
+            }
+            KeyAction::MoveUp => self.ui_nav(NavDir::Up),
+            KeyAction::MoveDown => self.ui_nav(NavDir::Down),
+            KeyAction::MoveLeft => self.ui_nav(NavDir::Left),
+            KeyAction::MoveRight => self.ui_nav(NavDir::Right),
+            KeyAction::Home => self.current_eq.move_cursor_home(),
+            KeyAction::End => self.current_eq.move_cursor_end(),
+            KeyAction::Mode => (),
+            KeyAction::ToggleSigned | KeyAction::CycleBitWidth => self.engine.on_engine_key(act),
+            KeyAction::Undo => self.undo(),
+        }
+        self.update_realtime_result();
     }
 
     fn update_realtime_result(&mut self) {
@@ -1328,81 +1433,12 @@ impl IcApp for Calculator {
             .engine
             .get_action(key, ctx.is_shifted(), ctx.is_super());
         if let Some(act) = action {
-            if self.focused_ui == FocusUi::Widget {
-                let current_result_str =
-                    core::str::from_utf8(&self.current_result[..self.current_result_len])
-                        .unwrap_or("0");
-                let handled =
-                    self.engine
-                        .on_widget_key(act, &mut self.current_eq, current_result_str);
-                if !handled {
-                    if act == KeyAction::MoveUp {
-                        self.focused_ui = FocusUi::Equation;
-                        return;
-                    }
-                } else {
-                    self.update_realtime_result();
-                    return;
-                }
+            let before = self.current_eq.snapshot();
+            self.apply_action(act);
+            if act != KeyAction::Undo {
+                self.undo_history
+                    .record_if_changed(before, self.current_eq.as_bytes());
             }
-            match act {
-                KeyAction::InsertChar(c) => self.current_eq.insert_char(c),
-                KeyAction::InsertChar2(c1, c2) => {
-                    self.current_eq.insert_char(c1);
-                    self.current_eq.insert_char(c2);
-                }
-                KeyAction::InsertChar3(c1, c2, c3) => {
-                    self.current_eq.insert_char(c1);
-                    self.current_eq.insert_char(c2);
-                    self.current_eq.insert_char(c3);
-                }
-                KeyAction::InsertChar4(c1, c2, c3, c4) => {
-                    self.current_eq.insert_char(c1);
-                    self.current_eq.insert_char(c2);
-                    self.current_eq.insert_char(c3);
-                    self.current_eq.insert_char(c4);
-                }
-                KeyAction::InsertChar5(c1, c2, c3, c4, c5) => {
-                    self.current_eq.insert_char(c1);
-                    self.current_eq.insert_char(c2);
-                    self.current_eq.insert_char(c3);
-                    self.current_eq.insert_char(c4);
-                    self.current_eq.insert_char(c5);
-                }
-                KeyAction::Backspace => {
-                    if self.history_selection.is_none() {
-                        self.current_eq.backspace()
-                    } else {
-                        self.delete_current_history_entry()
-                    }
-                }
-                KeyAction::Clear => {
-                    if self.current_eq.len == 0 {
-                        self.clear_history();
-                    } else {
-                        self.current_eq.clear();
-                    }
-                }
-                KeyAction::Delete => self.current_eq.backspace_del(),
-                KeyAction::Enter => {
-                    if self.history_selection.is_none() {
-                        self.run_equation();
-                    } else {
-                        self.copy_from_history();
-                    }
-                }
-                KeyAction::MoveUp => self.ui_nav(NavDir::Up),
-                KeyAction::MoveDown => self.ui_nav(NavDir::Down),
-                KeyAction::MoveLeft => self.ui_nav(NavDir::Left),
-                KeyAction::MoveRight => self.ui_nav(NavDir::Right),
-                KeyAction::Home => self.current_eq.move_cursor_home(),
-                KeyAction::End => self.current_eq.move_cursor_end(),
-                KeyAction::Mode => (),
-                KeyAction::ToggleSigned | KeyAction::CycleBitWidth => {
-                    self.engine.on_engine_key(act)
-                }
-            }
-            self.update_realtime_result();
         }
     }
 
