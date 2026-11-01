@@ -407,7 +407,7 @@ impl IcShell {
                 draw_text_f(
                     platform,
                     format_args!("{}", button_number(card.button)),
-                    Vec2::new(hint_start.x as f32 + 6.0, hint_start.y as f32 + 19.0),
+                    Vec2::new(hint_start.x as f32 + 6.0, hint_start.y as f32 + 22.0),
                     TextStyle::new(10.0, shadow_color).thickness(4.0),
                 );
                 let text_color = mix_colors(rgb8_hex(0xffffff), card.color, opacity);
