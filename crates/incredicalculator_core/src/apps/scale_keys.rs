@@ -2,7 +2,7 @@ use crate::app::{IcApp, InputContext};
 use crate::audio_engine::{AudioEngine, AudioPatch, MAX_VOICES, NoteId};
 use crate::graphics::{self, Vitmap};
 use crate::input::IcKey;
-use crate::platform::{CANVAS_WIDTH, IcPlatform, rgb8_hex};
+use crate::platform::{IcPlatform, rgb8_hex};
 use crate::text::{self, HAlign, TextStyle};
 use glam::{IVec2, Vec2};
 use rgb::RGB8;
@@ -10,8 +10,9 @@ use rgb::RGB8;
 const DIRECT_SOURCE_BASE: u32 = 0x534b_0000;
 const ARP_SOURCE_BASE: u32 = 0x534b_0100;
 
-/// Keys in playing order: 1 is the root, 0 is the tenth scale degree.
+/// Indexed by key number; pitch rises up the keypad from 0 to 9.
 const NUMBER_KEYS: [IcKey; KEY_COUNT] = [
+    IcKey::Num0,
     IcKey::Num1,
     IcKey::Num2,
     IcKey::Num3,
@@ -21,7 +22,6 @@ const NUMBER_KEYS: [IcKey; KEY_COUNT] = [
     IcKey::Num7,
     IcKey::Num8,
     IcKey::Num9,
-    IcKey::Num0,
 ];
 const KEY_COUNT: usize = 10;
 
@@ -289,9 +289,11 @@ impl ScaleKeys {
 
     fn midi_note_for(&self, key_idx: usize, sharp: bool) -> u8 {
         let steps = self.scale().steps;
-        let octave = self.octave as i16 + 1 + (key_idx / steps.len()) as i16;
-        let note =
-            octave * 12 + self.root as i16 + steps[key_idx % steps.len()] as i16 + sharp as i16;
+        let steps_len = steps.len() as i16;
+        let degree = scale_degree(key_idx);
+        let octave = self.octave as i16 + 1 + degree.div_euclid(steps_len);
+        let step = steps[degree.rem_euclid(steps_len) as usize] as i16;
+        let note = octave * 12 + self.root as i16 + step + sharp as i16;
         note.clamp(0, 127) as u8
     }
 
@@ -503,48 +505,28 @@ impl ScaleKeys {
             TextStyle::new(5.0, DIM_TEXT_COLOR),
         );
 
-        self.draw_keys(platform, ctx.is_shifted());
-
-        text::draw_text_f(
-            platform,
-            format_args!(
-                "Arp: {}{}",
-                self.arp_mode.label(),
-                if self.latch { "   Latch" } else { "" },
-            ),
-            Vec2::new(8.0, 150.0),
-            TextStyle::new(6.0, TEXT_COLOR),
-        );
-        if self.arp_mode != ArpMode::Off {
-            text::draw_text_f(
-                platform,
-                format_args!(
-                    "{}   {} BPM   {} oct",
-                    self.arp_rate.label(),
-                    self.bpm,
-                    self.arp_octaves,
-                ),
-                Vec2::new(8.0, 168.0),
-                TextStyle::new(5.0, DIM_TEXT_COLOR),
-            );
-        }
-
-        self.draw_function_bar(platform, ctx);
+        self.draw_keypad(platform, ctx.is_shifted());
+        self.draw_arp_panel(platform);
+        self.draw_function_column(platform, ctx);
     }
 
-    fn draw_keys(&self, platform: &mut dyn IcPlatform, shifted: bool) {
-        const CELL_W: i32 = 29;
-        const CELL_GAP: i32 = 2;
+    /// Mirrors the device's keypad: 7-8-9 on top, 0 alone at the bottom left.
+    fn draw_keypad(&self, platform: &mut dyn IcPlatform, shifted: bool) {
+        const CELL_W: i32 = 44;
+        const CELL_H: i32 = 42;
+        const GAP: i32 = 3;
+        const LEFT: i32 = 8;
         const TOP: i32 = 56;
-        const BOTTOM: i32 = 128;
-        let left = (CANVAS_WIDTH as i32
-            - (CELL_W * KEY_COUNT as i32 + CELL_GAP * (KEY_COUNT as i32 - 1)))
-            / 2;
-        let steps_len = self.scale().steps.len();
+        let steps_len = self.scale().steps.len() as i16;
         let active = self.active_notes();
 
         for key_idx in 0..KEY_COUNT {
-            let x = left + key_idx as i32 * (CELL_W + CELL_GAP);
+            let (col, row) = match key_idx {
+                0 => (0, 3),
+                n => ((n - 1) % 3, 2 - (n - 1) / 3),
+            };
+            let x = LEFT + col as i32 * (CELL_W + GAP);
+            let y = TOP + row as i32 * (CELL_H + GAP);
             let active_note = active[key_idx].or(self.held[key_idx]);
             let sounding = match self.arp_mode {
                 ArpMode::Off => active_note.is_some(),
@@ -554,7 +536,7 @@ impl ScaleKeys {
                 SOUNDING_CELL_COLOR
             } else if active_note.is_some() {
                 HELD_CELL_COLOR
-            } else if key_idx % steps_len == 0 {
+            } else if scale_degree(key_idx).rem_euclid(steps_len) == 0 {
                 ROOT_CELL_COLOR
             } else {
                 CELL_COLOR
@@ -565,8 +547,8 @@ impl ScaleKeys {
                 TEXT_COLOR
             };
             platform.draw_rectangle_rounded(
-                IVec2::new(x, TOP),
-                IVec2::new(x + CELL_W, BOTTOM),
+                IVec2::new(x, y),
+                IVec2::new(x + CELL_W, y + CELL_H),
                 fill,
                 0,
                 Some(fill),
@@ -576,37 +558,81 @@ impl ScaleKeys {
             let center_x = (x + CELL_W / 2) as f32;
             text::draw_text_f(
                 platform,
-                format_args!("{}", (key_idx + 1) % KEY_COUNT),
-                Vec2::new(center_x, TOP as f32 + 18.0),
-                TextStyle::new(7.0, text_color).align(HAlign::Center),
+                format_args!("{}", key_idx),
+                Vec2::new(center_x, y as f32 + 17.0),
+                TextStyle::new(6.0, text_color).align(HAlign::Center),
             );
             // Idle keys preview what Shift would play.
             let midi_note = active_note
                 .map(|note| note.midi_note)
                 .unwrap_or_else(|| self.midi_note_for(key_idx, shifted));
-            text::draw_text(
-                platform,
-                NOTE_NAMES[midi_note as usize % 12],
-                Vec2::new(center_x, TOP as f32 + 42.0),
-                TextStyle::new(4.5, text_color).align(HAlign::Center),
-            );
             text::draw_text_f(
                 platform,
-                format_args!("{}", midi_note as i16 / 12 - 1),
-                Vec2::new(center_x, TOP as f32 + 60.0),
-                TextStyle::new(4.0, text_color).align(HAlign::Center),
+                format_args!(
+                    "{}{}",
+                    NOTE_NAMES[midi_note as usize % 12],
+                    midi_note as i16 / 12 - 1
+                ),
+                Vec2::new(center_x, y as f32 + 33.0),
+                TextStyle::new(4.5, text_color).align(HAlign::Center),
             );
         }
     }
 
-    /// Labels for F1-F6, following the held modifier.
-    fn draw_function_bar(&self, platform: &mut dyn IcPlatform, ctx: &InputContext) {
-        const CELL_W: i32 = 44;
-        const CELL_GAP: i32 = 2;
-        const LEFT: i32 = 6;
-        // Stays above the shell's modifier icon in the bottom-right corner.
-        const TOP: i32 = 182;
-        const BOTTOM: i32 = 204;
+    fn draw_arp_panel(&self, platform: &mut dyn IcPlatform) {
+        const LEFT: f32 = 158.0;
+        text::draw_text(
+            platform,
+            "Arp",
+            Vec2::new(LEFT, 72.0),
+            TextStyle::new(4.5, DIM_TEXT_COLOR),
+        );
+        text::draw_text(
+            platform,
+            self.arp_mode.label(),
+            Vec2::new(LEFT, 94.0),
+            TextStyle::new(5.5, TEXT_COLOR),
+        );
+        if self.arp_mode != ArpMode::Off {
+            let style = TextStyle::new(5.0, TEXT_COLOR);
+            text::draw_text(
+                platform,
+                self.arp_rate.label(),
+                Vec2::new(LEFT, 122.0),
+                style,
+            );
+            text::draw_text_f(
+                platform,
+                format_args!("{} BPM", self.bpm),
+                Vec2::new(LEFT, 142.0),
+                style,
+            );
+            text::draw_text_f(
+                platform,
+                format_args!("{} oct", self.arp_octaves),
+                Vec2::new(LEFT, 162.0),
+                style,
+            );
+        }
+        if self.latch {
+            text::draw_text(
+                platform,
+                "Latch",
+                Vec2::new(LEFT, 190.0),
+                TextStyle::new(5.0, SOUNDING_CELL_COLOR),
+            );
+        }
+    }
+
+    /// Labels for F1-F6, which run down the right side of the device,
+    /// following the held modifier.
+    fn draw_function_column(&self, platform: &mut dyn IcPlatform, ctx: &InputContext) {
+        const LEFT: i32 = 262;
+        const RIGHT: i32 = 312;
+        const CELL_H: i32 = 28;
+        const GAP: i32 = 2;
+        // Fits between the shell's battery and its modifier icon.
+        const TOP: i32 = 25;
         let labels = if ctx.is_super() {
             ["Snd+", "Snd-", "", "", "Vol", "Light"]
         } else if ctx.is_shifted() {
@@ -620,12 +646,12 @@ impl ScaleKeys {
             if label.is_empty() {
                 continue;
             }
-            let x = LEFT + idx as i32 * (CELL_W + CELL_GAP);
+            let y = TOP + idx as i32 * (CELL_H + GAP);
             let lit = idx == 1 && latch_lit;
             let fill = if lit { HELD_CELL_COLOR } else { CELL_COLOR };
             platform.draw_rectangle_rounded(
-                IVec2::new(x, TOP),
-                IVec2::new(x + CELL_W, BOTTOM),
+                IVec2::new(LEFT, y),
+                IVec2::new(RIGHT, y + CELL_H),
                 fill,
                 0,
                 Some(fill),
@@ -634,11 +660,17 @@ impl ScaleKeys {
             text::draw_text(
                 platform,
                 label,
-                Vec2::new((x + CELL_W / 2) as f32, TOP as f32 + 15.0),
+                Vec2::new((LEFT + RIGHT) as f32 / 2.0, y as f32 + 15.0),
                 TextStyle::new(4.0, TEXT_COLOR).align(HAlign::Center),
             );
         }
     }
+}
+
+/// Scale degree played by a number key, counted from 0 at the root. Key 1
+/// is the root, so 0 plays the scale note just below it.
+fn scale_degree(key_idx: usize) -> i16 {
+    key_idx as i16 - 1
 }
 
 impl IcApp for ScaleKeys {
@@ -747,14 +779,15 @@ mod tests {
     fn number_keys_follow_the_scale_across_octaves() {
         let mut keys = ScaleKeys::new();
         let notes: [u8; KEY_COUNT] = core::array::from_fn(|k| keys.midi_note_for(k, false));
-        assert_eq!(notes, [60, 62, 64, 65, 67, 69, 71, 72, 74, 76]);
+        assert_eq!(notes, [59, 60, 62, 64, 65, 67, 69, 71, 72, 74]);
 
         keys.scale_idx = 3; // Minor Pent
         keys.root = 9; // A
         keys.octave = 3;
-        assert_eq!(keys.midi_note_for(0, false), 57);
-        assert_eq!(keys.midi_note_for(5, false), 69);
-        assert_eq!(keys.midi_note_for(1, true), 61);
+        assert_eq!(keys.midi_note_for(0, false), 55);
+        assert_eq!(keys.midi_note_for(1, false), 57);
+        assert_eq!(keys.midi_note_for(6, false), 69);
+        assert_eq!(keys.midi_note_for(2, true), 61);
     }
 
     #[test]
@@ -800,6 +833,6 @@ mod tests {
         keys.update_held_keys(&ctx);
         let latched: usize = keys.latched.iter().filter(|note| note.is_some()).count();
         assert_eq!(latched, 1);
-        assert_eq!(keys.latched[4].unwrap().midi_note, 67);
+        assert_eq!(keys.latched[5].unwrap().midi_note, 67);
     }
 }
