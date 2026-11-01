@@ -8,5 +8,7 @@ mod face_calculator;
 pub use face_calculator::FaceCalculator;
 mod sound_test;
 pub use sound_test::SoundTest;
+mod scale_keys;
+pub use scale_keys::ScaleKeys;
 mod color_calculator;
 pub use color_calculator::ColorCalculator;

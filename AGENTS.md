@@ -1,3 +1,4 @@
+Do not "cargo run" nor take screenshots unless explicitly instructed to.
 Do not commit or push unless explicitly instructed to.
 Do not run `cargo build` from the workspace root. For the PC app, use
 `cargo build --manifest-path incredicalculator_pc/Cargo.toml`.
