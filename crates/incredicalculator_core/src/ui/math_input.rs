@@ -446,7 +446,8 @@ impl<const N: usize> MathInput<N> {
                     text_scale,
                     rgb8_hex(if has_focus { 0x000000 } else { 0xffffff }),
                 )
-                .font(font_id),
+                .font(font_id)
+                .thickness(4.0),
             );
         }
 
@@ -508,6 +509,10 @@ impl<const N: usize> MathInput<N> {
 
     fn handle_super_key(&mut self, key: IcKey) -> MathInputEvent {
         match key {
+            IcKey::Num0 => {
+                self.insert_char('.');
+                MathInputEvent::Changed
+            },
             IcKey::Num1 => Self::handled_cursor_move(self.buffer.move_cursor_end()),
             IcKey::Num4 => {
                 if self.buffer.move_cursor_left() {
