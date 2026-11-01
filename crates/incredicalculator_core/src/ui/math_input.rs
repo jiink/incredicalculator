@@ -447,7 +447,7 @@ impl<const N: usize> MathInput<N> {
                     rgb8_hex(if has_focus { 0x000000 } else { 0xffffff }),
                 )
                 .font(font_id)
-                .thickness(4.0),
+                .weight(0.4),
             );
         }
 

@@ -1229,7 +1229,7 @@ impl Calculator {
             platform,
             equation_disp,
             Vec2::new(margin, eq_layout.y),
-            TextStyle::new(eq_layout.scale, theme.foreground).thickness(3.0),
+            TextStyle::new(eq_layout.scale, theme.foreground).weight(0.3),
         );
         if self.focused_ui == FocusUi::Equation && self.history_selection.is_none() {
             // draw cursor
@@ -1295,7 +1295,7 @@ impl Calculator {
             platform,
             result_disp,
             Vec2::new(margin + 24.0, ans_layout.y),
-            TextStyle::new(ans_layout.scale, theme.foreground).thickness(4.0),
+            TextStyle::new(ans_layout.scale, theme.foreground).weight(0.4),
         );
     }
 }

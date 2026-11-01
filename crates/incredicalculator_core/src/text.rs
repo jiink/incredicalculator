@@ -105,11 +105,31 @@ impl HAlign {
 }
 
 
+/// Stroke width used when drawing text.
+#[derive(Clone, Copy, Debug)]
+pub enum Stroke {
+    /// Exact width in pixels, regardless of text size.
+    Fixed(f32),
+    /// Width proportional to the text scale (`scale * weight`), so text keeps
+    /// the same look as it shrinks. Never thinner than 1px.
+    Relative(f32),
+}
+
+impl Stroke {
+    fn pixels(self, scale: f32) -> u32 {
+        let width = match self {
+            Stroke::Fixed(width) => width,
+            Stroke::Relative(weight) => scale * weight,
+        };
+        width.round().max(1.0) as u32
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct TextStyle {
     pub scale: f32,
     pub color: RGB8,
-    pub thickness: f32,
+    pub stroke: Stroke,
     pub font: fonts::FontId,
     pub align: HAlign,
 }
@@ -119,7 +139,7 @@ impl TextStyle {
         Self {
             scale,
             color,
-            thickness: 2.0,
+            stroke: Stroke::Fixed(2.0),
             font: fonts::FontId::Futural,
             align: HAlign::Left,
         }
@@ -129,8 +149,20 @@ impl TextStyle {
         Self { align, ..self }
     }
 
+    /// Use a fixed stroke width in pixels.
     pub const fn thickness(self, thickness: f32) -> Self {
-        Self { thickness, ..self }
+        Self {
+            stroke: Stroke::Fixed(thickness),
+            ..self
+        }
+    }
+
+    /// Use a stroke width proportional to the text scale.
+    pub const fn weight(self, weight: f32) -> Self {
+        Self {
+            stroke: Stroke::Relative(weight),
+            ..self
+        }
     }
 
     pub const fn font(self, font: fonts::FontId) -> Self {
@@ -153,7 +185,7 @@ pub fn draw_text(platform: &mut dyn IcPlatform, text: &str, pos: Vec2, style: Te
     let bytes = text.as_bytes();
     let align = style.align.factor();
     let line_x = |line: &[u8]| pos.x - line_width(font, font_scale, line) * align;
-    let thickness = style.thickness as u32;
+    let thickness = style.stroke.pixels(style.scale);
     let color = style.color;
 
     let mut current_x = line_x(bytes);
