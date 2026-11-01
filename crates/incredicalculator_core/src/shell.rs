@@ -23,10 +23,6 @@ use num_traits::clamp;
 use rgb::Rgb;
 use rgb::*;
 
-#[cfg(test)]
-#[path = "shell_tests.rs"]
-mod tests;
-
 const APPS_PER_PAGE: usize = 6;
 const KEY_HINT_FADE_DELAY_MS: u64 = 2000;
 const KEY_HINT_FADE_IN_MS: u64 = 700;

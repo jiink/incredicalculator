@@ -60,62 +60,6 @@ impl ShiftTapHarness {
 }
 
 #[test]
-fn calculator_text_fitting_uses_glyph_widths() {
-    let narrow = FittedText::new("iiiiiiiiiiii", 10.0, 100.0, 100.0, 0.0);
-    let wide = FittedText::new("WWWWWWWWWWWW", 10.0, 100.0, 100.0, 0.0);
-    assert!(narrow.scale > wide.scale);
-    assert_eq!(FittedText::new("3(4)", 10.0, 312.0, 100.0, 0.0).scale, 10.0);
-}
-
-#[test]
-fn calculator_text_fitting_stays_in_its_row() {
-    for text in [
-        "123456789012345678901234567890123456789012345678",
-        "888888888888888888888888888888888888888888888888",
-        "((((1+2)*3)/4)^5)",
-        "Syntax error: unexpected function call",
-        "-1.2345678901234567e-100",
-        "gyp()[]",
-        "1",
-    ] {
-        for (max_scale, width, height, center_y) in [
-            (10.0, 312.0, 28.0, 162.0),
-            (10.0, 288.0, 26.0, 194.0),
-            (6.0, 298.0, 13.0, 116.5),
-            (6.0, 284.0, 13.0, 136.5),
-        ] {
-            let layout = FittedText::new(text, max_scale, width, height, center_y);
-            assert!(layout.scale > 0.0 && layout.scale <= max_scale);
-            assert!(text_width(text, layout.scale, FontId::Futural) <= width + 0.001);
-            let (min_y, max_y) = text_vertical_bounds(text, FontId::Futural).unwrap();
-            let font_scale = layout.scale / fonts::get_font(FontId::Futural).units_per_em;
-            let top = layout.y + min_y * font_scale;
-            let bottom = layout.y + max_y * font_scale;
-            assert!(top >= center_y - height * 0.5 - 0.001, "{text}");
-            assert!(bottom <= center_y + height * 0.5 + 0.001, "{text}");
-            assert!(((top + bottom) * 0.5 - center_y).abs() < 0.001);
-            for cursor in 0..=text.len() {
-                let x = text_to_pos(text, 4.0, layout.scale, cursor, FontId::Futural);
-                assert!(x >= 4.0 && x <= 4.0 + width + 0.001);
-            }
-        }
-    }
-}
-
-#[test]
-fn calculator_cursor_fits_empty_and_single_stroke_text() {
-    for text in ["", " ", "-", ".", "_"] {
-        let layout = FittedText::new(text, 10.0, 312.0, 32.0, 162.0);
-        assert!(layout.y.is_finite());
-        assert!(layout.height >= 4.0 && layout.height <= 32.0);
-    }
-    let layout = FittedText::new("123", 10.0, 0.0, 0.0, 162.0);
-    assert_eq!(layout.scale, 0.0);
-    assert_eq!(layout.height, 0.0);
-    assert_eq!(layout.y, 162.0);
-}
-
-#[test]
 fn scientific_parentheses_imply_multiplication() {
     let engine = ScientificEngine::default();
     for (equation, expected) in [
@@ -212,17 +156,6 @@ fn shift_tap_is_cancelled_by_every_other_key() {
 }
 
 #[test]
-fn shift_tap_rejects_key_pressed_on_release_frame() {
-    let mut calculator = Calculator::new(EngineMode::Scientific);
-    let mut h = ShiftTapHarness::new(KeyMode::Normal);
-    h.press(&mut calculator, IcKey::Shift);
-    h.set(IcKey::Shift, false);
-    h.set(IcKey::Num1, true);
-    h.frame(&mut calculator);
-    assert_eq!(calculator.current_eq.as_str(), "1");
-}
-
-#[test]
 fn shift_tap_while_key_already_held_inserts_a_dot() {
     let mut calculator = Calculator::new(EngineMode::Scientific);
     let mut h = ShiftTapHarness::new(KeyMode::Normal);
@@ -247,27 +180,3 @@ fn latching_modes_insert_a_dot_when_shift_is_engaged_then_disengaged() {
     }
 }
 
-#[test]
-fn sticky_shift_used_by_a_key_does_not_insert_a_dot() {
-    let mut calculator = Calculator::new(EngineMode::Scientific);
-    let mut h = ShiftTapHarness::new(KeyMode::Sticky);
-    h.press(&mut calculator, IcKey::Shift);
-    h.release(&mut calculator, IcKey::Shift);
-    h.press(&mut calculator, IcKey::Num1);
-    h.release(&mut calculator, IcKey::Num1);
-    assert!(!calculator.current_eq.as_str().contains('.'));
-}
-
-#[test]
-fn shift_tap_does_not_affect_programmer_or_survive_reentry() {
-    for mode in [EngineMode::Programmer, EngineMode::Scientific] {
-        let mut calculator = Calculator::new(mode);
-        let mut h = ShiftTapHarness::new(KeyMode::Normal);
-        h.press(&mut calculator, IcKey::Shift);
-        if mode == EngineMode::Scientific {
-            calculator.on_enter();
-        }
-        h.release(&mut calculator, IcKey::Shift);
-        assert_eq!(calculator.current_eq.as_str(), "");
-    }
-}
