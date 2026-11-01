@@ -31,7 +31,7 @@ fn get_glyph(font: &'static HersheyFont, c: u8) -> &'static HersheyGlyph {
         }
     }
 
-    font.missing_glyph
+    font.placeholder_glyph
 }
 
 #[inline]

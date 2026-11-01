@@ -289,11 +289,11 @@ pub const FUTURAL_GLYPH_13: HersheyGlyph = HersheyGlyph {
 };
 
 static FUTURAL_GLYPH_14_VERTICES: [HersheyVertex; 5] = [
-    HersheyVertex { x: 0, y: 4 },
-    HersheyVertex { x: -1, y: 5 },
-    HersheyVertex { x: 0, y: 6 },
-    HersheyVertex { x: 1, y: 5 },
-    HersheyVertex { x: 0, y: 4 },
+    HersheyVertex { x: 0,  y: 4 + 3 },
+    HersheyVertex { x: -1, y: 5 + 3 },
+    HersheyVertex { x: 0,  y: 6 + 3 },
+    HersheyVertex { x: 1,  y: 5 + 3 },
+    HersheyVertex { x: 0,  y: 4 + 3 },
 ];
 
 pub const FUTURAL_GLYPH_14: HersheyGlyph = HersheyGlyph {
@@ -2184,6 +2184,6 @@ pub static FONT_FUTURAL: HersheyFont = HersheyFont {
     glyphs: &FUTURAL_GLYPHS,
     space_advance: 10,
     line_height: 25,
-    missing_glyph: &FUTURAL_GLYPH_10,
+    placeholder_glyph: &FUTURAL_GLYPH_10,
     units_per_em: 10.0,
 };
