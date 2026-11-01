@@ -292,6 +292,47 @@ impl IcShell {
         );
     }
 
+    fn draw_modifier_hint(platform: &mut dyn IcPlatform, color: RGB8, icon: &Vitmap) {
+        let inset = 3;
+        platform.draw_rectangle(
+            IVec2::splat(inset),
+            IVec2::new(
+                CANVAS_WIDTH as i32 - 1 - inset,
+                CANVAS_HEIGHT as i32 - 1 - inset,
+            ),
+            rgb8_hex(0xffffff),
+            2,
+            None,
+        );
+        platform.draw_rectangle(
+            IVec2::splat(0),
+            IVec2::new(
+                CANVAS_WIDTH as i32 - 1,
+                CANVAS_HEIGHT as i32 - 1,
+            ),
+            color,
+            4,
+            None,
+        );
+        
+        let icon_position = Vec2::new((CANVAS_WIDTH - 18) as f32, (CANVAS_HEIGHT - 18) as f32);
+        platform.draw_rectangle(
+            icon_position.as_ivec2() - IVec2::splat(16),
+            IVec2::new(CANVAS_WIDTH as i32, CANVAS_HEIGHT as i32),
+            rgb8_hex(0xffffff),
+            0,
+            Some(color),
+        );
+
+        draw_vitmap(
+            platform,
+            icon,
+            0,
+            icon_position,
+            Vec2::splat(1.5),
+        );
+    }
+
     fn selector_cards(&self) -> [SelectorCard<'_>; 9] {
         let mut cards = [
             SelectorCard {
@@ -566,28 +607,10 @@ impl IcShell {
         if self.show_startup_help {
             Self::draw_startup_help(platform);
         }
-        if key_mode != KeyMode::Normal {
-            for (active, inset, color) in [
-                (ctx.is_shifted(), 1, rgb8_hex(0x0000ff)),
-                (
-                    ctx.is_super(),
-                    if ctx.is_shifted() { 3 } else { 1 },
-                    rgb8_hex(0x00ff00),
-                ),
-            ] {
-                if active {
-                    platform.draw_rectangle(
-                        IVec2::splat(inset),
-                        IVec2::new(
-                            CANVAS_WIDTH as i32 - 1 - inset,
-                            CANVAS_HEIGHT as i32 - 1 - inset,
-                        ),
-                        color,
-                        2,
-                        None,
-                    );
-                }
-            }
+        if ctx.is_shifted() {
+            Self::draw_modifier_hint(platform, rgb8_hex(0x0000ff), &graphics::SHIFT);
+        } else if ctx.is_super() {
+            Self::draw_modifier_hint(platform, rgb8_hex(0xff0000), &graphics::SUPER);
         }
         self.modifiers.set_mode(self.settings_menu.key_mode());
     }
