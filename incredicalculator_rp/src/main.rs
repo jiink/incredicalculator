@@ -1254,14 +1254,15 @@ async fn main(spawner: Spawner) {
     let _tft_unused_d6 = Output::new(p.PIN_39, Level::Low);
     let _tft_unused_d7 = Output::new(p.PIN_40, Level::Low);
 
-    // PWM backlight
+    // PWM backlight. Keep it off until the panel's power-on RAM contents have
+    // been overwritten; `IcRpPlatform::new` turns it on afterwards.
     let mut pwm_config = PwmConfig::default();
     pwm_config.top = 0xFFFF;
-    pwm_config.compare_b = 0xFFFF / 2;
+    pwm_config.compare_b = 0;
     let backlight = Pwm::new_output_b(p.PWM_SLICE7, module_bl, pwm_config);
     let mut pwm_config2 = PwmConfig::default();
     pwm_config2.top = 0xFFFF;
-    pwm_config2.compare_b = 0xFFFF / 2;
+    pwm_config2.compare_b = 0;
     let backlight2 = Pwm::new_output_b(p.PWM_SLICE8, bare_display_bl, pwm_config2);
 
     // create SPI
@@ -1297,6 +1298,23 @@ async fn main(spawner: Spawner) {
         .await
         .unwrap();
 
+    // The panel's RAM holds random data after power-on, and `init` has
+    // already turned the display on. Overwrite it with the zeroed (black)
+    // canvas while the backlight is still off so the junk is never visible.
+    let initial_canvas = FrameBuffer {
+        pixels: CANVAS_DATA0.take(),
+    };
+    display
+        .show_raw_data(
+            0,
+            0,
+            RENDER_W as u16,
+            RENDER_H as u16,
+            &initial_canvas.pixels[..],
+        )
+        .await
+        .unwrap();
+
     // set up i2c
     // Default I2C config enables internal pull-up resistors.
     let i2c_cfg = embassy_rp::i2c::Config::default();
@@ -1316,9 +1334,6 @@ async fn main(spawner: Spawner) {
 
     // The UI starts with one canvas; the other is immediately available for a
     // future frame once the display task has finished with it.
-    let initial_canvas = FrameBuffer {
-        pixels: CANVAS_DATA0.take(),
-    };
     let mut ic_rp_platform =
         IcRpPlatform::new(backlight, backlight2, charging_status, initial_canvas);
     if enter_bootsel {
