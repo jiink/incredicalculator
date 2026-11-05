@@ -153,12 +153,12 @@ pub fn draw_header(platform: &mut dyn IcPlatform, title: fmt::Arguments, subtitl
         platform,
         title,
         Vec2::new(8.0, 17.0),
-        TextStyle::new(8.0, TEXT_COLOR),
+        TextStyle::new(6.0, TEXT_COLOR),
     );
     text::draw_text_f(
         platform,
         subtitle,
-        Vec2::new(8.0, 44.0),
+        Vec2::new(8.0, 40.0),
         TextStyle::new(5.0, DIM_TEXT_COLOR),
     );
 }

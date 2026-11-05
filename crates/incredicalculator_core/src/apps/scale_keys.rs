@@ -397,7 +397,7 @@ impl ScaleKeys {
     fn draw(&self, platform: &mut dyn IcPlatform, ctx: &InputContext) {
         music::draw_header(
             platform,
-            format_args!("{} {}", NOTE_NAMES[self.root as usize], self.scale().name),
+            format_args!("Scale keys: {} {}", NOTE_NAMES[self.root as usize], self.scale().name),
             format_args!(
                 "Octave {}   Sound: {}",
                 self.octave, SOUND_PRESETS[self.sound_idx].name

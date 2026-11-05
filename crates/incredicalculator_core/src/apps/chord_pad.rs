@@ -369,7 +369,7 @@ impl ChordPad {
         music::draw_header(
             platform,
             format_args!(
-                "{} {}",
+                "Chord Pad: {} {}",
                 NOTE_NAMES[self.root as usize],
                 if self.minor_key { "Minor" } else { "Major" }
             ),
