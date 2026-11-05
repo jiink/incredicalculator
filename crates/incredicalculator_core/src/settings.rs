@@ -20,6 +20,7 @@ enum IntegerSettingKind {
 #[derive(Clone, Copy)]
 enum CheckboxSettingKind {
     StickyKeys,
+    ShowMemory,
 }
 
 #[derive(Clone, Copy)]
@@ -40,7 +41,6 @@ enum SettingDisplay {
         suffix: &'static str,
         zero_suffix: Option<&'static str>,
     },
-    #[allow(dead_code)]
     Checkbox {
         kind: CheckboxSettingKind,
     },
@@ -55,7 +55,7 @@ enum EntryValue {
     Choice { label: &'static str },
 }
 
-const SETTINGS: [SettingEntry; 2] = [
+const SETTINGS: [SettingEntry; 3] = [
     SettingEntry {
         label: "Screen timeout",
         display: SettingDisplay::Integer {
@@ -70,6 +70,12 @@ const SETTINGS: [SettingEntry; 2] = [
             kind: ChoiceSettingKind::KeyMode,
         },
     },
+    SettingEntry {
+        label: "Show memory",
+        display: SettingDisplay::Checkbox {
+            kind: CheckboxSettingKind::ShowMemory,
+        },
+    },
 ];
 
 // Bump the trailing digit whenever the stored layout changes, so old blobs are
@@ -81,20 +87,32 @@ const STORED_SETTINGS_MAGIC: [u8; 4] = *b"ICS1";
 struct StoredSettings {
     screen_timeout_seconds: u32,
     key_mode: KeyMode,
+    show_memory: bool,
 }
 
+const FLAG_SHOW_MEMORY: u8 = 0x10;
+const KEY_MODE_MASK: u8 = 0x0F;
+
 impl StoredSettings {
-    // Layout: magic (4), screen timeout LE (4), key mode (1). Integrity
+    // Layout: magic (4), screen timeout LE (4), then one byte holding the key
+    // mode in the low nibble and flags in the high nibble. Blobs saved before
+    // the flags existed have them all clear, so they still decode. Integrity
     // checking is left to the platform's storage.
     fn encode(&self) -> [u8; SETTINGS_STORAGE_LEN] {
         let mut bytes = [0; SETTINGS_STORAGE_LEN];
         bytes[0..4].copy_from_slice(&STORED_SETTINGS_MAGIC);
         bytes[4..8].copy_from_slice(&self.screen_timeout_seconds.to_le_bytes());
-        bytes[8] = match self.key_mode {
+        let key_mode = match self.key_mode {
             KeyMode::Normal => 0,
             KeyMode::Sticky => 1,
             KeyMode::Toggle => 2,
         };
+        let flags = if self.show_memory {
+            FLAG_SHOW_MEMORY
+        } else {
+            0
+        };
+        bytes[8] = key_mode | flags;
         bytes
     }
 
@@ -102,7 +120,11 @@ impl StoredSettings {
         if bytes[0..4] != STORED_SETTINGS_MAGIC {
             return None;
         }
-        let key_mode = match bytes[8] {
+        let flags = bytes[8] & !KEY_MODE_MASK;
+        if flags & !FLAG_SHOW_MEMORY != 0 {
+            return None;
+        }
+        let key_mode = match bytes[8] & KEY_MODE_MASK {
             0 => KeyMode::Normal,
             1 => KeyMode::Sticky,
             2 => KeyMode::Toggle,
@@ -111,6 +133,7 @@ impl StoredSettings {
         Some(Self {
             screen_timeout_seconds: u32::from_le_bytes(bytes[4..8].try_into().unwrap()),
             key_mode,
+            show_memory: flags & FLAG_SHOW_MEMORY != 0,
         })
     }
 }
@@ -121,6 +144,7 @@ pub struct SettingsMenu {
     editing_value: bool,
     sticky_keys_enabled: bool,
     key_mode: KeyMode,
+    show_memory: bool,
     value_input: MathInput<INPUT_CHAR_LIMIT>,
     /// What the platform currently has stored, or `None` before `load`.
     persisted: Option<StoredSettings>,
@@ -134,6 +158,7 @@ impl SettingsMenu {
             editing_value: false,
             sticky_keys_enabled: false,
             key_mode: KeyMode::Toggle,
+            show_memory: false,
             value_input: MathInput::new(
                 IVec2::new(200, 38),
                 IVec2::new(112, 23),
@@ -152,6 +177,10 @@ impl SettingsMenu {
         self.key_mode
     }
 
+    pub fn show_memory(&self) -> bool {
+        self.show_memory
+    }
+
     /// Applies the settings saved by a previous session, if there are any.
     pub fn load(&mut self, platform: &mut dyn IcPlatform) {
         if let Some(stored) = platform
@@ -160,6 +189,7 @@ impl SettingsMenu {
         {
             platform.set_screen_timeout_seconds(stored.screen_timeout_seconds);
             self.key_mode = stored.key_mode;
+            self.show_memory = stored.show_memory;
         }
         self.persisted = Some(self.stored_settings(platform));
     }
@@ -177,6 +207,7 @@ impl SettingsMenu {
         StoredSettings {
             screen_timeout_seconds: platform.get_screen_timeout_seconds(),
             key_mode: self.key_mode,
+            show_memory: self.show_memory,
         }
     }
 
@@ -235,6 +266,7 @@ impl SettingsMenu {
                         CheckboxSettingKind::StickyKeys => {
                             self.sticky_keys_enabled = !self.sticky_keys_enabled;
                         }
+                        CheckboxSettingKind::ShowMemory => self.show_memory = !self.show_memory,
                     },
                     SettingDisplay::Choice { kind } => match kind {
                         ChoiceSettingKind::KeyMode => self.key_mode = self.key_mode.next(),
@@ -336,6 +368,7 @@ impl SettingsMenu {
             SettingDisplay::Checkbox { kind } => EntryValue::Checkbox {
                 checked: match kind {
                     CheckboxSettingKind::StickyKeys => self.sticky_keys_enabled,
+                    CheckboxSettingKind::ShowMemory => self.show_memory,
                 },
             },
             SettingDisplay::Choice { kind } => EntryValue::Choice {
@@ -404,5 +437,45 @@ fn entry_value(kind: IntegerSettingKind, platform: &dyn IcPlatform) -> u32 {
 fn set_entry_value(kind: IntegerSettingKind, value: u32, platform: &mut dyn IcPlatform) {
     match kind {
         IntegerSettingKind::ScreenTimeout => platform.set_screen_timeout_seconds(value),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stored_settings_round_trip() {
+        for show_memory in [false, true] {
+            let settings = StoredSettings {
+                screen_timeout_seconds: 300,
+                key_mode: KeyMode::Sticky,
+                show_memory,
+            };
+            assert!(StoredSettings::decode(&settings.encode()) == Some(settings));
+        }
+    }
+
+    #[test]
+    fn blob_saved_before_flags_still_decodes() {
+        let mut bytes = [0; SETTINGS_STORAGE_LEN];
+        bytes[0..4].copy_from_slice(&STORED_SETTINGS_MAGIC);
+        bytes[4..8].copy_from_slice(&120u32.to_le_bytes());
+        bytes[8] = 2;
+        let decoded = StoredSettings::decode(&bytes).unwrap();
+        assert!(decoded.key_mode == KeyMode::Toggle);
+        assert!(!decoded.show_memory);
+    }
+
+    #[test]
+    fn unknown_flags_are_rejected() {
+        let mut bytes = StoredSettings {
+            screen_timeout_seconds: 120,
+            key_mode: KeyMode::Normal,
+            show_memory: false,
+        }
+        .encode();
+        bytes[8] |= 0x80;
+        assert!(StoredSettings::decode(&bytes).is_none());
     }
 }

@@ -4,6 +4,7 @@
 extern crate alloc;
 
 mod backlight;
+mod memory;
 mod power;
 mod settings_storage;
 
@@ -32,7 +33,6 @@ use embassy_sync::mutex::Mutex as AsyncMutex;
 use embassy_sync::signal::Signal;
 use embassy_time::Timer;
 use embassy_time::{Delay, Instant};
-use embedded_alloc::LlffHeap as Heap;
 use embedded_graphics::mono_font::{MonoTextStyle, ascii::FONT_10X20};
 use embedded_graphics::pixelcolor::raw::RawU16;
 use embedded_graphics::pixelcolor::{IntoStorage, Rgb565};
@@ -57,7 +57,7 @@ use {defmt_rtt as _, panic_probe as _};
 const DISPLAY_FREQ: u32 = 60_000_000;
 
 #[global_allocator]
-static HEAP: Heap = Heap::empty();
+static HEAP: memory::TrackingHeap = memory::TrackingHeap::empty();
 
 #[unsafe(link_section = ".uninit.HEAP_MEM")]
 static mut HEAP_MEM: [u8; 64_000] = [0; 64_000];
@@ -92,7 +92,8 @@ type DisplaySpiDevice =
     SpiDeviceWithConfig<'static, NoopRawMutex, Spi<'static, SPI1, spi::Async>, Output<'static>>;
 type LcdDisplay = Display<SpiInterface<DisplaySpiDevice, Output<'static>>, ST7789, Output<'static>>;
 
-static mut CORE1_STACK: Stack<4096> = Stack::new();
+const CORE1_STACK_SIZE: usize = 4096;
+static mut CORE1_STACK: Stack<CORE1_STACK_SIZE> = Stack::new();
 static EXECUTOR1: StaticCell<Executor> = StaticCell::new();
 static INPUT_BUFFER: Channel<CriticalSectionRawMutex, InputBufferEvent, 32> = Channel::new();
 
@@ -193,6 +194,66 @@ fn report_audio_diagnostics() {
     }
 }
 
+fn memory_stats() -> memory::MemoryStats {
+    let core1_stack = (core::ptr::addr_of!(CORE1_STACK) as usize, CORE1_STACK_SIZE);
+    memory::stats(&HEAP, core1_stack)
+}
+
+fn report_memory(last: &mut Option<memory::MemoryStats>) {
+    let stats = memory_stats();
+    let grew = match last {
+        Some(prev) => {
+            stats.heap_peak > prev.heap_peak
+                || stats.stack_peaks[0] > prev.stack_peaks[0]
+                || stats.stack_peaks[1] > prev.stack_peaks[1]
+        }
+        None => true,
+    };
+    if grew {
+        info!(
+            "memory: heap now={}B peak={}B of {}B | core0 stack peak={}B of {}B | core1 stack peak={}B of {}B",
+            stats.heap_used,
+            stats.heap_peak,
+            stats.heap_size,
+            stats.stack_peaks[0],
+            stats.stack_sizes[0],
+            stats.stack_peaks[1],
+            stats.stack_sizes[1],
+        );
+        *last = Some(stats);
+    }
+}
+
+/// Draws `text` on a solid background and sends it straight to the display,
+/// bypassing the display task. Only for use during boot.
+async fn show_message(
+    platform: &mut IcRpPlatform<'_>,
+    display: &mut LcdDisplay,
+    background: RGB8,
+    position: Point,
+    text: &str,
+) {
+    platform.clear(background);
+    let mut fbuf = RawFrameBuf::<Rgb565, _>::new(
+        &mut platform.canvas_data_mut()[..],
+        RENDER_W as usize,
+        RENDER_H as usize,
+    );
+    Text::new(
+        text,
+        position,
+        MonoTextStyle::new(&FONT_10X20, Rgb565::WHITE),
+    )
+    .draw(&mut fbuf)
+    .unwrap();
+    let canvas = platform.take_canvas();
+    display
+        .show_raw_data(0, 0, RENDER_W as u16, RENDER_H as u16, &canvas.pixels[..])
+        .await
+        .unwrap();
+    platform.set_canvas(canvas);
+}
+
 struct AudioBuffer {
     samples: &'static mut [u32; AUDIO_BUFFER_SIZE],
 }
@@ -227,6 +288,9 @@ pub struct IcRpPlatform<'d> {
     last_key_activity: Instant,
     volume: u8,
     screen_timeout_seconds: u32,
+    // Scanning the stacks for their high-water marks reads ~120 KiB, so the
+    // on-screen readout reuses a recent result instead of rescanning per frame.
+    memory_stats_cache: core::cell::Cell<Option<(Instant, memory::MemoryStats)>>,
 }
 
 impl<'d> IcRpPlatform<'d> {
@@ -249,6 +313,7 @@ impl<'d> IcRpPlatform<'d> {
             last_key_activity: Instant::now(),
             volume: 100,
             screen_timeout_seconds: 120,
+            memory_stats_cache: core::cell::Cell::new(None),
         };
         platform.update_backlight();
         platform
@@ -496,6 +561,18 @@ impl<'d> IcPlatform for IcRpPlatform<'d> {
 
     fn save_settings(&mut self, data: &[u8; SETTINGS_STORAGE_LEN]) {
         self.pending_settings_save = Some(*data);
+    }
+
+    fn memory_stats(&self) -> Option<memory::MemoryStats> {
+        const REFRESH: embassy_time::Duration = embassy_time::Duration::from_millis(250);
+        if let Some((taken_at, stats)) = self.memory_stats_cache.get() {
+            if taken_at.elapsed() < REFRESH {
+                return Some(stats);
+            }
+        }
+        let stats = memory_stats();
+        self.memory_stats_cache.set(Some((Instant::now(), stats)));
+        Some(stats)
     }
 }
 
@@ -1078,6 +1155,10 @@ fn reboot_into_bootloader() {
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
+    // Before anything else uses the stack deeply: paint it for high-water
+    // tracking and make overflowing it fault instead of corrupting RAM.
+    memory::init_core0_stack();
+    let previous_fault = memory::take_previous_fault();
     unsafe {
         // Get the raw address of the mutable static without creating a shared reference
         let base = core::ptr::addr_of_mut!(HEAP_MEM) as usize;
@@ -1337,29 +1418,42 @@ async fn main(spawner: Spawner) {
     let mut ic_rp_platform =
         IcRpPlatform::new(backlight, backlight2, charging_status, initial_canvas);
     if enter_bootsel {
-        ic_rp_platform.clear(rgb8_hex(0x5B6EE1));
-        let mut fbuf = RawFrameBuf::<Rgb565, _>::new(
-            &mut ic_rp_platform.canvas_data_mut()[..],
-            RENDER_W as usize,
-            RENDER_H as usize,
-        );
-        Text::new(
-            "Entering BOOTSEL mode...",
+        show_message(
+            &mut ic_rp_platform,
+            &mut display,
+            rgb8_hex(0x5B6EE1),
             Point::new(45, 120),
-            MonoTextStyle::new(&FONT_10X20, Rgb565::WHITE),
+            "Entering BOOTSEL mode...",
         )
-        .draw(&mut fbuf)
-        .unwrap();
-        let canvas = ic_rp_platform.take_canvas();
-        display
-            .show_raw_data(0, 0, RENDER_W as u16, RENDER_H as u16, &canvas.pixels[..])
-            .await
-            .unwrap();
+        .await;
         Timer::after_secs(1).await;
         reboot_into_bootloader();
         loop {
             Timer::after_secs(1).await;
         }
+    }
+    if let Some(fault) = previous_fault {
+        error!("previous boot ended in a fault: {}", fault);
+        let text = match fault {
+            memory::PreviousFault::StackOverflow { core } => {
+                alloc::format!("The last boot crashed:\nSTACK OVERFLOW on core {core}")
+            }
+            memory::PreviousFault::Panic { core } => {
+                alloc::format!("The last boot crashed:\nPANIC on core {core}")
+            }
+            memory::PreviousFault::HardFault { core } => {
+                alloc::format!("The last boot crashed:\nHARD FAULT on core {core}")
+            }
+        };
+        show_message(
+            &mut ic_rp_platform,
+            &mut display,
+            rgb8_hex(0xAC3232),
+            Point::new(10, 100),
+            &text,
+        )
+        .await;
+        Timer::after_secs(5).await;
     }
     let mut settings_storage = SettingsStorage::new(Flash::new(p.FLASH, p.DMA_CH2));
     ic_rp_platform.loaded_settings = settings_storage.load().await;
@@ -1376,19 +1470,19 @@ async fn main(spawner: Spawner) {
     unwrap!(audio_spawner.spawn(audio_task(i2s, audio_shutdown_n)));
     unwrap!(spawner.spawn(display_task(display)));
 
-    spawn_core1(
-        p.CORE1,
-        unsafe {
-            // consider changing to new syntax: `&mut *&raw mut CORE1_STACK`
-            &mut *core::ptr::addr_of_mut!(CORE1_STACK)
-        },
-        move || {
-            let exec1 = EXECUTOR1.init(Executor::new());
-            exec1.run(|spawner| {
-                unwrap!(spawner.spawn(inputs_core1_task(key_matrix)));
-            });
-        },
-    );
+    let core1_stack = unsafe {
+        // consider changing to new syntax: `&mut *&raw mut CORE1_STACK`
+        &mut *core::ptr::addr_of_mut!(CORE1_STACK)
+    };
+    memory::paint_core1_stack(&mut core1_stack.mem);
+    let core1_stack_bottom = core1_stack.mem.as_ptr() as usize;
+    spawn_core1(p.CORE1, core1_stack, move || {
+        memory::init_core1_stack(core1_stack_bottom);
+        let exec1 = EXECUTOR1.init(Executor::new());
+        exec1.run(|spawner| {
+            unwrap!(spawner.spawn(inputs_core1_task(key_matrix)));
+        });
+    });
 
     let mut icalc: IcShell = IcShell::new();
     let mut pcm_buffer = [0i16; AUDIO_BUFFER_SIZE];
@@ -1398,6 +1492,11 @@ async fn main(spawner: Spawner) {
     READY_FRAME_BUFFERS.send(ic_rp_platform.take_canvas()).await;
 
     let mut next_audio_report = None;
+    // Memory peaks are checked at most once per second, only after a shell
+    // update (so this never wakes an idle device), and logged when they grow.
+    let mut last_memory_stats = None;
+    report_memory(&mut last_memory_stats);
+    let mut next_memory_check = Instant::now();
     let mut screen_dirty = false;
     let mut audio_is_running = false;
     info!("audio idle: no active voices; waiting for input");
@@ -1499,6 +1598,10 @@ async fn main(spawner: Spawner) {
             let update_us = elapsed_us(update_start);
             SHELL_UPDATES.fetch_add(1, Ordering::Relaxed);
             record_max(&SHELL_UPDATE_MAX_US, update_us);
+            if Instant::now() >= next_memory_check {
+                report_memory(&mut last_memory_stats);
+                next_memory_check = Instant::now() + embassy_time::Duration::from_secs(1);
+            }
             if update_us > AUDIO_SLOW_WORK_WARN_US {
                 warn!("shell update took {}us", update_us);
             }

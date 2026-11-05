@@ -57,6 +57,40 @@ pub trait IcPlatform {
         None
     }
     fn save_settings(&mut self, _data: &[u8; SETTINGS_STORAGE_LEN]) {}
+    /// RAM usage, for platforms with a fixed memory budget. Shown by the
+    /// shell when the "Show memory" setting is on.
+    fn memory_stats(&self) -> Option<MemoryStats> {
+        None
+    }
+}
+
+/// Memory use in bytes. Stack figures are high-water marks: the deepest each
+/// core's stack has reached since boot.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct MemoryStats {
+    pub heap_used: usize,
+    pub heap_peak: usize,
+    pub heap_size: usize,
+    pub stack_peaks: [usize; 2],
+    pub stack_sizes: [usize; 2],
+}
+
+impl MemoryStats {
+    /// The highest peak-to-size ratio across the heap and stacks, 0.0..=1.0.
+    pub fn worst_fraction(&self) -> f32 {
+        let fraction = |used: usize, size: usize| {
+            if size == 0 {
+                0.0
+            } else {
+                used as f32 / size as f32
+            }
+        };
+        let mut worst = fraction(self.heap_peak, self.heap_size);
+        for (peak, size) in self.stack_peaks.iter().zip(self.stack_sizes) {
+            worst = worst.max(fraction(*peak, size));
+        }
+        worst
+    }
 }
 
 #[macro_export]

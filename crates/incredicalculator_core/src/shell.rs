@@ -162,6 +162,61 @@ impl IcShell {
             .unwrap_or(false)
     }
 
+    /// Compact RAM readout in the status area, left of the battery icon:
+    /// `H now(peak)/size  S0 peak/size  S1 peak/size`, in KiB. Turns red when
+    /// any peak passes 80% of its budget.
+    fn draw_memory_overlay(platform: &mut dyn IcPlatform) {
+        const RIGHT_EDGE: f32 = 268.0;
+        const BASELINE: f32 = 13.0;
+        const SCALE: f32 = 4.0;
+        struct KiB(usize);
+        impl core::fmt::Display for KiB {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                let kib = self.0 as f32 / 1024.0;
+                if kib < 10.0 {
+                    write!(f, "{kib:.1}")
+                } else {
+                    write!(f, "{kib:.0}")
+                }
+            }
+        }
+
+        let (text, color) = match platform.memory_stats() {
+            Some(stats) => {
+                let text = alloc::format!(
+                    "H {}({})/{}K  S0 {}/{}K  S1 {}/{}K",
+                    KiB(stats.heap_used),
+                    KiB(stats.heap_peak),
+                    KiB(stats.heap_size),
+                    KiB(stats.stack_peaks[0]),
+                    KiB(stats.stack_sizes[0]),
+                    KiB(stats.stack_peaks[1]),
+                    KiB(stats.stack_sizes[1]),
+                );
+                let color = if stats.worst_fraction() > 0.8 {
+                    rgb8_hex(0xff5050)
+                } else {
+                    rgb8_hex(0xffffff)
+                };
+                (text, color)
+            }
+            None => (
+                alloc::string::String::from("memory stats n/a"),
+                rgb8_hex(0xaaaaaa),
+            ),
+        };
+        let style = TextStyle::new(SCALE, color).align(HAlign::Right);
+        let width = text_width(&text, SCALE, style.font);
+        platform.draw_rectangle(
+            IVec2::new((RIGHT_EDGE - width) as i32 - 4, 2),
+            IVec2::new(RIGHT_EDGE as i32 + 3, 18),
+            rgb8_hex(0x000000),
+            0,
+            Some(rgb8_hex(0x000000)),
+        );
+        draw_text(platform, &text, Vec2::new(RIGHT_EDGE, BASELINE), style);
+    }
+
     fn draw_battery(&mut self, platform: &mut dyn IcPlatform) {
         let soc = platform.get_battery_soc();
         let batt_percentage = soc.map(|val| clamp(val, 0, 100));
@@ -636,6 +691,9 @@ impl IcShell {
             Self::draw_adjustable_readout(platform, adjustable, v);
         }
         self.draw_battery(platform);
+        if self.settings_menu.show_memory() {
+            Self::draw_memory_overlay(platform);
+        }
         if self.show_startup_help {
             Self::draw_startup_help(platform);
         }

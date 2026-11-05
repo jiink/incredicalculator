@@ -1,0 +1,1 @@
+powershell -File .\size-report.ps1
