@@ -12,11 +12,13 @@ use core::{fmt, mem};
 
 use defmt::*;
 use embassy_embedded_hal::shared_bus::asynch::spi::SpiDeviceWithConfig;
-use embassy_executor::{Executor, Spawner};
+use embassy_executor::{Executor, InterruptExecutor, Spawner};
 use embassy_futures::select::{Either, Either3, select, select3, select4};
 use embassy_rp::bind_interrupts;
 use embassy_rp::flash::Flash;
 use embassy_rp::gpio::{Input, Level, Output, Pull};
+use embassy_rp::interrupt;
+use embassy_rp::interrupt::{InterruptExt, Priority};
 use embassy_rp::multicore::{Stack, spawn_core1};
 use embassy_rp::peripherals::{PIO0, SPI1};
 use embassy_rp::pio::{InterruptHandler, Pio};
@@ -101,6 +103,20 @@ static BATTERY_SOC: AtomicI32 = AtomicI32::new(-1);
 bind_interrupts!(struct Irqs {
     PIO0_IRQ_0 => InterruptHandler<PIO0>;
 });
+
+// `PioI2sOut::write` uses a single DMA transfer, so each buffer completion must
+// be followed by a new transfer before the few-sample PIO FIFO drains. Running
+// the audio task on the core-0 thread executor lets a long synchronous shell
+// update or frame render delay that restart, producing a gap every buffer in
+// real-time apps. This interrupt executor preempts thread-mode work instead.
+// It runs at P2, above embassy-rp's DMA_IRQ_0 (P3), whose handler only wakes
+// the task and pends this interrupt.
+static AUDIO_EXECUTOR: InterruptExecutor = InterruptExecutor::new();
+
+#[interrupt]
+unsafe fn SWI_IRQ_0() {
+    unsafe { AUDIO_EXECUTOR.on_interrupt() }
+}
 const AUDIO_SAMPLE_RATE: u32 = 48_000;
 const AUDIO_BIT_DEPTH: u32 = 16;
 const AUDIO_BUFFER_SIZE: usize = 2048;
@@ -1340,7 +1356,9 @@ async fn main(spawner: Spawner) {
     // This board uses a MAX17048 battery fuel gauge
     let fuel_gauge: Max17048<BoardI2c> = Max17048::new(board_i2c);
     unwrap!(spawner.spawn(battery_task(fuel_gauge)));
-    unwrap!(spawner.spawn(audio_task(i2s, audio_shutdown_n)));
+    interrupt::SWI_IRQ_0.set_priority(Priority::P2);
+    let audio_spawner = AUDIO_EXECUTOR.start(interrupt::SWI_IRQ_0);
+    unwrap!(audio_spawner.spawn(audio_task(i2s, audio_shutdown_n)));
     unwrap!(spawner.spawn(display_task(display)));
 
     spawn_core1(
@@ -1653,7 +1671,8 @@ async fn audio_task(mut i2s: PioI2sOut<'static, PIO0, 0>, mut audio_shutdown_n: 
         }
         has_started = true;
         // ok now you have like 100 uS to start a new DMA transfer before
-        // there's a pop (since the PIO only holds like 8 samples in its FIFO)
+        // there's a pop (since the PIO only holds like 8 samples in its FIFO).
+        // This is why the task runs on the interrupt-priority AUDIO_EXECUTOR.
         EMPTY_BUFFERS.send(buf).await;
     }
 }
