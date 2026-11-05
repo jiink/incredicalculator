@@ -45,3 +45,4 @@ CACHEDIR.TAG
 **/*.log
 **/*.txt
 .direnv/
+incredicalculator_web/pkg/
