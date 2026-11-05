@@ -40,4 +40,13 @@ pub trait IcApp {
         ctx: &InputContext,
         audio: &mut AudioEngine,
     );
+    /// Whether the app is generating its own samples through `render_audio`.
+    /// While true, the platform keeps audio output running.
+    fn produces_audio(&self) -> bool {
+        false
+    }
+    /// Writes the app's next samples into `out_pcm`, at
+    /// `audio_engine::SAMPLE_RATE_HZ`. The shell applies the volume and mixes
+    /// them over the synth. Only called while `produces_audio` is true.
+    fn render_audio(&mut self, _out_pcm: &mut [i16]) {}
 }

@@ -12,6 +12,9 @@ pub enum MathInputMode {
     Integer,
     Expression,
     Hexadecimal,
+    /// Integer bitwise expressions in the variable `t`, typed with the
+    /// programmer calculator's keys plus Super+0 for `t`.
+    Bytebeat,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -271,7 +274,7 @@ impl<const N: usize> MathInput<N> {
                     }
                 }
             }
-            MathInputMode::Hexadecimal => {
+            MathInputMode::Hexadecimal | MathInputMode::Bytebeat => {
                 for byte in text.bytes() {
                     let ch = byte as char;
                     if !Self::mode_char_allowed(self.mode, ch) {
@@ -333,6 +336,18 @@ impl<const N: usize> MathInput<N> {
         }
 
         self.buffer.insert_byte(ch as u8)
+    }
+
+    /// Inserts all of `text`, or nothing if any of it doesn't fit or isn't
+    /// allowed.
+    pub fn insert_str(&mut self, text: &str) -> bool {
+        if self.buffer.len + text.len() > N || !text.chars().all(|ch| self.char_allowed(ch)) {
+            return false;
+        }
+        for byte in text.bytes() {
+            self.buffer.insert_byte(byte);
+        }
+        true
     }
 
     pub fn insert_digit(&mut self, digit: u8) -> bool {
@@ -401,6 +416,10 @@ impl<const N: usize> MathInput<N> {
                 .map_err(|_| MathInputError::InvalidValue)?,
 
             MathInputMode::Hexadecimal => u32::from_str_radix(self.text(), 16)
+                .map(|v| v as f32)
+                .map_err(|_| MathInputError::InvalidValue)?,
+
+            MathInputMode::Bytebeat => bitwise_expr::evaluate(self.text())
                 .map(|v| v as f32)
                 .map_err(|_| MathInputError::InvalidValue)?,
         };
@@ -530,6 +549,9 @@ impl<const N: usize> MathInput<N> {
     }
 
     fn handle_shifted_key(&mut self, key: IcKey) -> MathInputEvent {
+        if self.mode == MathInputMode::Bytebeat {
+            return self.handle_shifted_bytebeat_key(key);
+        }
         let ch = match key {
             IcKey::Num0 if self.mode == MathInputMode::Hexadecimal => Some('A'),
             IcKey::Num1 if self.mode == MathInputMode::Hexadecimal => Some('B'),
@@ -550,8 +572,35 @@ impl<const N: usize> MathInput<N> {
         }
     }
 
+    /// Matches the programmer calculator's shifted keys.
+    fn handle_shifted_bytebeat_key(&mut self, key: IcKey) -> MathInputEvent {
+        let token = match key {
+            IcKey::Num0 => "A",
+            IcKey::Num1 => "B",
+            IcKey::Num2 => "C",
+            IcKey::Num3 => "D",
+            IcKey::Num4 => "E",
+            IcKey::Num5 => "F",
+            IcKey::Num6 => "~",
+            IcKey::Num7 => "(",
+            IcKey::Num8 => ")",
+            IcKey::Num9 => "0x",
+            IcKey::Func1 => "&",
+            IcKey::Func2 => "|",
+            IcKey::Func3 => "%",
+            IcKey::Func4 => "<<",
+            IcKey::Func5 => ">>",
+            IcKey::Func6 => "^",
+            IcKey::Shift | IcKey::Super | IcKey::_Max => return MathInputEvent::Ignored,
+        };
+        Self::changed_from(self.insert_str(token))
+    }
+
     fn handle_super_key(&mut self, key: IcKey) -> MathInputEvent {
         match key {
+            IcKey::Num0 if self.mode == MathInputMode::Bytebeat => {
+                Self::changed_from(self.insert_char('t'))
+            }
             IcKey::Num0 => {
                 self.insert_char('.');
                 MathInputEvent::Changed
@@ -588,7 +637,9 @@ impl<const N: usize> MathInput<N> {
                         && !self.text().as_bytes().contains(&b'-'))
             }
             MathInputMode::Expression => Self::mode_char_allowed(self.mode, ch),
-            MathInputMode::Hexadecimal => Self::mode_char_allowed(self.mode, ch),
+            MathInputMode::Hexadecimal | MathInputMode::Bytebeat => {
+                Self::mode_char_allowed(self.mode, ch)
+            }
         }
     }
 
@@ -602,6 +653,7 @@ impl<const N: usize> MathInput<N> {
                 )
             }
             MathInputMode::Hexadecimal => ch.is_ascii_hexdigit(),
+            MathInputMode::Bytebeat => ch.is_ascii_hexdigit() || "tx()~&|%<>^/*-+".contains(ch),
         }
     }
 }
@@ -624,7 +676,11 @@ mod tests {
         )
     }
 
-    fn press_with(input: &mut MathInput<8>, modifiers: &[IcKey], key: IcKey) -> MathInputEvent {
+    fn press_with<const N: usize>(
+        input: &mut MathInput<N>,
+        modifiers: &[IcKey],
+        key: IcKey,
+    ) -> MathInputEvent {
         let mut states = [KeyState::default(); IcKey::COUNT];
         for &modifier in modifiers {
             states[modifier as usize].is_down = true;
@@ -691,5 +747,41 @@ mod tests {
         input.clear();
         assert_eq!(undo(&mut input), MathInputEvent::Handled);
         assert_eq!(input.text(), "");
+    }
+
+    #[test]
+    fn bytebeat_mode_uses_programmer_keys() {
+        let mut input: MathInput<16> = MathInput::new(
+            IVec2::ZERO,
+            IVec2::new(40, 20),
+            MathInputMode::Bytebeat,
+            1.0,
+            1.0,
+            RGB8::default(),
+            RGB8::default(),
+            None,
+        );
+        press_with(&mut input, &[IcKey::Super], IcKey::Num0);
+        press_with(&mut input, &[IcKey::Shift], IcKey::Func5);
+        press_with(&mut input, &[], IcKey::Num7);
+        press_with(&mut input, &[IcKey::Shift], IcKey::Func2);
+        press_with(&mut input, &[IcKey::Shift], IcKey::Num9);
+        press_with(&mut input, &[IcKey::Shift], IcKey::Num5);
+        press_with(&mut input, &[], IcKey::Func3);
+        press_with(&mut input, &[IcKey::Super], IcKey::Num0);
+        assert_eq!(
+            press_with(&mut input, &[IcKey::Shift], IcKey::Func6),
+            MathInputEvent::Changed
+        );
+        assert_eq!(input.text(), "t>>7|0xF*t^");
+        assert_eq!(
+            press_with(&mut input, &[], IcKey::Func6),
+            MathInputEvent::Submitted
+        );
+
+        // A two-character token is all or nothing when space runs out.
+        input.set_text("t>>7|0xF*t^1234").unwrap();
+        press_with(&mut input, &[IcKey::Shift], IcKey::Func4);
+        assert_eq!(input.text(), "t>>7|0xF*t^1234");
     }
 }

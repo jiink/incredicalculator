@@ -5,7 +5,7 @@ use culsynth::devices::{
 use culsynth::{EnvParamFxP, LfoFreqFxP, NoteFxP, SampleFxP, ScalarFxP, SignedNoteFxP};
 
 pub const MAX_VOICES: usize = 3;
-const SAMPLE_RATE_HZ: u32 = 48_000;
+pub const SAMPLE_RATE_HZ: u32 = 48_000;
 
 /// Identifies a logical note source owned by an app, sequencer, or control.
 ///
@@ -83,6 +83,10 @@ impl AudioEngine {
 
     pub fn set_volume(&mut self, volume: u8) {
         self.volume = volume;
+    }
+
+    pub fn volume(&self) -> u8 {
+        self.volume
     }
 
     /// Whether advancing the synth can still produce audible samples.

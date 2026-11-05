@@ -3,6 +3,8 @@
 extern crate alloc;
 
 use alloc::string::{String, ToString};
+use alloc::vec;
+use alloc::vec::Vec;
 use nom::{branch::alt, bytes::complete::tag, character::complete::digit1, combinator::{map, map_res}, multi::many0, sequence::{delimited, pair, preceded}, IResult};
 use core::fmt;
 use core::fmt::Write;
@@ -124,139 +126,229 @@ impl IntFormat {
     }
 }
 
-fn parse_number(input: &str, fmt: IntFormat) -> IResult<&str, i64> {
-    map_res(digit1, |s: &str| s.parse::<u64>().map(|v| fmt.wrap(v as i64)))(input)
+/// One step of a compiled expression, run on a value stack.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Op {
+    Const(i64),
+    /// The variable `t`.
+    T,
+    Neg,
+    Not,
+    Mul,
+    Div,
+    Rem,
+    Add,
+    Sub,
+    Shl,
+    Shr,
+    And,
+    Xor,
+    Or,
 }
 
-fn parse_factor(input: &str, fmt: IntFormat) -> IResult<&str, i64> {
+type Ops = Vec<Op>;
+
+#[derive(Clone, Copy)]
+struct Ctx {
+    fmt: IntFormat,
+    /// Whether the variable `t` may appear.
+    allow_t: bool,
+}
+
+/// Appends each right-hand side and its operator after `ops`, for a
+/// left-associative chain like `a - b - c`.
+fn chain(mut ops: Ops, rest: Vec<(Op, Ops)>) -> Ops {
+    for (op, rhs) in rest {
+        ops.extend(rhs);
+        ops.push(op);
+    }
+    ops
+}
+
+fn symbol<'a>(text: &'static str, op: Op) -> impl FnMut(&'a str) -> IResult<&'a str, Op> {
+    map(tag(text), move |_| op)
+}
+
+fn parse_number(input: &str, ctx: Ctx) -> IResult<&str, Ops> {
+    map_res(digit1, |s: &str| {
+        s.parse::<u64>()
+            .map(|v| vec![Op::Const(ctx.fmt.wrap(v as i64))])
+    })(input)
+}
+
+fn parse_variable(input: &str, ctx: Ctx) -> IResult<&str, Ops> {
+    if !ctx.allow_t {
+        return Err(nom::Err::Error(nom::error::Error::new(
+            input,
+            nom::error::ErrorKind::Tag,
+        )));
+    }
+    map(tag("t"), |_| vec![Op::T])(input)
+}
+
+fn parse_factor(input: &str, ctx: Ctx) -> IResult<&str, Ops> {
     alt((
-        |i| parse_number(i, fmt),
-        delimited(tag("("), |i| parse_equation(i, fmt), tag(")")),
-        map(
-            preceded(tag("~"), |i| parse_factor(i, fmt)),
-            |val| fmt.wrap(!val)
-        ),
-        map(
-            preceded(tag("-"), |i| parse_factor(i, fmt)),
-            |val: i64| fmt.wrap(val.wrapping_neg())
-        ),
+        |i| parse_number(i, ctx),
+        |i| parse_variable(i, ctx),
+        delimited(tag("("), |i| parse_equation(i, ctx), tag(")")),
+        map(preceded(tag("~"), |i| parse_factor(i, ctx)), |mut ops| {
+            ops.push(Op::Not);
+            ops
+        }),
+        map(preceded(tag("-"), |i| parse_factor(i, ctx)), |mut ops| {
+            ops.push(Op::Neg);
+            ops
+        }),
     ))(input)
 }
 
-fn parse_multiplicative(input: &str, fmt: IntFormat) -> IResult<&str, i64> {
-    let (input, mut result) = parse_factor(input, fmt)?;
-    let (input, ops_and_vals) = many0(
-        pair(
-            alt((
-                tag("*"),
-                tag("/"),
-                tag("%")
-            )),
-            |i| parse_factor(i, fmt)
-        )
-    )(input)?;
-    for (op, val) in ops_and_vals {
-        match op {
-            "*" => result = result.wrapping_mul(val),
-            "/" => {
-                if val == 0 {
-                    return Err(nom::Err::Error(nom::error::Error::new(
-                        "Division by zero",
-                        nom::error::ErrorKind::MapRes
-                    )));
-                }
-                result = result.wrapping_div(val);
-            }
-            "%" => {
-                if val == 0 {
-                    return Err(nom::Err::Error(nom::error::Error::new(
-                        "Division by zero",
-                        nom::error::ErrorKind::MapRes
-                    )));
-                }
-                result = result.wrapping_rem(val);
-            }
-            _ => unreachable!("unexpected operator {op}"),
-        }
-        result = fmt.wrap(result);
-    }
-    Ok((input, result))
+fn parse_multiplicative(input: &str, ctx: Ctx) -> IResult<&str, Ops> {
+    let (input, first) = parse_factor(input, ctx)?;
+    let (input, rest) = many0(pair(
+        alt((
+            symbol("*", Op::Mul),
+            symbol("/", Op::Div),
+            symbol("%", Op::Rem),
+        )),
+        |i| parse_factor(i, ctx),
+    ))(input)?;
+    Ok((input, chain(first, rest)))
 }
 
 // alias for the current top level parse
-fn parse_equation(input: &str, fmt: IntFormat) -> IResult<&str, i64> {
-    parse_bitwise_or(input, fmt)
+fn parse_equation(input: &str, ctx: Ctx) -> IResult<&str, Ops> {
+    parse_bitwise_or(input, ctx)
 }
 
-fn parse_bitwise_or(input: &str, fmt: IntFormat) -> IResult<&str, i64> {
-    let (input, mut result) = parse_bitwise_xor(input, fmt)?;
-    let (input, ops) = many0(
-        preceded(tag("|"), |i| parse_bitwise_xor(i, fmt))
-    )(input)?;
-    for val in ops {
-        result = fmt.wrap(result | val);
+fn parse_bitwise_or(input: &str, ctx: Ctx) -> IResult<&str, Ops> {
+    let (input, first) = parse_bitwise_xor(input, ctx)?;
+    let (input, rest) = many0(pair(symbol("|", Op::Or), |i| parse_bitwise_xor(i, ctx)))(input)?;
+    Ok((input, chain(first, rest)))
+}
+
+fn parse_bitwise_xor(input: &str, ctx: Ctx) -> IResult<&str, Ops> {
+    let (input, first) = parse_bitwise_and(input, ctx)?;
+    let (input, rest) = many0(pair(symbol("^", Op::Xor), |i| parse_bitwise_and(i, ctx)))(input)?;
+    Ok((input, chain(first, rest)))
+}
+
+fn parse_bitwise_and(input: &str, ctx: Ctx) -> IResult<&str, Ops> {
+    let (input, first) = parse_shift(input, ctx)?;
+    let (input, rest) = many0(pair(symbol("&", Op::And), |i| parse_shift(i, ctx)))(input)?;
+    Ok((input, chain(first, rest)))
+}
+
+fn parse_shift(input: &str, ctx: Ctx) -> IResult<&str, Ops> {
+    let (input, first) = parse_additive(input, ctx)?;
+    let (input, rest) = many0(pair(
+        alt((symbol("<<", Op::Shl), symbol(">>", Op::Shr))),
+        |i| parse_additive(i, ctx),
+    ))(input)?;
+    Ok((input, chain(first, rest)))
+}
+
+fn parse_additive(input: &str, ctx: Ctx) -> IResult<&str, Ops> {
+    let (input, first) = parse_multiplicative(input, ctx)?;
+    let (input, rest) = many0(pair(
+        alt((symbol("+", Op::Add), symbol("-", Op::Sub))),
+        |i| parse_multiplicative(i, ctx),
+    ))(input)?;
+    Ok((input, chain(first, rest)))
+}
+
+/// Deepest value stack a compiled expression may need.
+const MAX_STACK: usize = 64;
+
+/// An expression compiled once so it can be evaluated cheaply many times,
+/// such as once per audio sample.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Program {
+    ops: Ops,
+    fmt: IntFormat,
+}
+
+impl Program {
+    /// Compiles `input`, which may use the variable `t`. Unlike `evaluate`,
+    /// the whole input must be a valid expression.
+    pub fn compile(input: &str, fmt: IntFormat) -> Result<Program, &'static str> {
+        compile_with(input, Ctx { fmt, allow_t: true }, true)
     }
-    Ok((input, result))
-}
 
-fn parse_bitwise_xor(input: &str, fmt: IntFormat) -> IResult<&str, i64> {
-    let (input, mut result) = parse_bitwise_and(input, fmt)?;
-    let (input, ops) = many0(
-        preceded(tag("^"), |i| parse_bitwise_and(i, fmt))
-    )(input)?;
-    for val in ops {
-        result = fmt.wrap(result ^ val);
-    }
-    Ok((input, result))
-}
-
-fn parse_bitwise_and(input: &str, fmt: IntFormat) -> IResult<&str, i64> {
-    let (input, mut result) = parse_shift(input, fmt)?;
-    let (input, ops) = many0(
-        preceded(tag("&"), |i| parse_shift(i, fmt))
-    )(input)?;
-    for val in ops {
-        result = fmt.wrap(result & val);
-    }
-    Ok((input, result))
-}
-
-fn parse_shift(input: &str, fmt: IntFormat) -> IResult<&str, i64> {
-    let (input, mut result) = parse_additive(input, fmt)?;
-    let (input, ops_and_vals) = many0(
-        pair(alt((tag("<<"), tag(">>"))), |i| parse_additive(i, fmt))
-    )(input)?;
-    for (op, val) in ops_and_vals {
-        if op == "<<" {
-            result = result.wrapping_shl(val as u32);
-        } else {
-            result = result.wrapping_shr(val as u32);
+    /// Evaluates the expression with `t` set to `t`, wrapped to the format.
+    pub fn eval(&self, t: i64) -> Result<i64, &'static str> {
+        let fmt = self.fmt;
+        let mut stack = [0i64; MAX_STACK];
+        let mut len = 0;
+        for &op in &self.ops {
+            match op {
+                Op::Const(value) => {
+                    stack[len] = value;
+                    len += 1;
+                }
+                Op::T => {
+                    stack[len] = fmt.wrap(t);
+                    len += 1;
+                }
+                Op::Neg => stack[len - 1] = fmt.wrap(stack[len - 1].wrapping_neg()),
+                Op::Not => stack[len - 1] = fmt.wrap(!stack[len - 1]),
+                _ => {
+                    len -= 1;
+                    let (a, b) = (stack[len - 1], stack[len]);
+                    let result = match op {
+                        Op::Mul => a.wrapping_mul(b),
+                        Op::Div if b == 0 => return Err("Division by zero"),
+                        Op::Div => a.wrapping_div(b),
+                        Op::Rem if b == 0 => return Err("Division by zero"),
+                        Op::Rem => a.wrapping_rem(b),
+                        Op::Add => a.wrapping_add(b),
+                        Op::Sub => a.wrapping_sub(b),
+                        Op::Shl => a.wrapping_shl(b as u32),
+                        Op::Shr => a.wrapping_shr(b as u32),
+                        Op::And => a & b,
+                        Op::Xor => a ^ b,
+                        Op::Or => a | b,
+                        Op::Const(_) | Op::T | Op::Neg | Op::Not => unreachable!(),
+                    };
+                    stack[len - 1] = fmt.wrap(result);
+                }
+            }
         }
-        result = fmt.wrap(result);
+        Ok(stack[0])
     }
-    Ok((input, result))
 }
 
-fn parse_additive(input: &str, fmt: IntFormat) -> IResult<&str, i64> {
-    let (input, mut result) = parse_multiplicative(input, fmt)?;
-    let (input, ops_and_vals) = many0(
-        pair(
-            alt((
-                tag("+"),
-                tag("-")
-            )),
-            |i| parse_multiplicative(i, fmt)
-        )
-    )(input)?;
-    for (op, val) in ops_and_vals {
-        if op == "+" {
-            result = result.wrapping_add(val);
-        } else {
-            result = result.wrapping_sub(val);
+fn stack_depth(ops: &[Op]) -> usize {
+    let mut depth = 0usize;
+    let mut max_depth = 0;
+    for op in ops {
+        match op {
+            Op::Const(_) | Op::T => depth += 1,
+            Op::Neg | Op::Not => {}
+            _ => depth -= 1,
         }
-        result = fmt.wrap(result);
+        max_depth = max_depth.max(depth);
     }
-    Ok((input, result))
+    max_depth
+}
+
+/// With `require_all` false, input after the first complete expression is
+/// ignored, as the calculator has always done.
+fn compile_with(input: &str, ctx: Ctx, require_all: bool) -> Result<Program, &'static str> {
+    let mut buffer = [0u8; 256];
+    let new_input = preprocess(input, &mut buffer)?;
+    use nom::Finish;
+    match parse_equation(new_input, ctx).finish() {
+        Ok((remaining, ops)) => {
+            if require_all && !remaining.is_empty() {
+                return Err("Failed to evaluate expression");
+            }
+            if stack_depth(&ops) > MAX_STACK {
+                return Err("Expression too complex");
+            }
+            Ok(Program { ops, fmt: ctx.fmt })
+        }
+        Err(_) => Err("Failed to evaluate expression"),
+    }
 }
 
 pub fn evaluate(input: &str) -> Result<i64, &'static str> {
@@ -264,15 +356,13 @@ pub fn evaluate(input: &str) -> Result<i64, &'static str> {
 }
 
 pub fn evaluate_as(input: &str, fmt: IntFormat) -> Result<i64, &'static str> {
-    let mut buffer = [0u8; 256];
-    let new_input = preprocess(input, &mut buffer)?;
-    use nom::Finish;
-    match parse_equation(new_input, fmt).finish() {
-        Ok((_remaining, value)) => {
-            Ok(value)
-        },
-        Err(_) => Err("Failed to evaluate expression"),
-    }
+    let ctx = Ctx {
+        fmt,
+        allow_t: false,
+    };
+    compile_with(input, ctx, false)?
+        .eval(0)
+        .map_err(|_| "Failed to evaluate expression")
 }
 
 pub fn evaluate_str(input: &str) -> String {
@@ -292,6 +382,22 @@ pub fn evaluate_str_as(input: &str, fmt: IntFormat) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const I64: Ctx = Ctx {
+        fmt: IntFormat::I64,
+        allow_t: false,
+    };
+
+    /// Runs one of the parsers, returning what it left unparsed and the
+    /// value of what it parsed.
+    fn run(parser: fn(&str, Ctx) -> IResult<&str, Ops>, input: &str) -> (&str, i64) {
+        let (rest, ops) = parser(input, I64).unwrap();
+        let program = Program {
+            ops,
+            fmt: IntFormat::I64,
+        };
+        (rest, program.eval(0).unwrap())
+    }
 
     #[test]
     fn test_preprocess() {
@@ -318,29 +424,29 @@ mod tests {
 
     #[test]
     fn test_parse_factor() {
-        assert_eq!(parse_factor("123", IntFormat::I64), Ok(("", 123)));
-        assert_eq!(parse_factor("777blahblah", IntFormat::I64), Ok(("blahblah", 777)));
+        assert_eq!(run(parse_factor, "123"), ("", 123));
+        assert_eq!(run(parse_factor, "777blahblah"), ("blahblah", 777));
     }
 
     #[test]
     fn test_parse_multiplicative() {
-        assert_eq!(parse_multiplicative("1*2", IntFormat::I64), Ok(("", 2)));
-        assert_eq!(parse_multiplicative("3*4*5", IntFormat::I64), Ok(("", 60)));
-        assert_eq!(parse_multiplicative("10", IntFormat::I64), Ok(("", 10)));
-        assert_eq!(parse_multiplicative("7*2+3", IntFormat::I64), Ok(("+3", 14)));
-        assert_eq!(parse_multiplicative("10%3", IntFormat::I64), Ok(("", 1)));
-        assert_eq!(parse_multiplicative("0%300", IntFormat::I64), Ok(("", 0)));
-        assert_eq!(parse_multiplicative("300%300", IntFormat::I64), Ok(("", 0)));
+        assert_eq!(run(parse_multiplicative, "1*2"), ("", 2));
+        assert_eq!(run(parse_multiplicative, "3*4*5"), ("", 60));
+        assert_eq!(run(parse_multiplicative, "10"), ("", 10));
+        assert_eq!(run(parse_multiplicative, "7*2+3"), ("+3", 14));
+        assert_eq!(run(parse_multiplicative, "10%3"), ("", 1));
+        assert_eq!(run(parse_multiplicative, "0%300"), ("", 0));
+        assert_eq!(run(parse_multiplicative, "300%300"), ("", 0));
     }
 
     #[test]
     fn test_parse_additive() {
-        assert_eq!(parse_additive("1+2", IntFormat::I64), Ok(("", 3)));
-        assert_eq!(parse_additive("3+4+5", IntFormat::I64), Ok(("", 12)));
-        assert_eq!(parse_additive("10", IntFormat::I64), Ok(("", 10)));
-        assert_eq!(parse_additive("2*3+4", IntFormat::I64), Ok(("", 10)));
-        assert_eq!(parse_additive("2+3*4", IntFormat::I64), Ok(("", 14)));
-        assert_eq!(parse_additive("1+2*3+4", IntFormat::I64), Ok(("", 11)));
+        assert_eq!(run(parse_additive, "1+2"), ("", 3));
+        assert_eq!(run(parse_additive, "3+4+5"), ("", 12));
+        assert_eq!(run(parse_additive, "10"), ("", 10));
+        assert_eq!(run(parse_additive, "2*3+4"), ("", 10));
+        assert_eq!(run(parse_additive, "2+3*4"), ("", 14));
+        assert_eq!(run(parse_additive, "1+2*3+4"), ("", 11));
     }
 
     #[test]
@@ -421,5 +527,50 @@ mod tests {
         assert_eq!(evaluate_as("0x80000000", i32_), Ok(i32::MIN as i64));
         assert_eq!(evaluate_as("-2147483648", u32_), Ok(0x80000000));
         assert_eq!(evaluate_as("0xFFFFFFFF * 0xFFFFFFFF", u32_), Ok(1));
+    }
+
+    #[test]
+    fn programs_evaluate_with_t() {
+        let i32_ = IntFormat::new(32, true);
+        let program = Program::compile("t*(42&t>>10)", i32_).unwrap();
+        assert_eq!(program.eval(3000), Ok(6000));
+        assert_eq!(program.eval(5000), Ok(0));
+
+        let program = Program::compile("10*(t>>7|t|t>>6)+4*(t&t>>13|t>>6)", i32_).unwrap();
+        for t in [0, 1, 1234, 99_999] {
+            let expected = 10 * (t >> 7 | t | t >> 6) + 4 * (t & t >> 13 | t >> 6);
+            assert_eq!(program.eval(t), Ok(expected));
+        }
+
+        // t wraps like every other value.
+        let u8_ = IntFormat::new(8, false);
+        assert_eq!(Program::compile("t", u8_).unwrap().eval(300), Ok(44));
+        assert_eq!(Program::compile("-t", i32_).unwrap().eval(5), Ok(-5));
+        assert_eq!(Program::compile("~t", i32_).unwrap().eval(0), Ok(-1));
+    }
+
+    #[test]
+    fn programs_reject_bad_input() {
+        let i32_ = IntFormat::new(32, true);
+        assert!(Program::compile("", i32_).is_err());
+        assert!(Program::compile("t+", i32_).is_err());
+        assert!(Program::compile("t)", i32_).is_err());
+        assert!(Program::compile("tt", i32_).is_err());
+        assert_eq!(
+            Program::compile("t/(t-4)", i32_).unwrap().eval(4),
+            Err("Division by zero")
+        );
+        assert_eq!(
+            Program::compile("t%0", i32_).unwrap().eval(1),
+            Err("Division by zero")
+        );
+    }
+
+    #[test]
+    fn evaluate_does_not_accept_t() {
+        assert!(evaluate("t").is_err());
+        assert_eq!(evaluate("1/0"), Err("Failed to evaluate expression"));
+        // Trailing input after a complete expression is still ignored.
+        assert_eq!(evaluate("1+2)"), Ok(3));
     }
 }

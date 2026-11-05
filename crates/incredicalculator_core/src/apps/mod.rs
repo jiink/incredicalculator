@@ -13,5 +13,7 @@ mod scale_keys;
 pub use scale_keys::ScaleKeys;
 mod chord_pad;
 pub use chord_pad::ChordPad;
+mod bytebeat;
+pub use bytebeat::Bytebeat;
 mod color_calculator;
 pub use color_calculator::ColorCalculator;

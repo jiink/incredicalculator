@@ -1,8 +1,9 @@
 use crate::app::IcApp;
 use crate::app::InputContext;
 use crate::apps::AspectRatioCalculator;
-use crate::apps::ColorCalculator;
+use crate::apps::Bytebeat;
 use crate::apps::ChordPad;
+use crate::apps::ColorCalculator;
 use crate::apps::ScaleKeys;
 use crate::apps::SoundTest;
 use crate::apps::{Calculator, EngineMode};
@@ -55,7 +56,7 @@ pub enum Adjustable {
 }
 
 pub struct IcShell {
-    apps: [Box<dyn IcApp>; 9], // INCREASE THIS SIZE WHEN ADDING NEW APPS
+    apps: [Box<dyn IcApp>; 10], // INCREASE THIS SIZE WHEN ADDING NEW APPS
     active_app_idx: Option<usize>,
     last_active_app_idx: Option<usize>,
     selector_page: usize,
@@ -83,6 +84,7 @@ impl IcShell {
                 Box::new(SoundTest::new()),
                 Box::new(ScaleKeys::new()),
                 Box::new(ChordPad::new()),
+                Box::new(Bytebeat::new()),
                 Box::new(FaceCalculator::new()),
             ],
             active_app_idx: Some(0),
@@ -120,14 +122,38 @@ impl IcShell {
     }
 
     pub fn fill_audio(&mut self, out_pcm: &mut [i16]) {
-        for sample in out_pcm {
+        for sample in out_pcm.iter_mut() {
             let s = self.audio.next_sample();
             *sample = s;
+        }
+        if !self.app_produces_audio() {
+            return;
+        }
+        let Some(app) = self.active_app_idx.map(|idx| &mut self.apps[idx]) else {
+            return;
+        };
+        let volume = self.audio.volume() as i32;
+        let mut app_pcm = [0i16; 256];
+        for out_chunk in out_pcm.chunks_mut(app_pcm.len()) {
+            let app_chunk = &mut app_pcm[..out_chunk.len()];
+            app.render_audio(app_chunk);
+            for (out, &app_sample) in out_chunk.iter_mut().zip(app_chunk.iter()) {
+                let mixed = *out as i32 + app_sample as i32 * volume / u8::MAX as i32;
+                *out = mixed.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+            }
         }
     }
 
     pub fn has_active_audio(&self) -> bool {
-        self.audio.is_active()
+        self.audio.is_active() || self.app_produces_audio()
+    }
+
+    /// Only the open app plays its own audio, so leaving it falls silent.
+    fn app_produces_audio(&self) -> bool {
+        self.audio.volume() != 0
+            && self
+                .active_app_idx
+                .is_some_and(|idx| self.apps[idx].produces_audio())
     }
 
     pub fn requires_realtime_updates(&self) -> bool {
