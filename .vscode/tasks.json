@@ -2,11 +2,14 @@
     "version": "2.0.0",
     "tasks": [
         {
+            // Runs from incredicalculator_rp so its .cargo/config.toml
+            // (DEFMT_LOG and so on) applies, making this the same build as
+            // `cargo run --release` there.
             "label": "build incredicalculator_rp (release)",
             "type": "shell",
-            "command": "cargo build --release --manifest-path incredicalculator_rp/Cargo.toml --target thumbv8m.main-none-eabihf",
+            "command": "cargo build --release",
             "options": {
-                "cwd": "${workspaceFolder}"
+                "cwd": "${workspaceFolder}/incredicalculator_rp"
             },
             "problemMatcher": ["$rustc"],
             "group": "build"

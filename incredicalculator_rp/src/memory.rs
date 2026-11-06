@@ -66,11 +66,21 @@ impl TrackingHeap {
 
 unsafe impl GlobalAlloc for TrackingHeap {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        let ptr = unsafe { self.heap.alloc(layout) };
-        if !ptr.is_null() {
-            self.peak.fetch_max(self.heap.used(), Ordering::Relaxed);
-        }
-        ptr
+        // Update the peak with a plain load and store inside a critical
+        // section (reentrant, so the heap's own one nests inside it) instead
+        // of `fetch_max`. `fetch_max` compiles to a LDREX/STREX retry loop,
+        // which was seen livelocked on the RP2350 here, the hottest exclusive
+        // loop in the firmware, until key presses on core 1 shook it loose.
+        critical_section::with(|_| {
+            let ptr = unsafe { self.heap.alloc(layout) };
+            if !ptr.is_null() {
+                let used = self.heap.used();
+                if used > self.peak.load(Ordering::Relaxed) {
+                    self.peak.store(used, Ordering::Relaxed);
+                }
+            }
+            ptr
+        })
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
@@ -207,12 +217,21 @@ unsafe extern "C" fn hard_fault_handler() -> ! {
         value |= FAULT_UNDEFINED_INSTRUCTION;
     }
     pac::WATCHDOG.scratch0().write_value(value);
-    // Same as embassy-rp's `Watchdog::trigger_reset`: reset everything except
-    // the oscillators.
-    pac::PSM
-        .wdsel()
-        .write_value(pac::psm::regs::Wdsel(0x0001_ffff & !0b11));
-    pac::WATCHDOG.ctrl().write(|w| w.set_trigger(true));
+    // Reset everything except the oscillators, like the Pico SDK's
+    // `watchdog_reboot`. The RP2350's PSM bits differ from the RP2040's
+    // (embassy-rp's `0x1ffff & !0b11` mask is the RP2040 layout): on the
+    // RP2350 that mask resets the clocks, peripherals and timers but neither
+    // processor, leaving both cores running on reset hardware.
+    let mut wdsel = pac::psm::regs::Wdsel(0x01FF_FFFF);
+    wdsel.set_rosc(false);
+    wdsel.set_xosc(false);
+    pac::PSM.wdsel().write_value(wdsel);
+    // Start from zero rather than the reset value so the pause-on-debug bits
+    // are clear and an attached probe can't hold off the reset.
+    let mut ctrl = pac::watchdog::regs::Ctrl(0);
+    ctrl.set_enable(true);
+    ctrl.set_trigger(true);
+    pac::WATCHDOG.ctrl().write_value(ctrl);
     loop {
         cortex_m::asm::nop();
     }
