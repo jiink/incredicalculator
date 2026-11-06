@@ -28,7 +28,9 @@ target/
 debug
 
 # IDE / editor
-.vscode/
+.vscode/*
+!.vscode/launch.json
+!.vscode/tasks.json
 .idea/
 .vscode-server/
 

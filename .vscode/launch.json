@@ -70,10 +70,6 @@
                     "coreIndex": 0,
                     "programBinary": "${workspaceFolder}/target/thumbv8m.main-none-eabihf/release/incredicalculator_rp",
                     "rttEnabled": true
-                },
-                {
-                    "coreIndex": 1,
-                    "programBinary": "${workspaceFolder}/target/thumbv8m.main-none-eabihf/release/incredicalculator_rp"
                 }
             ],
             "consoleLogLevel": "Console"
@@ -92,10 +88,6 @@
                     "coreIndex": 0,
                     "programBinary": "${workspaceFolder}/target/thumbv8m.main-none-eabihf/release/incredicalculator_rp",
                     "rttEnabled": true
-                },
-                {
-                    "coreIndex": 1,
-                    "programBinary": "${workspaceFolder}/target/thumbv8m.main-none-eabihf/release/incredicalculator_rp"
                 }
             ],
             "consoleLogLevel": "Console"

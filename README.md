@@ -78,3 +78,5 @@ The Settings screen shows the firmware version at the bottom right, from `git de
 ## Debugging
 
 See `incredicalculator_rp/.cargo/config.toml`
+
+To debug the RP firmware in VS Code with a debug probe, install the probe-rs Debugger extension (`probe-rs.probe-rs-debugger`), then use one of the `incredicalculator_rp` configurations in `.vscode/launch.json`: "flash" builds, flashes and runs the firmware, and "Attach" connects to firmware already running on the chip. The extension only debugs one core per session, so both configurations debug core 0. To debug core 1 instead, change `"coreIndex"` to `1`.
