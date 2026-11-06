@@ -4,6 +4,7 @@ members = [
     "crates/bitwise_expr",
     "crates/incredicalculator_core",
     "crates/exp-rs-patched",
+    "crates/tsuki-patched",
     "incredicalculator_pc",
     "incredicalculator_rp",
     "incredicalculator_web",
@@ -11,6 +12,7 @@ members = [
 
 [patch.crates-io]
 exp-rs = { path = "crates/exp-rs-patched" }
+tsuki = { path = "crates/tsuki-patched" }
 
 [profile.bench]
 opt-level = 0

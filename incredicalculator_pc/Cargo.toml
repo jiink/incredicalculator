@@ -19,4 +19,5 @@ rodio = "0.22.2"
 [features]
 default = ["script-rhai"]
 script-rhai = ["incredicalculator_core/script-rhai"]
+script-lua = ["incredicalculator_core/script-lua"]
 culsynth = []

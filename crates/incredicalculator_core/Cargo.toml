@@ -23,11 +23,13 @@ rhai = { version = "1.27.0", optional = true, default-features = false, features
     # heap (about 18 KB for the example script) and flash than it saves.
     "no_optimize",
 ] }
+tsuki = { version = "0.4.8", optional = true, default-features = false }
 
 [features]
 # Script engine used for scripted apps. Enable at most one; with none,
 # scripted apps are left out entirely.
 script-rhai = ["dep:rhai"]
+script-lua = ["dep:tsuki"]
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 exp-rs = { version = "0.2.0", default-features = false, features = ["libm"] }

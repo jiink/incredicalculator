@@ -1,0 +1,163 @@
+//! Implementation of [coroutine library](https://www.lua.org/manual/5.4/manual.html#6.2).
+use crate::context::{Args, Context, Ret};
+use crate::{CallError, Coroutine, DynamicInputs, Thread, Type, Value};
+use alloc::boxed::Box;
+use alloc::string::ToString;
+use alloc::vec::Vec;
+use erdp::ErrorDisplay;
+
+/// Implementation of
+/// [coroutine.create](https://www.lua.org/manual/5.4/manual.html#pdf-coroutine.create).
+pub fn create<A>(cx: Context<A, Args>) -> Result<Context<A, Ret>, Box<dyn core::error::Error>> {
+    // Check if function.
+    let f = cx.arg(1);
+
+    if f.ty().is_none_or(|t| !matches!(t, Type::Fp | Type::Fn)) {
+        return Err(f.invalid_type("function"));
+    }
+
+    // Create thread.
+    let td = cx.create_thread();
+
+    td.set_entry(f)?;
+    cx.push(td)?;
+
+    Ok(cx.into())
+}
+
+/// Implementation of
+/// [coroutine.isyieldable](https://www.lua.org/manual/5.4/manual.html#pdf-coroutine.isyieldable).
+///
+/// Note that our implementation does not accept any arguments.
+pub fn isyieldable<A>(
+    cx: Context<A, Args>,
+) -> Result<Context<A, Ret>, Box<dyn core::error::Error>> {
+    if cx.arg(1).is_exists() {
+        return Err("arguments is not supported".into());
+    }
+
+    cx.push(cx.is_yieldable())?;
+
+    Ok(cx.into())
+}
+
+/// Implementation of
+/// [coroutine.resume](https://www.lua.org/manual/5.4/manual.html#pdf-coroutine.resume).
+pub fn resume<A>(cx: Context<A, Args>) -> Result<Context<A, Ret>, Box<dyn core::error::Error>> {
+    let co = cx.arg(1).get_thread()?;
+
+    match auxresume(&cx, co, 2) {
+        Ok(r) => match cx.reserve(r.len() + 1) {
+            Ok(_) => {
+                cx.push(true)?;
+
+                for v in r {
+                    cx.push(v)?;
+                }
+            }
+            Err(_) => {
+                cx.push(false)?;
+                cx.push_str("too many results to resume")?;
+            }
+        },
+        Err(e) => {
+            cx.push(false)?;
+            cx.push_str(e.display().to_string())?;
+
+            if let Ok(e) = e.downcast::<CallError>() {
+                if let Some((s, l)) = e.location() {
+                    cx.push_str(s)?;
+                    cx.push(l)?;
+                }
+            }
+        }
+    }
+
+    Ok(cx.into())
+}
+
+/// Implementation of
+/// [coroutine.running](https://www.lua.org/manual/5.4/manual.html#pdf-coroutine.running).
+pub fn running<A>(cx: Context<A, Args>) -> Result<Context<A, Ret>, Box<dyn core::error::Error>> {
+    cx.push(cx.thread())?;
+    cx.push(false)?;
+
+    Ok(cx.into())
+}
+
+/// Implementation of
+/// [coroutine.status](https://www.lua.org/manual/5.4/manual.html#pdf-coroutine.status).
+pub fn status<A>(cx: Context<A, Args>) -> Result<Context<A, Ret>, Box<dyn core::error::Error>> {
+    let co = cx.arg(1).get_thread()?;
+    let st = auxstatus(&cx, co);
+
+    cx.push_str(st.name())?;
+
+    Ok(cx.into())
+}
+
+/// Implementation of
+/// [coroutine.yield](https://www.lua.org/manual/5.4/manual.html#pdf-coroutine.yield).
+pub fn r#yield<A>(cx: Context<A, Args>) -> Result<Context<A, Ret>, Box<dyn core::error::Error>> {
+    Ok(cx.into_results(1))
+}
+
+fn auxresume<'a, A>(
+    cx: &'a Context<A, Args>,
+    co: &'a Thread<A>,
+    first: usize,
+) -> Result<Vec<Value<'a, A>>, Box<dyn core::error::Error>> {
+    // Reserve stack now to mimic Lua behavior.
+    let narg = cx.args() + 1 - first;
+
+    if co.reserve(narg).is_err() {
+        return Err("too many arguments to resume".into());
+    }
+
+    // Get arguments.
+    let mut args = DynamicInputs::with_capacity(narg);
+
+    for i in first..=cx.args() {
+        args.push_arg(cx.arg(i));
+    }
+
+    match co.resume::<Vec<Value<A>>>(args)? {
+        Coroutine::Suspended(v) => Ok(v),
+        Coroutine::Finished(v) => Ok(v),
+    }
+}
+
+fn auxstatus<A>(cx: &Context<A, Args>, co: &Thread<A>) -> Status {
+    if cx.thread() == co {
+        Status::Running
+    } else if co.is_busy() {
+        if co.is_suspended() {
+            Status::Suspended
+        } else {
+            Status::Normal
+        }
+    } else if co.is_stack_empty() {
+        Status::Dead
+    } else {
+        Status::Suspended
+    }
+}
+
+#[derive(Clone, Copy)]
+enum Status {
+    Running,
+    Dead,
+    Suspended,
+    Normal,
+}
+
+impl Status {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Running => "running",
+            Self::Dead => "dead",
+            Self::Suspended => "suspended",
+            Self::Normal => "normal",
+        }
+    }
+}

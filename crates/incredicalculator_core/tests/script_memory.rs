@@ -1,7 +1,7 @@
 //! Heap budget check for scripted apps. Runs on the host, where pointers are
 //! twice as wide as on the RP2350, so the numbers here are an upper bound for
 //! the device.
-#![cfg(feature = "script-rhai")]
+#![cfg(scripting)]
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering};

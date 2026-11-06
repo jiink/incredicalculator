@@ -37,3 +37,4 @@ sequential-storage = { version = "8.0.2", features = ["defmt"] }
 [features]
 default = ["script-rhai"]
 script-rhai = ["incredicalculator_core/script-rhai"]
+script-lua = ["incredicalculator_core/script-lua"]

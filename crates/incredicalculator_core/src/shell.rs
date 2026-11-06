@@ -90,7 +90,7 @@ impl IcShell {
             Box::new(Bytebeat::new()),
             Box::new(FaceCalculator::new()),
         ];
-        #[cfg(feature = "script-rhai")]
+        #[cfg(scripting)]
         {
             let (name, source) = crate::script::EXAMPLE_SCRIPT;
             apps.push(Box::new(crate::apps::ScriptApp::new(name, source)));

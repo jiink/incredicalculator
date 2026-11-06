@@ -9,7 +9,7 @@ pub mod apps;
 pub mod audio_engine;
 pub mod input;
 pub mod platform;
-#[cfg(feature = "script-rhai")]
+#[cfg(scripting)]
 pub mod script;
 pub mod settings;
 pub mod shell;

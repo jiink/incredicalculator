@@ -1,0 +1,1201 @@
+#![allow(
+    non_camel_case_types,
+    non_snake_case,
+    non_upper_case_globals,
+    unused_assignments
+)]
+#![allow(unsafe_op_in_unsafe_fn)]
+
+use crate::lctype::luai_ctype_;
+use crate::lobject::{luaO_hexavalue, luaO_str2num, luaO_utf8esc};
+use crate::lparser::Dyndata;
+use crate::lzio::ZIO;
+use crate::table::{luaH_finishset, luaH_getstr};
+use crate::value::UnsafeValue;
+use crate::{Float, Lua, Node, ParseError, Ref, Str, Table};
+use alloc::borrow::Cow;
+use alloc::format;
+use alloc::rc::Rc;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
+use core::convert::identity;
+use core::ffi::{CStr, c_char};
+use core::fmt::Display;
+use core::ops::Deref;
+
+pub type RESERVED = c_uint;
+pub const TK_STRING: RESERVED = 292;
+pub const TK_NAME: RESERVED = 291;
+pub const TK_INT: RESERVED = 290;
+pub const TK_FLT: RESERVED = 289;
+pub const TK_EOS: RESERVED = 288;
+pub const TK_DBCOLON: RESERVED = 287;
+pub const TK_SHR: RESERVED = 286;
+pub const TK_SHL: RESERVED = 285;
+pub const TK_NE: RESERVED = 284;
+pub const TK_LE: RESERVED = 283;
+pub const TK_GE: RESERVED = 282;
+pub const TK_EQ: RESERVED = 281;
+pub const TK_DOTS: RESERVED = 280;
+pub const TK_CONCAT: RESERVED = 279;
+pub const TK_IDIV: RESERVED = 278;
+pub const TK_WHILE: RESERVED = 277;
+pub const TK_UNTIL: RESERVED = 276;
+pub const TK_TRUE: RESERVED = 275;
+pub const TK_THEN: RESERVED = 274;
+pub const TK_RETURN: RESERVED = 273;
+pub const TK_REPEAT: RESERVED = 272;
+pub const TK_OR: RESERVED = 271;
+pub const TK_NOT: RESERVED = 270;
+pub const TK_NIL: RESERVED = 269;
+pub const TK_LOCAL: RESERVED = 268;
+pub const TK_IN: RESERVED = 267;
+pub const TK_IF: RESERVED = 266;
+pub const TK_GOTO: RESERVED = 265;
+pub const TK_FUNCTION: RESERVED = 264;
+pub const TK_FOR: RESERVED = 263;
+pub const TK_FALSE: RESERVED = 262;
+pub const TK_END: RESERVED = 261;
+pub const TK_ELSEIF: RESERVED = 260;
+pub const TK_ELSE: RESERVED = 259;
+pub const TK_DO: RESERVED = 258;
+pub const TK_BREAK: RESERVED = 257;
+pub const TK_AND: RESERVED = 256;
+
+type c_uchar = u8;
+type c_int = i32;
+type c_uint = u32;
+type c_ulong = u64;
+
+#[repr(C)]
+pub union SemInfo<D> {
+    pub r: Float,
+    pub i: i64,
+    pub ts: *const Str<D>,
+}
+
+impl<D> Clone for SemInfo<D> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<D> Copy for SemInfo<D> {}
+
+#[repr(C)]
+pub struct Token<D> {
+    pub token: c_int,
+    pub seminfo: SemInfo<D>,
+}
+
+impl<D> Clone for Token<D> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<D> Copy for Token<D> {}
+
+pub struct LexState<'a, D> {
+    pub current: c_int,
+    pub linenumber: c_int,
+    pub lastline: c_int,
+    pub t: Token<D>,
+    pub lookahead: Token<D>,
+    pub g: &'a Lua<D>,
+    pub z: *mut ZIO,
+    pub buf: Vec<u8>,
+    pub h: Ref<'a, Table<D>>,
+    pub dyd: *mut Dyndata<D>,
+    pub chunk: Rc<String>,
+    pub envn: *const Str<D>,
+    pub level: usize,
+}
+
+pub const luaX_tokens: [&str; 37] = [
+    "and",
+    "break",
+    "do",
+    "else",
+    "elseif",
+    "end",
+    "false",
+    "for",
+    "function",
+    "goto",
+    "if",
+    "in",
+    "local",
+    "nil",
+    "not",
+    "or",
+    "repeat",
+    "return",
+    "then",
+    "true",
+    "until",
+    "while",
+    "//",
+    "..",
+    "...",
+    "==",
+    ">=",
+    "<=",
+    "~=",
+    "<<",
+    ">>",
+    "::",
+    "<eof>",
+    "<number>",
+    "<integer>",
+    "<name>",
+    "<string>",
+];
+
+unsafe fn save<D>(ls: *mut LexState<D>, c: c_int) {
+    (*ls).buf.push(c as u8);
+}
+
+pub unsafe fn luaX_token2str(token: c_int) -> Cow<'static, str> {
+    if token < 255 as c_int + 1 as c_int {
+        if luai_ctype_[(token + 1 as c_int) as usize] as c_int & (1 as c_int) << 2 as c_int != 0 {
+            return format!("'{}'", char::from_u32(token as _).unwrap()).into();
+        } else {
+            return format!("'<\\{token}>'").into();
+        }
+    } else {
+        let s = luaX_tokens[(token - (255 as c_int + 1 as c_int)) as usize];
+        if token < TK_EOS as c_int {
+            return format!("'{s}'").into();
+        } else {
+            return s.into();
+        }
+    };
+}
+
+unsafe fn txtToken<D>(ls: *mut LexState<D>, token: c_int) -> Cow<'static, str> {
+    match token {
+        291 | 292 | 289 | 290 => {
+            save(ls, '\0' as i32);
+
+            format!(
+                "'{}'",
+                CStr::from_ptr((*(*ls).buf).as_ptr().cast()).to_string_lossy()
+            )
+            .into()
+        }
+        _ => luaX_token2str(token),
+    }
+}
+
+unsafe fn lexerror<D>(ls: *mut LexState<D>, msg: impl Display, token: c_int) -> ParseError {
+    let token = if token != 0 {
+        Some(txtToken(ls, token))
+    } else {
+        None
+    };
+
+    ParseError::Source {
+        reason: msg.to_string(),
+        token,
+        line: (*ls).linenumber,
+    }
+}
+
+pub unsafe fn luaX_syntaxerror<D>(ls: *mut LexState<D>, msg: impl Display) -> ParseError {
+    lexerror(ls, msg, (*ls).t.token)
+}
+
+pub unsafe fn luaX_newstring<D>(
+    ls: *mut LexState<D>,
+    str: *const c_char,
+    l: usize,
+) -> *const Str<D> {
+    // TODO: Find a better way to keep string alive.
+    let str = core::slice::from_raw_parts(str.cast(), l);
+    let res = Str::from_bytes((*ls).g, str);
+    let key = res.unwrap_or_else(identity);
+    let slot = luaH_getstr((*ls).h.deref(), key);
+    let str = if (*slot).tt_ & 0xf != 0 {
+        (*(slot as *mut Node<D>)).key_val.gc.cast()
+    } else {
+        let val = UnsafeValue::from_obj(key.cast());
+
+        luaH_finishset((*ls).h.deref(), &val, slot, &val).unwrap(); // This should never fails.
+
+        key
+    };
+
+    // The allocated string might be a long string so we always need this.
+    if res.is_ok() {
+        (*ls).g.gc.step();
+    }
+
+    str
+}
+
+unsafe fn inclinenumber<D>(ls: *mut LexState<D>) {
+    let old: c_int = (*ls).current;
+    let fresh2 = (*(*ls).z).n;
+    (*(*ls).z).n = ((*(*ls).z).n).wrapping_sub(1);
+    (*ls).current = if fresh2 > 0 as c_int as usize {
+        let fresh3 = (*(*ls).z).p;
+        (*(*ls).z).p = ((*(*ls).z).p).offset(1);
+        *fresh3 as c_uchar as c_int
+    } else {
+        -1
+    };
+    if ((*ls).current == '\n' as i32 || (*ls).current == '\r' as i32) && (*ls).current != old {
+        let fresh4 = (*(*ls).z).n;
+        (*(*ls).z).n = ((*(*ls).z).n).wrapping_sub(1);
+        (*ls).current = if fresh4 > 0 as c_int as usize {
+            let fresh5 = (*(*ls).z).p;
+            (*(*ls).z).p = ((*(*ls).z).p).offset(1);
+            *fresh5 as c_uchar as c_int
+        } else {
+            -1
+        };
+    }
+    (*ls).linenumber = (*ls).linenumber.checked_add(1).unwrap();
+}
+
+pub unsafe fn luaX_setinput<D>(ls: &mut LexState<D>, z: *mut ZIO, firstchar: c_int) {
+    (*ls).t.token = 0 as c_int;
+    (*ls).current = firstchar;
+    (*ls).lookahead.token = TK_EOS as c_int;
+    (*ls).z = z;
+    (*ls).linenumber = 1 as c_int;
+    (*ls).lastline = 1 as c_int;
+    (*ls).envn = Str::from_str((*ls).g, "_ENV").unwrap_or_else(identity);
+}
+
+unsafe fn check_next1<D>(ls: *mut LexState<D>, c: c_int) -> c_int {
+    if (*ls).current == c {
+        let fresh6 = (*(*ls).z).n;
+        (*(*ls).z).n = ((*(*ls).z).n).wrapping_sub(1);
+        (*ls).current = if fresh6 > 0 as c_int as usize {
+            let fresh7 = (*(*ls).z).p;
+            (*(*ls).z).p = ((*(*ls).z).p).offset(1);
+            *fresh7 as c_uchar as c_int
+        } else {
+            -1
+        };
+        return 1 as c_int;
+    } else {
+        return 0 as c_int;
+    };
+}
+
+unsafe fn check_next2<D>(ls: *mut LexState<D>, set: *const c_char) -> c_int {
+    if (*ls).current == *set.offset(0 as c_int as isize) as c_int
+        || (*ls).current == *set.offset(1 as c_int as isize) as c_int
+    {
+        save(ls, (*ls).current);
+        let fresh8 = (*(*ls).z).n;
+        (*(*ls).z).n = ((*(*ls).z).n).wrapping_sub(1);
+        (*ls).current = if fresh8 > 0 as c_int as usize {
+            let fresh9 = (*(*ls).z).p;
+            (*(*ls).z).p = ((*(*ls).z).p).offset(1);
+            *fresh9 as c_uchar as c_int
+        } else {
+            -1
+        };
+        return 1 as c_int;
+    } else {
+        return 0 as c_int;
+    };
+}
+
+unsafe fn read_numeral<D>(ls: *mut LexState<D>) -> Result<Token<D>, ParseError> {
+    let mut obj = UnsafeValue::<D>::default();
+    let mut expo: *const c_char = b"Ee\0" as *const u8 as *const c_char;
+    let first: c_int = (*ls).current;
+    save(ls, (*ls).current);
+    let fresh10 = (*(*ls).z).n;
+    (*(*ls).z).n = ((*(*ls).z).n).wrapping_sub(1);
+    (*ls).current = if fresh10 > 0 as c_int as usize {
+        let fresh11 = (*(*ls).z).p;
+        (*(*ls).z).p = ((*(*ls).z).p).offset(1);
+        *fresh11 as c_uchar as c_int
+    } else {
+        -1
+    };
+    if first == '0' as i32 && check_next2(ls, b"xX\0" as *const u8 as *const c_char) != 0 {
+        expo = b"Pp\0" as *const u8 as *const c_char;
+    }
+    loop {
+        if check_next2(ls, expo) != 0 {
+            check_next2(ls, b"-+\0" as *const u8 as *const c_char);
+        } else {
+            if !(luai_ctype_[((*ls).current + 1 as c_int) as usize] as c_int
+                & (1 as c_int) << 4 as c_int
+                != 0
+                || (*ls).current == '.' as i32)
+            {
+                break;
+            }
+            save(ls, (*ls).current);
+            let fresh12 = (*(*ls).z).n;
+            (*(*ls).z).n = ((*(*ls).z).n).wrapping_sub(1);
+            (*ls).current = if fresh12 > 0 as c_int as usize {
+                let fresh13 = (*(*ls).z).p;
+                (*(*ls).z).p = ((*(*ls).z).p).offset(1);
+                *fresh13 as c_uchar as c_int
+            } else {
+                -1
+            };
+        }
+    }
+    if luai_ctype_[((*ls).current + 1 as c_int) as usize] as c_int & (1 as c_int) << 0 as c_int != 0
+    {
+        save(ls, (*ls).current);
+        let fresh14 = (*(*ls).z).n;
+        (*(*ls).z).n = ((*(*ls).z).n).wrapping_sub(1);
+        (*ls).current = if fresh14 > 0 as c_int as usize {
+            let fresh15 = (*(*ls).z).p;
+            (*(*ls).z).p = ((*(*ls).z).p).offset(1);
+            *fresh15 as c_uchar as c_int
+        } else {
+            -1
+        };
+    }
+    save(ls, '\0' as i32);
+
+    obj = match luaO_str2num(CStr::from_ptr((*(*ls).buf).as_ptr().cast()).to_bytes()) {
+        Some(v) => v.into(),
+        None => return Err(lexerror(ls, "malformed number", TK_FLT as c_int)),
+    };
+
+    if obj.tt_ as c_int == 3 as c_int | (0 as c_int) << 4 as c_int {
+        Ok(Token {
+            token: TK_INT as c_int,
+            seminfo: SemInfo { i: obj.value_.i },
+        })
+    } else {
+        Ok(Token {
+            token: TK_FLT as c_int,
+            seminfo: SemInfo { r: obj.value_.n },
+        })
+    }
+}
+
+unsafe fn skip_sep<D>(ls: *mut LexState<D>) -> usize {
+    let mut count: usize = 0 as c_int as usize;
+    let s: c_int = (*ls).current;
+    save(ls, (*ls).current);
+    let fresh16 = (*(*ls).z).n;
+    (*(*ls).z).n = ((*(*ls).z).n).wrapping_sub(1);
+    (*ls).current = if fresh16 > 0 as c_int as usize {
+        let fresh17 = (*(*ls).z).p;
+        (*(*ls).z).p = ((*(*ls).z).p).offset(1);
+        *fresh17 as c_uchar as c_int
+    } else {
+        -1
+    };
+    while (*ls).current == '=' as i32 {
+        save(ls, (*ls).current);
+        let fresh18 = (*(*ls).z).n;
+        (*(*ls).z).n = ((*(*ls).z).n).wrapping_sub(1);
+        (*ls).current = if fresh18 > 0 as c_int as usize {
+            let fresh19 = (*(*ls).z).p;
+            (*(*ls).z).p = ((*(*ls).z).p).offset(1);
+            *fresh19 as c_uchar as c_int
+        } else {
+            -1
+        };
+        count = count.wrapping_add(1);
+    }
+    return if (*ls).current == s {
+        count.wrapping_add(2 as c_int as usize)
+    } else {
+        (if count == 0 as c_int as usize {
+            1 as c_int
+        } else {
+            0 as c_int
+        }) as usize
+    };
+}
+
+unsafe fn read_long_string<A>(
+    ls: *mut LexState<A>,
+    ty: &str,
+    sep: usize,
+) -> Result<String, ParseError> {
+    let line: c_int = (*ls).linenumber;
+    save(ls, (*ls).current);
+    let fresh20 = (*(*ls).z).n;
+    (*(*ls).z).n = ((*(*ls).z).n).wrapping_sub(1);
+    (*ls).current = if fresh20 > 0 as c_int as usize {
+        let fresh21 = (*(*ls).z).p;
+        (*(*ls).z).p = ((*(*ls).z).p).offset(1);
+        *fresh21 as c_uchar as c_int
+    } else {
+        -1
+    };
+
+    if (*ls).current == '\n' as i32 || (*ls).current == '\r' as i32 {
+        inclinenumber(ls);
+    }
+
+    // Load string.
+    let mut off = sep;
+
+    loop {
+        match (*ls).current {
+            -1 => {
+                return Err(lexerror(
+                    ls,
+                    format_args!("unfinished long {ty} (starting at line {line})"),
+                    TK_EOS as c_int,
+                ));
+            }
+            93 => {
+                if !(skip_sep(ls) == sep) {
+                    continue;
+                }
+                save(ls, (*ls).current);
+                let fresh22 = (*(*ls).z).n;
+                (*(*ls).z).n = ((*(*ls).z).n).wrapping_sub(1);
+                (*ls).current = if fresh22 > 0 as c_int as usize {
+                    let fresh23 = (*(*ls).z).p;
+                    (*(*ls).z).p = ((*(*ls).z).p).offset(1);
+                    *fresh23 as c_uchar as c_int
+                } else {
+                    -1
+                };
+
+                if core::str::from_utf8(&(&(*ls).buf)[off..]).is_err() {
+                    return Err(lexerror(ls, "non-UTF-8 string", 0));
+                }
+
+                break;
+            }
+            10 | 13 => {
+                if core::str::from_utf8(&(&(*ls).buf)[off..]).is_err() {
+                    return Err(lexerror(ls, "non-UTF-8 string", 0));
+                }
+
+                save(ls, '\n' as i32);
+                inclinenumber(ls);
+
+                off = (*ls).buf.len();
+            }
+            _ => {
+                save(ls, (*ls).current);
+
+                let fresh24 = (*(*ls).z).n;
+                (*(*ls).z).n = ((*(*ls).z).n).wrapping_sub(1);
+                (*ls).current = if fresh24 > 0 as c_int as usize {
+                    let fresh25 = (*(*ls).z).p;
+                    (*(*ls).z).p = ((*(*ls).z).p).offset(1);
+                    *fresh25 as c_uchar as c_int
+                } else {
+                    -1
+                };
+            }
+        }
+    }
+
+    // Get string.
+    let len = (*ls).buf.len().wrapping_sub(2 * sep);
+
+    Ok(core::str::from_utf8_unchecked(&(&(*ls).buf)[sep..(sep + len)]).into())
+}
+
+unsafe fn esccheck<D>(ls: *mut LexState<D>, c: c_int, msg: impl Display) -> Result<(), ParseError> {
+    if c == 0 {
+        if (*ls).current != -(1 as c_int) {
+            save(ls, (*ls).current);
+            let fresh28 = (*(*ls).z).n;
+            (*(*ls).z).n = ((*(*ls).z).n).wrapping_sub(1);
+            (*ls).current = if fresh28 > 0 as c_int as usize {
+                let fresh29 = (*(*ls).z).p;
+                (*(*ls).z).p = ((*(*ls).z).p).offset(1);
+                *fresh29 as c_uchar as c_int
+            } else {
+                -1
+            };
+        }
+
+        return Err(lexerror(ls, msg, TK_STRING as c_int));
+    }
+    Ok(())
+}
+
+unsafe fn gethexa<D>(ls: *mut LexState<D>) -> Result<c_int, ParseError> {
+    save(ls, (*ls).current);
+    let fresh30 = (*(*ls).z).n;
+    (*(*ls).z).n = ((*(*ls).z).n).wrapping_sub(1);
+    (*ls).current = if fresh30 > 0 as c_int as usize {
+        let fresh31 = (*(*ls).z).p;
+        (*(*ls).z).p = ((*(*ls).z).p).offset(1);
+        *fresh31 as c_uchar as c_int
+    } else {
+        -1
+    };
+    esccheck(
+        ls,
+        luai_ctype_[((*ls).current + 1 as c_int) as usize] as c_int & (1 as c_int) << 4 as c_int,
+        "hexadecimal digit expected",
+    )?;
+    return Ok(luaO_hexavalue((*ls).current));
+}
+
+unsafe fn readhexaesc<D>(ls: *mut LexState<D>) -> Result<c_int, ParseError> {
+    let mut r: c_int = gethexa(ls)?;
+    r = (r << 4 as c_int) + gethexa(ls)?;
+    (*ls).buf.truncate((*ls).buf.len() - 2);
+    return Ok(r);
+}
+
+unsafe fn readutf8esc<D>(ls: *mut LexState<D>) -> Result<c_ulong, ParseError> {
+    let mut r: c_ulong = 0;
+    let mut i: c_int = 4 as c_int;
+    save(ls, (*ls).current);
+    let fresh32 = (*(*ls).z).n;
+    (*(*ls).z).n = ((*(*ls).z).n).wrapping_sub(1);
+    (*ls).current = if fresh32 > 0 as c_int as usize {
+        let fresh33 = (*(*ls).z).p;
+        (*(*ls).z).p = ((*(*ls).z).p).offset(1);
+        *fresh33 as c_uchar as c_int
+    } else {
+        -1
+    };
+    esccheck(ls, ((*ls).current == '{' as i32) as c_int, "missing '{'")?;
+    r = gethexa(ls)? as c_ulong;
+    loop {
+        save(ls, (*ls).current);
+        let fresh34 = (*(*ls).z).n;
+        (*(*ls).z).n = ((*(*ls).z).n).wrapping_sub(1);
+        (*ls).current = if fresh34 > 0 as c_int as usize {
+            let fresh35 = (*(*ls).z).p;
+            (*(*ls).z).p = ((*(*ls).z).p).offset(1);
+            *fresh35 as c_uchar as c_int
+        } else {
+            -1
+        };
+        if !(luai_ctype_[((*ls).current + 1 as c_int) as usize] as c_int
+            & (1 as c_int) << 4 as c_int
+            != 0)
+        {
+            break;
+        }
+        i += 1;
+        esccheck(
+            ls,
+            (r <= (0x7fffffff as c_uint >> 4 as c_int) as c_ulong) as c_int,
+            "UTF-8 value too large",
+        )?;
+        r = (r << 4 as c_int).wrapping_add(luaO_hexavalue((*ls).current) as c_ulong);
+    }
+    esccheck(ls, ((*ls).current == '}' as i32) as c_int, "missing '}'")?;
+    let fresh36 = (*(*ls).z).n;
+    (*(*ls).z).n = ((*(*ls).z).n).wrapping_sub(1);
+    (*ls).current = if fresh36 > 0 as c_int as usize {
+        let fresh37 = (*(*ls).z).p;
+        (*(*ls).z).p = ((*(*ls).z).p).offset(1);
+        *fresh37 as c_uchar as c_int
+    } else {
+        -1
+    };
+    (*ls).buf.truncate((*ls).buf.len() - i as usize);
+    return Ok(r);
+}
+
+unsafe fn utf8esc<D>(ls: *mut LexState<D>) -> Result<(), ParseError> {
+    let mut buff: [c_char; 8] = [0; 8];
+    let mut n: c_int = luaO_utf8esc(buff.as_mut_ptr(), readutf8esc(ls)?);
+    while n > 0 as c_int {
+        save(ls, buff[(8 as c_int - n) as usize] as c_int);
+        n -= 1;
+    }
+    Ok(())
+}
+
+unsafe fn readdecesc<D>(ls: *mut LexState<D>) -> Result<c_int, ParseError> {
+    let mut i: c_int = 0;
+    let mut r: c_int = 0 as c_int;
+    i = 0 as c_int;
+    while i < 3 as c_int
+        && luai_ctype_[((*ls).current + 1 as c_int) as usize] as c_int & (1 as c_int) << 1 as c_int
+            != 0
+    {
+        r = 10 as c_int * r + (*ls).current - '0' as i32;
+        save(ls, (*ls).current);
+        let fresh38 = (*(*ls).z).n;
+        (*(*ls).z).n = ((*(*ls).z).n).wrapping_sub(1);
+        (*ls).current = if fresh38 > 0 as c_int as usize {
+            let fresh39 = (*(*ls).z).p;
+            (*(*ls).z).p = ((*(*ls).z).p).offset(1);
+            *fresh39 as c_uchar as c_int
+        } else {
+            -1
+        };
+        i += 1;
+    }
+    esccheck(ls, (r <= 255 as c_int) as c_int, "decimal escape too large")?;
+    (*ls).buf.truncate((*ls).buf.len() - i as usize);
+    return Ok(r);
+}
+
+unsafe fn read_string<D>(ls: *mut LexState<D>, del: c_int) -> Result<*const Str<D>, ParseError> {
+    let mut current_block: u64;
+    save(ls, (*ls).current);
+    let fresh40 = (*(*ls).z).n;
+    (*(*ls).z).n = ((*(*ls).z).n).wrapping_sub(1);
+    (*ls).current = if fresh40 > 0 as c_int as usize {
+        let fresh41 = (*(*ls).z).p;
+        (*(*ls).z).p = ((*(*ls).z).p).offset(1);
+        *fresh41 as c_uchar as c_int
+    } else {
+        -1
+    };
+
+    // Load string.
+    let mut off = 1;
+
+    while (*ls).current != del {
+        match (*ls).current {
+            -1 => return Err(lexerror(ls, "unfinished string", TK_EOS as c_int)),
+            10 | 13 => return Err(lexerror(ls, "unfinished string", TK_STRING as c_int)),
+            92 => {
+                if core::str::from_utf8(&(&(*ls).buf)[off..]).is_err() {
+                    return Err(lexerror(ls, "non-UTF-8 string", TK_STRING as c_int));
+                }
+
+                let mut c: c_int = 0;
+                save(ls, (*ls).current);
+                let fresh42 = (*(*ls).z).n;
+                (*(*ls).z).n = ((*(*ls).z).n).wrapping_sub(1);
+                (*ls).current = if fresh42 > 0 as c_int as usize {
+                    let fresh43 = (*(*ls).z).p;
+                    (*(*ls).z).p = ((*(*ls).z).p).offset(1);
+                    *fresh43 as c_uchar as c_int
+                } else {
+                    -1
+                };
+                match (*ls).current {
+                    97 => {
+                        c = '\u{7}' as i32;
+                        current_block = 1042351266007549468;
+                    }
+                    98 => {
+                        c = '\u{8}' as i32;
+                        current_block = 1042351266007549468;
+                    }
+                    102 => {
+                        c = '\u{c}' as i32;
+                        current_block = 1042351266007549468;
+                    }
+                    110 => {
+                        c = '\n' as i32;
+                        current_block = 1042351266007549468;
+                    }
+                    114 => {
+                        c = '\r' as i32;
+                        current_block = 1042351266007549468;
+                    }
+                    116 => {
+                        c = '\t' as i32;
+                        current_block = 1042351266007549468;
+                    }
+                    118 => {
+                        c = '\u{b}' as i32;
+                        current_block = 1042351266007549468;
+                    }
+                    120 => {
+                        c = readhexaesc(ls)?;
+                        current_block = 1042351266007549468;
+                    }
+                    117 => {
+                        utf8esc(ls)?;
+                        continue;
+                    }
+                    10 | 13 => {
+                        inclinenumber(ls);
+                        c = '\n' as i32;
+                        current_block = 1600088076184679856;
+                    }
+                    92 | 34 | 39 => {
+                        c = (*ls).current;
+                        current_block = 1042351266007549468;
+                    }
+                    -1 => {
+                        continue;
+                    }
+                    122 => {
+                        (*ls).buf.truncate((*ls).buf.len() - 1);
+                        let fresh44 = (*(*ls).z).n;
+                        (*(*ls).z).n = ((*(*ls).z).n).wrapping_sub(1);
+                        (*ls).current = if fresh44 > 0 as c_int as usize {
+                            let fresh45 = (*(*ls).z).p;
+                            (*(*ls).z).p = ((*(*ls).z).p).offset(1);
+                            *fresh45 as c_uchar as c_int
+                        } else {
+                            -1
+                        };
+                        while luai_ctype_[((*ls).current + 1 as c_int) as usize] as c_int
+                            & (1 as c_int) << 3 as c_int
+                            != 0
+                        {
+                            if (*ls).current == '\n' as i32 || (*ls).current == '\r' as i32 {
+                                inclinenumber(ls);
+                            } else {
+                                let fresh46 = (*(*ls).z).n;
+                                (*(*ls).z).n = ((*(*ls).z).n).wrapping_sub(1);
+                                (*ls).current = if fresh46 > 0 as c_int as usize {
+                                    let fresh47 = (*(*ls).z).p;
+                                    (*(*ls).z).p = ((*(*ls).z).p).offset(1);
+                                    *fresh47 as c_uchar as c_int
+                                } else {
+                                    -1
+                                };
+                            }
+                        }
+                        continue;
+                    }
+                    _ => {
+                        esccheck(
+                            ls,
+                            luai_ctype_[((*ls).current + 1 as c_int) as usize] as c_int
+                                & (1 as c_int) << 1 as c_int,
+                            "invalid escape sequence",
+                        )?;
+                        c = readdecesc(ls)?;
+                        current_block = 1600088076184679856;
+                    }
+                }
+                match current_block {
+                    1042351266007549468 => {
+                        let fresh48 = (*(*ls).z).n;
+                        (*(*ls).z).n = ((*(*ls).z).n).wrapping_sub(1);
+                        (*ls).current = if fresh48 > 0 as c_int as usize {
+                            let fresh49 = (*(*ls).z).p;
+                            (*(*ls).z).p = ((*(*ls).z).p).offset(1);
+                            *fresh49 as c_uchar as c_int
+                        } else {
+                            -1
+                        };
+                    }
+                    _ => {}
+                }
+                (*ls).buf.truncate((*ls).buf.len() - 1);
+                save(ls, c);
+
+                off = (*ls).buf.len();
+            }
+            _ => {
+                save(ls, (*ls).current);
+                let fresh50 = (*(*ls).z).n;
+                (*(*ls).z).n = ((*(*ls).z).n).wrapping_sub(1);
+                (*ls).current = if fresh50 > 0 as c_int as usize {
+                    let fresh51 = (*(*ls).z).p;
+                    (*(*ls).z).p = ((*(*ls).z).p).offset(1);
+                    *fresh51 as c_uchar as c_int
+                } else {
+                    -1
+                };
+            }
+        }
+    }
+
+    if core::str::from_utf8(&(&(*ls).buf)[off..]).is_err() {
+        return Err(lexerror(ls, "non-UTF-8 string", TK_STRING as c_int));
+    }
+
+    save(ls, (*ls).current);
+    let fresh52 = (*(*ls).z).n;
+    (*(*ls).z).n = ((*(*ls).z).n).wrapping_sub(1);
+    (*ls).current = if fresh52 > 0 as c_int as usize {
+        let fresh53 = (*(*ls).z).p;
+        (*(*ls).z).p = ((*(*ls).z).p).offset(1);
+        *fresh53 as c_uchar as c_int
+    } else {
+        -1
+    };
+
+    // Create string.
+    let l = (*ls).buf.len();
+    let s = &(&(*ls).buf)[1..(l - 1)];
+
+    Ok(luaX_newstring(ls, s.as_ptr().cast(), s.len()))
+}
+
+unsafe fn llex<D>(ls: *mut LexState<D>) -> Result<Token<D>, ParseError> {
+    (*ls).buf.clear();
+
+    loop {
+        let current_block_85: u64;
+        match (*ls).current {
+            10 | 13 => inclinenumber(ls),
+            32 | 12 | 9 => {
+                let fresh54 = (*(*ls).z).n;
+                (*(*ls).z).n = ((*(*ls).z).n).wrapping_sub(1);
+                (*ls).current = if fresh54 > 0 as c_int as usize {
+                    let fresh55 = (*(*ls).z).p;
+                    (*(*ls).z).p = ((*(*ls).z).p).offset(1);
+                    *fresh55 as c_uchar as c_int
+                } else {
+                    -1
+                };
+            }
+            45 => {
+                let fresh56 = (*(*ls).z).n;
+                (*(*ls).z).n = ((*(*ls).z).n).wrapping_sub(1);
+                (*ls).current = if fresh56 > 0 as c_int as usize {
+                    let fresh57 = (*(*ls).z).p;
+                    (*(*ls).z).p = ((*(*ls).z).p).offset(1);
+                    *fresh57 as c_uchar as c_int
+                } else {
+                    -1
+                };
+                if (*ls).current != '-' as i32 {
+                    return Ok(Token {
+                        token: '-' as i32,
+                        seminfo: SemInfo { i: 0 },
+                    });
+                }
+                let fresh58 = (*(*ls).z).n;
+                (*(*ls).z).n = ((*(*ls).z).n).wrapping_sub(1);
+                (*ls).current = if fresh58 > 0 as c_int as usize {
+                    let fresh59 = (*(*ls).z).p;
+                    (*(*ls).z).p = ((*(*ls).z).p).offset(1);
+                    *fresh59 as c_uchar as c_int
+                } else {
+                    -1
+                };
+                if (*ls).current == '[' as i32 {
+                    let sep: usize = skip_sep(ls);
+
+                    if sep >= 2 as c_int as usize {
+                        read_long_string(ls, "comment", sep)?;
+                        current_block_85 = 10512632378975961025;
+                    } else {
+                        current_block_85 = 3512920355445576850;
+                    }
+
+                    (*ls).buf.clear();
+                } else {
+                    current_block_85 = 3512920355445576850;
+                }
+                match current_block_85 {
+                    10512632378975961025 => {}
+                    _ => {
+                        while !((*ls).current == '\n' as i32 || (*ls).current == '\r' as i32)
+                            && (*ls).current != -1
+                        {
+                            (*ls).buf.push((*ls).current as u8);
+
+                            let fresh60 = (*(*ls).z).n;
+                            (*(*ls).z).n = ((*(*ls).z).n).wrapping_sub(1);
+                            (*ls).current = if fresh60 > 0 as c_int as usize {
+                                let fresh61 = (*(*ls).z).p;
+                                (*(*ls).z).p = ((*(*ls).z).p).offset(1);
+                                *fresh61 as c_uchar as c_int
+                            } else {
+                                -1
+                            };
+                        }
+
+                        if core::str::from_utf8((*ls).buf.drain(..).as_slice()).is_err() {
+                            return Err(lexerror(ls, "non-UTF-8 string", 0));
+                        }
+                    }
+                }
+            }
+            91 => {
+                let sep_0: usize = skip_sep(ls);
+                if sep_0 >= 2 as c_int as usize {
+                    let s = read_long_string(ls, "string", sep_0)?;
+
+                    return Ok(Token {
+                        token: TK_STRING as c_int,
+                        seminfo: SemInfo {
+                            ts: luaX_newstring(ls, s.as_ptr().cast(), s.len()),
+                        },
+                    });
+                } else if sep_0 == 0 as c_int as usize {
+                    return Err(lexerror(
+                        ls,
+                        "invalid long string delimiter",
+                        TK_STRING as c_int,
+                    ));
+                }
+                return Ok(Token {
+                    token: '[' as i32,
+                    seminfo: SemInfo { i: 0 },
+                });
+            }
+            61 => {
+                let fresh62 = (*(*ls).z).n;
+                (*(*ls).z).n = ((*(*ls).z).n).wrapping_sub(1);
+                (*ls).current = if fresh62 > 0 as c_int as usize {
+                    let fresh63 = (*(*ls).z).p;
+                    (*(*ls).z).p = ((*(*ls).z).p).offset(1);
+                    *fresh63 as c_uchar as c_int
+                } else {
+                    -1
+                };
+                if check_next1(ls, '=' as i32) != 0 {
+                    return Ok(Token {
+                        token: TK_EQ as c_int,
+                        seminfo: SemInfo { i: 0 },
+                    });
+                } else {
+                    return Ok(Token {
+                        token: '=' as i32,
+                        seminfo: SemInfo { i: 0 },
+                    });
+                }
+            }
+            60 => {
+                let fresh64 = (*(*ls).z).n;
+                (*(*ls).z).n = ((*(*ls).z).n).wrapping_sub(1);
+                (*ls).current = if fresh64 > 0 as c_int as usize {
+                    let fresh65 = (*(*ls).z).p;
+                    (*(*ls).z).p = ((*(*ls).z).p).offset(1);
+                    *fresh65 as c_uchar as c_int
+                } else {
+                    -1
+                };
+                if check_next1(ls, '=' as i32) != 0 {
+                    return Ok(Token {
+                        token: TK_LE as c_int,
+                        seminfo: SemInfo { i: 0 },
+                    });
+                } else if check_next1(ls, '<' as i32) != 0 {
+                    return Ok(Token {
+                        token: TK_SHL as c_int,
+                        seminfo: SemInfo { i: 0 },
+                    });
+                } else {
+                    return Ok(Token {
+                        token: '<' as i32,
+                        seminfo: SemInfo { i: 0 },
+                    });
+                }
+            }
+            62 => {
+                let fresh66 = (*(*ls).z).n;
+                (*(*ls).z).n = ((*(*ls).z).n).wrapping_sub(1);
+                (*ls).current = if fresh66 > 0 as c_int as usize {
+                    let fresh67 = (*(*ls).z).p;
+                    (*(*ls).z).p = ((*(*ls).z).p).offset(1);
+                    *fresh67 as c_uchar as c_int
+                } else {
+                    -1
+                };
+                if check_next1(ls, '=' as i32) != 0 {
+                    return Ok(Token {
+                        token: TK_GE as c_int,
+                        seminfo: SemInfo { i: 0 },
+                    });
+                } else if check_next1(ls, '>' as i32) != 0 {
+                    return Ok(Token {
+                        token: TK_SHR as c_int,
+                        seminfo: SemInfo { i: 0 },
+                    });
+                } else {
+                    return Ok(Token {
+                        token: '>' as i32,
+                        seminfo: SemInfo { i: 0 },
+                    });
+                }
+            }
+            47 => {
+                let fresh68 = (*(*ls).z).n;
+                (*(*ls).z).n = ((*(*ls).z).n).wrapping_sub(1);
+                (*ls).current = if fresh68 > 0 as c_int as usize {
+                    let fresh69 = (*(*ls).z).p;
+                    (*(*ls).z).p = ((*(*ls).z).p).offset(1);
+                    *fresh69 as c_uchar as c_int
+                } else {
+                    -1
+                };
+                if check_next1(ls, '/' as i32) != 0 {
+                    return Ok(Token {
+                        token: TK_IDIV as c_int,
+                        seminfo: SemInfo { i: 0 },
+                    });
+                } else {
+                    return Ok(Token {
+                        token: '/' as i32,
+                        seminfo: SemInfo { i: 0 },
+                    });
+                }
+            }
+            126 => {
+                let fresh70 = (*(*ls).z).n;
+                (*(*ls).z).n = ((*(*ls).z).n).wrapping_sub(1);
+                (*ls).current = if fresh70 > 0 as c_int as usize {
+                    let fresh71 = (*(*ls).z).p;
+                    (*(*ls).z).p = ((*(*ls).z).p).offset(1);
+                    *fresh71 as c_uchar as c_int
+                } else {
+                    -1
+                };
+                if check_next1(ls, '=' as i32) != 0 {
+                    return Ok(Token {
+                        token: TK_NE as c_int,
+                        seminfo: SemInfo { i: 0 },
+                    });
+                } else {
+                    return Ok(Token {
+                        token: '~' as i32,
+                        seminfo: SemInfo { i: 0 },
+                    });
+                }
+            }
+            58 => {
+                let fresh72 = (*(*ls).z).n;
+                (*(*ls).z).n = ((*(*ls).z).n).wrapping_sub(1);
+                (*ls).current = if fresh72 > 0 as c_int as usize {
+                    let fresh73 = (*(*ls).z).p;
+                    (*(*ls).z).p = ((*(*ls).z).p).offset(1);
+                    *fresh73 as c_uchar as c_int
+                } else {
+                    -1
+                };
+                if check_next1(ls, ':' as i32) != 0 {
+                    return Ok(Token {
+                        token: TK_DBCOLON as c_int,
+                        seminfo: SemInfo { i: 0 },
+                    });
+                } else {
+                    return Ok(Token {
+                        token: ':' as i32,
+                        seminfo: SemInfo { i: 0 },
+                    });
+                }
+            }
+            34 | 39 => {
+                let ts = read_string(ls, (*ls).current)?;
+
+                return Ok(Token {
+                    token: TK_STRING as c_int,
+                    seminfo: SemInfo { ts },
+                });
+            }
+            46 => {
+                save(ls, (*ls).current);
+                let fresh74 = (*(*ls).z).n;
+                (*(*ls).z).n = ((*(*ls).z).n).wrapping_sub(1);
+                (*ls).current = if fresh74 > 0 as c_int as usize {
+                    let fresh75 = (*(*ls).z).p;
+                    (*(*ls).z).p = ((*(*ls).z).p).offset(1);
+                    *fresh75 as c_uchar as c_int
+                } else {
+                    -1
+                };
+                if check_next1(ls, '.' as i32) != 0 {
+                    if check_next1(ls, '.' as i32) != 0 {
+                        return Ok(Token {
+                            token: TK_DOTS as c_int,
+                            seminfo: SemInfo { i: 0 },
+                        });
+                    } else {
+                        return Ok(Token {
+                            token: TK_CONCAT as c_int,
+                            seminfo: SemInfo { i: 0 },
+                        });
+                    }
+                } else if luai_ctype_[((*ls).current + 1 as c_int) as usize] as c_int
+                    & (1 as c_int) << 1 as c_int
+                    == 0
+                {
+                    return Ok(Token {
+                        token: '.' as i32,
+                        seminfo: SemInfo { i: 0 },
+                    });
+                } else {
+                    return read_numeral(ls);
+                }
+            }
+            48 | 49 | 50 | 51 | 52 | 53 | 54 | 55 | 56 | 57 => {
+                return read_numeral(ls);
+            }
+            -1 => {
+                return Ok(Token {
+                    token: TK_EOS as c_int,
+                    seminfo: SemInfo { i: 0 },
+                });
+            }
+            _ => {
+                if luai_ctype_[((*ls).current + 1 as c_int) as usize] as c_int
+                    & (1 as c_int) << 0 as c_int
+                    != 0
+                {
+                    loop {
+                        save(ls, (*ls).current);
+                        let fresh76 = (*(*ls).z).n;
+                        (*(*ls).z).n = ((*(*ls).z).n).wrapping_sub(1);
+                        (*ls).current = if fresh76 > 0 as c_int as usize {
+                            let fresh77 = (*(*ls).z).p;
+                            (*(*ls).z).p = ((*(*ls).z).p).offset(1);
+                            *fresh77 as c_uchar as c_int
+                        } else {
+                            -1
+                        };
+                        if !(luai_ctype_[((*ls).current + 1 as c_int) as usize] as c_int
+                            & ((1 as c_int) << 0 as c_int | (1 as c_int) << 1 as c_int)
+                            != 0)
+                        {
+                            break;
+                        }
+                    }
+
+                    // Check if reserved word.
+                    let ts = luaX_newstring(ls, (*(*ls).buf).as_ptr().cast(), (*(*ls).buf).len());
+                    let v = (*ls)
+                        .g
+                        .tokens()
+                        .get_raw_unchecked(UnsafeValue::from_obj(ts.cast()));
+
+                    if ((*v).tt_ & 0x3F) == (3 | 0 << 4) {
+                        return Ok(Token {
+                            token: (*v).value_.i as c_int - 1 + (255 + 1),
+                            seminfo: SemInfo { ts },
+                        });
+                    } else {
+                        return Ok(Token {
+                            token: TK_NAME as c_int,
+                            seminfo: SemInfo { ts },
+                        });
+                    }
+                } else {
+                    let c: c_int = (*ls).current;
+                    let fresh78 = (*(*ls).z).n;
+                    (*(*ls).z).n = ((*(*ls).z).n).wrapping_sub(1);
+                    (*ls).current = if fresh78 > 0 as c_int as usize {
+                        let fresh79 = (*(*ls).z).p;
+                        (*(*ls).z).p = ((*(*ls).z).p).offset(1);
+                        *fresh79 as c_uchar as c_int
+                    } else {
+                        -1
+                    };
+
+                    return Ok(Token {
+                        token: c,
+                        seminfo: SemInfo { i: 0 },
+                    });
+                }
+            }
+        }
+    }
+}
+
+pub unsafe fn luaX_next<D>(ls: *mut LexState<D>) -> Result<(), ParseError> {
+    (*ls).lastline = (*ls).linenumber;
+    if (*ls).lookahead.token != TK_EOS as c_int {
+        (*ls).t = (*ls).lookahead;
+        (*ls).lookahead.token = TK_EOS as c_int;
+    } else {
+        (*ls).t = llex(ls)?;
+    };
+    Ok(())
+}
+
+pub unsafe fn luaX_lookahead<D>(ls: *mut LexState<D>) -> Result<c_int, ParseError> {
+    (*ls).lookahead = llex(ls)?;
+    return Ok((*ls).lookahead.token);
+}

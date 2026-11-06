@@ -3,13 +3,21 @@
 # once the page has fetched the wasm module.
 #
 # Usage: ./build-and-open.sh [port]   (default 8000)
+# Set SCRIPT_ENGINE=lua to build scripted apps with Lua instead of Rhai.
 set -euo pipefail
 
 port="${1:-8000}"
 web="$(cd "$(dirname "$0")" && pwd)"
 root="$(dirname "$web")"
 
-cargo build --target wasm32-unknown-unknown --manifest-path "$web/Cargo.toml"
+engine_flags=()
+case "${SCRIPT_ENGINE:-rhai}" in
+    rhai) ;;
+    lua) engine_flags=(--no-default-features --features script-lua) ;;
+    *) echo "Unknown SCRIPT_ENGINE '${SCRIPT_ENGINE}' (use rhai or lua)" >&2; exit 2 ;;
+esac
+
+cargo build --target wasm32-unknown-unknown --manifest-path "$web/Cargo.toml" "${engine_flags[@]}"
 
 # The wasm-bindgen CLI must match the wasm-bindgen crate version in Cargo.lock.
 want="$(grep -A1 '^name = "wasm-bindgen"$' "$root/Cargo.lock" | sed -n 's/^version = "\(.*\)"$/\1/p')"

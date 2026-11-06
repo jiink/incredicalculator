@@ -1,0 +1,1004 @@
+//! Provides [Context] to interact with Lua VM from [Fp](crate::Fp) and [AsyncFp](crate::AsyncFp).
+pub use self::arg::*;
+
+use crate::collections::{BTreeMap, CollectionValue};
+use crate::lapi::{lua_checkstack, lua_typename};
+use crate::ldo::luaD_call;
+use crate::lobject::luaO_arith;
+use crate::value::UnsafeValue;
+use crate::vm::{F2Ieq, luaV_equalobj, luaV_lessthan, luaV_objlen, luaV_tointeger};
+use crate::{
+    CallError, Inputs, LuaFn, NON_YIELDABLE_WAKER, Ops, Outputs, ParseError, Ref, RegKey, RegValue,
+    StackOverflow, Str, Table, Thread, Type, UserData, YIELDABLE_WAKER, luaH_get, luaH_getshortstr,
+};
+use alloc::borrow::Cow;
+use alloc::boxed::Box;
+use alloc::string::String;
+use alloc::vec::Vec;
+use core::any::Any;
+use core::cell::Cell;
+use core::convert::identity;
+use core::num::NonZero;
+use core::pin::{Pin, pin};
+use core::ptr::{addr_eq, null};
+use core::task::{Poll, Waker};
+
+mod arg;
+
+/// Context to invoke [Fp](crate::Fp) and [AsyncFp](crate::AsyncFp).
+///
+/// This provides [Self::arg()] to get arguments passed from Lua and [Self::push()] to returns
+/// the values back to Lua. It also provides methods to interact with Lua VM like
+/// [Self::create_table()].
+///
+/// This type has 2 variants, which is indicated by `T` (either [Args] or [Ret]). The method to get
+/// arguments will only available on [Args] variant. [Ret] variant is used to return the values back
+/// to Lua. [Args] variants can be converted to [Ret] variant using standard Rust [From] and [Into]
+/// or [Self::into_results()] (the former will returns all pushed values). There is no way to get
+/// [Args] variant back once you converted it.
+pub struct Context<'a, A, T> {
+    th: &'a Thread<A>,
+    ret: Cell<usize>,
+    payload: T,
+    yieldable: bool,
+}
+
+impl<'a, A, T> Context<'a, A, T> {
+    #[inline(always)]
+    pub(crate) fn new(td: &'a Thread<A>, payload: T) -> impl Future<Output = Self>
+    where
+        T: Unpin,
+    {
+        New {
+            td,
+            payload: Some(payload),
+        }
+    }
+
+    /// Returns `true` if [YieldFp](crate::YieldFp) can be called from parent frame.
+    #[inline(always)]
+    pub fn is_yieldable(&self) -> bool {
+        self.yieldable
+    }
+
+    /// Returns [Thread] for this context.
+    #[inline(always)]
+    pub fn thread(&self) -> &'a Thread<A> {
+        self.th
+    }
+
+    /// Returns associated data that passed to [Lua::new()](crate::Lua::new()) or
+    /// [Lua::with_seed()](crate::Lua::with_seed()).
+    #[inline(always)]
+    pub fn associated_data(&self) -> &A {
+        &self.th.hdr.global().associated_data
+    }
+
+    /// Sets a value to registry.
+    ///
+    /// # Panics
+    /// If `v` was created from different [Lua](crate::Lua) instance.
+    pub fn set_registry<'b, K>(&self, v: <K::Value<'b> as RegValue<A>>::In<'b>)
+    where
+        K: RegKey<A>,
+        K::Value<'b>: RegValue<A>,
+    {
+        self.th.hdr.global().set_registry::<K>(v);
+    }
+
+    /// Returns value on registry that was set with
+    /// [Lua::set_registry()](crate::Lua::set_registry()) or [Self::set_registry()].
+    pub fn registry<K>(&self) -> Option<<K::Value<'a> as RegValue<A>>::Out<'a>>
+    where
+        K: RegKey<A>,
+        K::Value<'a>: RegValue<A>,
+    {
+        self.th.hdr.global().registry::<K>()
+    }
+
+    /// Create a Lua string with UTF-8 content.
+    #[inline(always)]
+    pub fn create_str<V>(&self, v: V) -> Ref<'a, Str<A>>
+    where
+        V: AsRef<str> + AsRef<[u8]> + Into<Vec<u8>>,
+    {
+        let g = self.th.hdr.global();
+        let s = unsafe { Str::from_str(g, v) };
+        let v = unsafe { Ref::new(s.unwrap_or_else(identity)) };
+
+        if s.is_ok() {
+            g.gc.step();
+        }
+
+        v
+    }
+
+    /// Create a Lua string with binary content.
+    #[inline(always)]
+    pub fn create_bytes<V>(&self, v: V) -> Ref<'a, Str<A>>
+    where
+        V: AsRef<[u8]> + Into<Vec<u8>>,
+    {
+        let g = self.th.hdr.global();
+        let s = unsafe { Str::from_bytes(g, v) };
+        let v = unsafe { Ref::new(s.unwrap_or_else(identity)) };
+
+        if s.is_ok() {
+            g.gc.step();
+        }
+
+        v
+    }
+
+    /// Create a Lua table.
+    #[inline(always)]
+    pub fn create_table(&self) -> Ref<'a, Table<A>> {
+        let v = unsafe { Ref::new(Table::new(self.th.hdr.global)) };
+
+        self.th.hdr.global().gc.step();
+
+        v
+    }
+
+    /// Create a full userdata.
+    ///
+    /// The metatable for the userdata that was registered with
+    /// [Lua::register_metatable()](crate::Lua::register_metatable()) will be loaded during
+    /// creation. A call to [Lua::register_metatable()](crate::Lua::register_metatable()) has no
+    /// effect for any userdata that already created.
+    #[inline(always)]
+    pub fn create_ud<V: Any>(&self, v: V) -> Ref<'a, UserData<A, V>> {
+        let v = unsafe { Ref::new(UserData::new(self.th.hdr.global, v).cast()) };
+
+        self.th.hdr.global().gc.step();
+
+        v
+    }
+
+    /// Create a new Lua thread (AKA coroutine).
+    pub fn create_thread(&self) -> Ref<'a, Thread<A>> {
+        let v = unsafe { Ref::new(Thread::new(self.th.hdr.global())) };
+
+        self.th.hdr.global().gc.step();
+
+        v
+    }
+
+    /// Create a new [BTreeMap] to map Rust value to Lua value.
+    ///
+    /// `K` can be any Rust type that implement [Ord]. See [collections](crate::collections) module
+    /// for a list of possible type for `V`.
+    pub fn create_btree_map<K, V>(&self) -> Ref<'a, BTreeMap<A, K, V>>
+    where
+        K: Ord + 'static,
+        V: CollectionValue<A> + 'static,
+    {
+        let v = unsafe { Ref::new(BTreeMap::new(self.th.hdr.global())) };
+
+        self.th.hdr.global().gc.step();
+
+        v
+    }
+
+    /// Deserialize [Value](crate::Value) from Serde deserializer.
+    ///
+    /// This method can only deserialize a value from self-describing formats.
+    #[cfg(feature = "serde")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
+    pub fn deserialize_value<'de, D: serde::Deserializer<'de>>(
+        &self,
+        deserializer: D,
+    ) -> Result<crate::Value<'a, A>, D::Error> {
+        deserializer.deserialize_any(crate::value::serde::ValueVisitor::new(self.th.hdr.global()))
+    }
+
+    /// Load a Lua chunk.
+    ///
+    /// See [Lua::load()](crate::Lua::load()) for more information.
+    #[inline(always)]
+    pub fn load(
+        &self,
+        name: impl Into<String>,
+        chunk: impl AsRef<[u8]>,
+    ) -> Result<Ref<'a, LuaFn<A>>, ParseError> {
+        self.th.hdr.global().load(name, chunk)
+    }
+
+    /// Returns length of `v`.
+    ///
+    /// This has the same semantic as `luaL_len`, which mean it is honor `__len` metamethod.
+    ///
+    /// # Panics
+    /// If `v` come from different [Lua](crate::Lua) instance.
+    pub fn get_value_len(
+        &self,
+        v: impl Into<UnsafeValue<A>>,
+    ) -> Result<i64, Box<dyn core::error::Error>> {
+        // Check if value come from the same Lua.
+        let v = v.into();
+
+        if unsafe { (v.tt_ & 1 << 6 != 0) && (*v.value_.gc).global != self.th.hdr.global } {
+            panic!("attempt to get a length of the value created from a different Lua");
+        }
+
+        // Get length.
+        let l = unsafe { luaV_objlen(self.th, &v)? };
+
+        if l.tt_ == 3 | 0 << 4 {
+            return Ok(unsafe { l.value_.i });
+        }
+
+        // Try convert to integer.
+        match unsafe { luaV_tointeger(&l, F2Ieq) } {
+            Some(v) => Ok(v),
+            None => Err("object length is not an integer".into()),
+        }
+    }
+
+    /// Check if `lhs` equal `rhs`.
+    ///
+    /// Specify `true` for `mt` to honor `__eq` metamethod otherwise this method will have the same
+    /// semantic as `lua_rawequal` **if** both `lhs` and `rhs` refer to existent arguments.
+    ///
+    /// # Panics
+    /// If either `lhs` or `rhs` was created from different [Lua](crate::Lua) instance.
+    #[inline(never)]
+    pub fn is_value_eq(
+        &self,
+        lhs: impl Into<UnsafeValue<A>>,
+        rhs: impl Into<UnsafeValue<A>>,
+        mt: bool,
+    ) -> Result<bool, Box<dyn core::error::Error>> {
+        // Check if the first operand created from the same Lua.
+        let lhs = lhs.into();
+
+        if unsafe { (lhs.tt_ & 1 << 6 != 0) && (*lhs.value_.gc).global != self.th.hdr.global } {
+            panic!("attempt to compare a value created from a different Lua");
+        }
+
+        // Check if the second operand created from the same Lua.
+        let rhs = rhs.into();
+
+        if unsafe { (rhs.tt_ & 1 << 6 != 0) && (*rhs.value_.gc).global != self.th.hdr.global } {
+            panic!("attempt to compare a value created from a different Lua");
+        }
+
+        // Compare.
+        let th = match mt {
+            true => Some(self.th),
+            false => None,
+        };
+
+        unsafe { luaV_equalobj(th, &lhs, &rhs) }
+    }
+
+    /// Check if `lhs` less than `rhs` according to Lua operator `<`.
+    ///
+    /// This method honor `__lt` metamethod.
+    ///
+    /// # Panics
+    /// If either `lhs` or `rhs` was created from different [Lua](crate::Lua) instance.
+    pub fn is_value_lt(
+        &self,
+        lhs: impl Into<UnsafeValue<A>>,
+        rhs: impl Into<UnsafeValue<A>>,
+    ) -> Result<bool, Box<dyn core::error::Error>> {
+        // Check if the first operand created from the same Lua.
+        let lhs = lhs.into();
+
+        if unsafe { (lhs.tt_ & 1 << 6 != 0) && (*lhs.value_.gc).global != self.th.hdr.global } {
+            panic!("attempt to compare a value created from a different Lua");
+        }
+
+        // Check if the second operand created from the same Lua.
+        let rhs = rhs.into();
+
+        if unsafe { (rhs.tt_ & 1 << 6 != 0) && (*rhs.value_.gc).global != self.th.hdr.global } {
+            panic!("attempt to compare a value created from a different Lua");
+        }
+
+        Ok(unsafe { luaV_lessthan(self.th, &lhs, &rhs)? != 0 })
+    }
+
+    /// Resolve type name for `v`.
+    ///
+    /// This method honor `__name` metavalue. Note that this method will fallback to basic type name
+    /// if `__name` is not a UTF-8 string.
+    ///
+    /// The result will be [Cow::Owned] if type name come from `__name` metavalue.
+    ///
+    /// # Panics
+    /// If `v` was created from different [Lua](crate::Lua) instance.
+    pub fn type_name(&self, v: impl Into<UnsafeValue<A>>) -> Cow<'static, str> {
+        let v = v.into();
+
+        if unsafe { (v.tt_ & 1 << 6 != 0) && (*v.value_.gc).global != self.th.hdr.global } {
+            panic!("attempt to resolve type name for a value created from a different Lua");
+        }
+
+        // Resolve.
+        let g = self.th.hdr.global();
+        let mt = unsafe { g.metatable(&v) };
+
+        (!mt.is_null())
+            .then(move || unsafe {
+                luaH_getshortstr(mt, Str::from_str(g, "__name").unwrap_or_else(identity))
+            })
+            .and_then(|v| match unsafe { (*v).tt_ & 0xf } {
+                4 => Some(unsafe { (*v).value_.gc.cast::<Str<A>>() }),
+                _ => None,
+            })
+            .and_then(|v| unsafe { (*v).as_utf8() })
+            .map(|v| Cow::Owned(v.into()))
+            .unwrap_or_else(move || Cow::Borrowed(lua_typename((v.tt_ & 0xf).into())))
+    }
+
+    /// Push value to the result of this call.
+    ///
+    /// # Panics
+    /// If `v` was created from different [Lua](crate::Lua) instance.
+    #[inline(never)]
+    pub fn push(&self, v: impl Into<UnsafeValue<A>>) -> Result<(), StackOverflow> {
+        // Check if value come from the same Lua.
+        let v = v.into();
+
+        if unsafe { (v.tt_ & 1 << 6 != 0) && (*v.value_.gc).global != self.th.hdr.global } {
+            panic!("attempt to push a value created from a different Lua");
+        }
+
+        // Push.
+        unsafe { lua_checkstack(self.th, 1, 5)? };
+        unsafe { self.th.top.write(v) };
+        unsafe { self.th.top.add(1) };
+        self.ret.set(self.ret.get() + 1);
+
+        Ok(())
+    }
+
+    /// Push value to the result of this call without checking if `v` created from different
+    /// [Lua](crate::Lua) instance.
+    ///
+    /// # Safety
+    /// `v` must created from the same [Lua](crate::Lua) instance.
+    pub unsafe fn push_unchecked(&self, v: impl Into<UnsafeValue<A>>) -> Result<(), StackOverflow> {
+        let v = v.into();
+
+        unsafe { lua_checkstack(self.th, 1, 5)? };
+        unsafe { self.th.top.write(v) };
+        unsafe { self.th.top.add(1) };
+        self.ret.set(self.ret.get() + 1);
+
+        Ok(())
+    }
+
+    /// Push a string to the result of this call.
+    ///
+    /// This method is more efficient than create a string with [Self::create_str()] and push it
+    /// via [Self::push()].
+    ///
+    /// This method will trigger GC if new string is allocated.
+    #[inline(never)]
+    pub fn push_str<V>(&self, v: V) -> Result<(), StackOverflow>
+    where
+        V: AsRef<str> + AsRef<[u8]> + Into<Vec<u8>>,
+    {
+        unsafe { lua_checkstack(self.th, 1, 5)? };
+
+        // Create string.
+        let g = self.th.hdr.global();
+        let s = unsafe { Str::from_str(g, v) };
+        let v = unsafe { UnsafeValue::from_obj(s.unwrap_or_else(identity).cast()) };
+
+        unsafe { self.th.top.write(v) };
+        unsafe { self.th.top.add(1) };
+        self.ret.update(|v| v + 1);
+
+        if s.is_ok() {
+            g.gc.step();
+        }
+
+        Ok(())
+    }
+
+    /// Push a byte slice as Lua string to the result of this call.
+    ///
+    /// This method will trigger GC if new string is allocated.
+    #[inline(never)]
+    pub fn push_bytes<V>(&self, v: V) -> Result<(), StackOverflow>
+    where
+        V: AsRef<[u8]> + Into<Vec<u8>>,
+    {
+        unsafe { lua_checkstack(self.th, 1, 5)? };
+
+        // Create string.
+        let g = self.th.hdr.global();
+        let s = unsafe { Str::from_bytes(g, v) };
+        let v = unsafe { UnsafeValue::from_obj(s.unwrap_or_else(identity).cast()) };
+
+        unsafe { self.th.top.write(v) };
+        unsafe { self.th.top.add(1) };
+        self.ret.update(|v| v + 1);
+
+        if s.is_ok() {
+            g.gc.step();
+        }
+
+        Ok(())
+    }
+
+    /// Push a next key-value pair from `t` to the result of this call.
+    ///
+    /// Returns `false` if no key-value next to `k`. In this case no any value is pushed.
+    ///
+    /// # Panics
+    /// If `t` or `k` created from different [Lua](crate::Lua) instance.
+    pub fn push_next(
+        &self,
+        t: &Table<A>,
+        k: impl Into<UnsafeValue<A>>,
+    ) -> Result<bool, Box<dyn core::error::Error>> {
+        unsafe { lua_checkstack(self.th, 2, 5)? };
+
+        // Check if table come from the same Lua.
+        if t.hdr.global != self.th.hdr.global {
+            panic!("attempt to push a value from a table created from different Lua");
+        }
+
+        // Check if key come from the same Lua.
+        let k = k.into();
+
+        if unsafe { (k.tt_ & 1 << 6 != 0) && (*k.value_.gc).global != self.th.hdr.global } {
+            panic!("attempt to push a value created from different Lua");
+        }
+
+        // Get pair.
+        let [k, v] = match unsafe { t.next_raw(&k)? } {
+            Some(v) => v,
+            None => return Ok(false),
+        };
+
+        unsafe { self.th.top.write(k) };
+        unsafe { self.th.top.add(1) };
+        unsafe { self.th.top.write(v) };
+        unsafe { self.th.top.add(1) };
+        self.ret.set(self.ret.get() + 2);
+
+        Ok(true)
+    }
+
+    /// Push a value for `k` from `t` to the result of this call.
+    ///
+    /// # Panics
+    /// If `t` or `k` created from different [Lua](crate::Lua) instance.
+    pub fn push_from_table(
+        &self,
+        t: &Table<A>,
+        k: impl Into<UnsafeValue<A>>,
+    ) -> Result<Type, StackOverflow> {
+        unsafe { lua_checkstack(self.th, 1, 5)? };
+
+        // Check if table come from the same Lua.
+        if t.hdr.global != self.th.hdr.global {
+            panic!("attempt to push a value from a table created from different Lua");
+        }
+
+        // Get value and push it.
+        let v = t.get_raw(k);
+
+        unsafe { self.th.top.write(*v) };
+        unsafe { self.th.top.add(1) };
+        self.ret.set(self.ret.get() + 1);
+
+        Ok(unsafe { Type::from_tt((*v).tt_) })
+    }
+
+    /// Push a value for `k` from `t` to the result of this call.
+    ///
+    /// This method will trigger GC if new string is allocated.
+    ///
+    /// # Panics
+    /// If `t` was created from different [Lua](crate::Lua) instance.
+    pub fn push_from_str_key<K>(&self, t: &Table<A>, k: K) -> Result<Type, StackOverflow>
+    where
+        K: AsRef<[u8]> + Into<Vec<u8>>,
+    {
+        unsafe { lua_checkstack(self.th, 1, 5)? };
+
+        // Check if table come from the same Lua.
+        if t.hdr.global != self.th.hdr.global {
+            panic!("attempt to push a value from a table created from different Lua");
+        }
+
+        // Get value and push it.
+        let g = self.th.hdr.global();
+        let s = unsafe { Str::from_bytes(g, k) };
+        let k = unsafe { UnsafeValue::from_obj(s.unwrap_or_else(identity).cast()) };
+        let v = unsafe { luaH_get(t, &k) };
+
+        unsafe { self.th.top.write(v.read()) };
+        unsafe { self.th.top.add(1) };
+        self.ret.set(self.ret.get() + 1);
+
+        if s.is_ok() {
+            g.gc.step();
+        }
+
+        Ok(unsafe { Type::from_tt((*v).tt_) })
+    }
+
+    /// Push the result of addition between `lhs` and `rhs`, returns the type of pushed value.
+    ///
+    /// This method honor `__add` metavalue.
+    ///
+    /// # Panics
+    /// If either `lhs` or `rhs` come from different [Lua](crate::Lua) instance.
+    pub fn push_add(
+        &self,
+        lhs: impl Into<UnsafeValue<A>>,
+        rhs: impl Into<UnsafeValue<A>>,
+    ) -> Result<Type, Box<dyn core::error::Error>> {
+        // Check operands.
+        let lhs = lhs.into();
+        let rhs = rhs.into();
+
+        if unsafe { (lhs.tt_ & 1 << 6 != 0) && (*lhs.value_.gc).global != self.th.hdr.global } {
+            panic!("attempt to perform addition on a value created from different Lua");
+        }
+
+        if unsafe { (rhs.tt_ & 1 << 6 != 0) && (*rhs.value_.gc).global != self.th.hdr.global } {
+            panic!("attempt to perform addition on a value created from different Lua");
+        }
+
+        // Perform addition.
+        let r = unsafe { luaO_arith(self.th, Ops::Add, &lhs, &rhs)? };
+
+        unsafe { lua_checkstack(self.th, 1, 5)? };
+        unsafe { self.th.top.write(r) };
+        unsafe { self.th.top.add(1) };
+
+        self.ret.update(|v| v + 1);
+
+        Ok(Type::from_tt(r.tt_))
+    }
+
+    /// Push the result of subtraction `lhs` with `rhs`, returns the type of pushed value.
+    ///
+    /// This method honor `__sub` metavalue.
+    ///
+    /// # Panics
+    /// If either `lhs` or `rhs` come from different [Lua](crate::Lua) instance.
+    pub fn push_sub(
+        &self,
+        lhs: impl Into<UnsafeValue<A>>,
+        rhs: impl Into<UnsafeValue<A>>,
+    ) -> Result<Type, Box<dyn core::error::Error>> {
+        // Check operands.
+        let lhs = lhs.into();
+        let rhs = rhs.into();
+
+        if unsafe { (lhs.tt_ & 1 << 6 != 0) && (*lhs.value_.gc).global != self.th.hdr.global } {
+            panic!("attempt to perform subtraction on a value created from different Lua");
+        }
+
+        if unsafe { (rhs.tt_ & 1 << 6 != 0) && (*rhs.value_.gc).global != self.th.hdr.global } {
+            panic!("attempt to perform subtraction on a value created from different Lua");
+        }
+
+        // Perform subtraction.
+        let r = unsafe { luaO_arith(self.th, Ops::Sub, &lhs, &rhs)? };
+
+        unsafe { lua_checkstack(self.th, 1, 5)? };
+        unsafe { self.th.top.write(r) };
+        unsafe { self.th.top.add(1) };
+
+        self.ret.update(|v| v + 1);
+
+        Ok(Type::from_tt(r.tt_))
+    }
+
+    /// Push the result of `lhs` modulo `rhs`, returns the type of pushed value.
+    ///
+    /// This method honor `__mod` metavalue.
+    ///
+    /// # Panics
+    /// If either `lhs` or `rhs` was created from different [Lua](crate::Lua) instance.
+    pub fn push_rem(
+        &self,
+        lhs: impl Into<UnsafeValue<A>>,
+        rhs: impl Into<UnsafeValue<A>>,
+    ) -> Result<Type, Box<dyn core::error::Error>> {
+        // Check operands.
+        let lhs = lhs.into();
+        let rhs = rhs.into();
+
+        if unsafe { (lhs.tt_ & 1 << 6 != 0) && (*lhs.value_.gc).global != self.th.hdr.global } {
+            panic!("attempt to perform modulo on a value created from different Lua");
+        }
+
+        if unsafe { (rhs.tt_ & 1 << 6 != 0) && (*rhs.value_.gc).global != self.th.hdr.global } {
+            panic!("attempt to perform modulo on a value created from different Lua");
+        }
+
+        // Perform subtraction.
+        let r = unsafe { luaO_arith(self.th, Ops::Mod, &lhs, &rhs)? };
+
+        unsafe { lua_checkstack(self.th, 1, 5)? };
+        unsafe { self.th.top.write(r) };
+        unsafe { self.th.top.add(1) };
+
+        self.ret.update(|v| v + 1);
+
+        Ok(Type::from_tt(r.tt_))
+    }
+
+    /// Push the result of `lhs` raised to the power of `rhs`, returns the type of pushed value.
+    ///
+    /// This method honor `__pow` metavalue.
+    ///
+    /// # Panics
+    /// If either `lhs` or `rhs` was created from different [Lua](crate::Lua) instance.
+    pub fn push_pow(
+        &self,
+        lhs: impl Into<UnsafeValue<A>>,
+        rhs: impl Into<UnsafeValue<A>>,
+    ) -> Result<Type, Box<dyn core::error::Error>> {
+        // Check operands.
+        let lhs = lhs.into();
+        let rhs = rhs.into();
+
+        if unsafe { (lhs.tt_ & 1 << 6 != 0) && (*lhs.value_.gc).global != self.th.hdr.global } {
+            panic!("attempt to perform exponentiation on a value created from different Lua");
+        }
+
+        if unsafe { (rhs.tt_ & 1 << 6 != 0) && (*rhs.value_.gc).global != self.th.hdr.global } {
+            panic!("attempt to perform exponentiation on a value created from different Lua");
+        }
+
+        // Perform subtraction.
+        let r = unsafe { luaO_arith(self.th, Ops::Pow, &lhs, &rhs)? };
+
+        unsafe { lua_checkstack(self.th, 1, 5)? };
+        unsafe { self.th.top.write(r) };
+        unsafe { self.th.top.add(1) };
+
+        self.ret.update(|v| v + 1);
+
+        Ok(Type::from_tt(r.tt_))
+    }
+
+    /// Push the result of negation on `v`, returns the type of pushed value.
+    ///
+    /// This method honor `__unm` metavalue.
+    ///
+    /// # Panics
+    /// If `v` was created from different [Lua](crate::Lua) instance.
+    pub fn push_neg(
+        &self,
+        v: impl Into<UnsafeValue<A>>,
+    ) -> Result<Type, Box<dyn core::error::Error>> {
+        // Check operands.
+        let v = v.into();
+
+        if unsafe { (v.tt_ & 1 << 6 != 0) && (*v.value_.gc).global != self.th.hdr.global } {
+            panic!("attempt to perform negation on a value created from different Lua");
+        }
+
+        // Perform subtraction.
+        let r = unsafe { luaO_arith(self.th, Ops::Neg, &v, &v)? };
+
+        unsafe { lua_checkstack(self.th, 1, 5)? };
+        unsafe { self.th.top.write(r) };
+        unsafe { self.th.top.add(1) };
+
+        self.ret.update(|v| v + 1);
+
+        Ok(Type::from_tt(r.tt_))
+    }
+
+    /// Reserves capacity for at least `additional` more elements to be pushed.
+    ///
+    /// Usually you don't need this method unless you try to push a large amount of results.
+    ///
+    /// This has the same semantic as `lua_checkstack`.
+    pub fn reserve(&self, additional: usize) -> Result<(), StackOverflow> {
+        unsafe { lua_checkstack(self.th, additional, 0) }
+    }
+
+    /// Call a function or callable value.
+    ///
+    /// See [Thread::call()] for more details.
+    pub fn call<R: Outputs<'a, A>>(
+        &self,
+        f: impl Into<UnsafeValue<A>>,
+        args: impl Inputs<A>,
+    ) -> Result<R, Box<dyn core::error::Error>> {
+        self.th.call(f, args)
+    }
+
+    /// Call `f` with values above it as arguments.
+    ///
+    /// Use negative `f` to refer from the top of stack (e.g. `-1` mean one value from the top of
+    /// stack).
+    ///
+    /// # Panics
+    /// If `f` is not a valid stack index.
+    pub fn forward(
+        self,
+        f: impl TryInto<NonZero<isize>>,
+    ) -> (Context<'a, A, Ret>, Option<Box<CallError>>) {
+        // Get function index.
+        let f = match f.try_into() {
+            Ok(v) => v,
+            Err(_) => panic!("zero is not a valid stack index"),
+        };
+
+        // Convert negative index.
+        let th = self.th;
+        let stack = th.stack.get();
+        let ci = th.ci.get();
+        let top = unsafe {
+            self.th
+                .top
+                .get()
+                .offset_from_unsigned(stack.add((*ci).func))
+        };
+        let f = match usize::try_from(f.get()) {
+            Ok(v) => {
+                if v >= top {
+                    panic!("{f} is not a valid stack index");
+                }
+
+                v
+            }
+            Err(_) => match top.saturating_sub(f.get().unsigned_abs()) {
+                0 => panic!("{f} is not a valid stack index"),
+                v => v,
+            },
+        };
+
+        // Invoke.
+        let rem = f - 1;
+        let f = unsafe { stack.add((*ci).func + f) };
+        let cx = Context {
+            th: self.th,
+            ret: Cell::new(0),
+            payload: Ret(rem),
+            yieldable: self.yieldable,
+        };
+
+        {
+            let f = unsafe { pin!(luaD_call(self.th, f, -1)) };
+            let w = unsafe { Waker::new(null(), &NON_YIELDABLE_WAKER) };
+
+            match f.poll(&mut core::task::Context::from_waker(&w)) {
+                Poll::Ready(Ok(_)) => (),
+                Poll::Ready(Err(e)) => return (cx, Some(e)),
+                Poll::Pending => unreachable!(),
+            }
+        }
+
+        // Get number of results.
+        let stack = th.stack.get();
+        let ret = unsafe { stack.add((*ci).func + rem + 1) };
+        let ret = unsafe { cx.th.top.get().offset_from_unsigned(ret) };
+
+        cx.ret.set(ret);
+
+        (cx, None)
+    }
+
+    /// Converts all values start at `i` to call results.
+    ///
+    /// Use negative `i` to refer from the top of stack (e.g. `-1` mean one value from the top of
+    /// stack).
+    ///
+    /// # Panics
+    /// If `i` is not a valid stack index.
+    pub fn into_results(self, i: impl TryInto<NonZero<isize>>) -> Context<'a, A, Ret> {
+        // Get start index.
+        let i = match i.try_into() {
+            Ok(v) => v,
+            Err(_) => panic!("zero is not a valid stack index"),
+        };
+
+        // Convert negative index.
+        let th = self.th;
+        let stack = th.stack.get();
+        let ci = th.ci.get();
+        let top = unsafe {
+            self.th
+                .top
+                .get()
+                .offset_from_unsigned(stack.add((*ci).func))
+        };
+        let off = match usize::try_from(i.get()) {
+            Ok(v) => v,
+            Err(_) => match top.saturating_sub(i.get().unsigned_abs()) {
+                0 => panic!("{i} is not a valid stack index"),
+                v => v,
+            },
+        };
+
+        // Check if index valid.
+        let ret = match top.checked_sub(off) {
+            Some(v) => v,
+            None => panic!("{i} is not a valid stack index"),
+        };
+
+        Context {
+            th: self.th,
+            ret: Cell::new(ret),
+            payload: Ret(off - 1),
+            yieldable: self.yieldable,
+        }
+    }
+}
+
+impl<'a, A> Context<'a, A, Args> {
+    /// Returns number of arguments for this call.
+    #[inline(always)]
+    pub fn args(&self) -> usize {
+        self.payload.0
+    }
+
+    /// Returns argument `n` passed to the function.
+    ///
+    /// Note that this method does not verify if argument `n` actually exists. The verification will
+    /// be done by the returned [Arg].
+    ///
+    /// # Panics
+    /// If `n` is zero.
+    #[inline(always)]
+    pub fn arg(&self, n: impl TryInto<NonZero<usize>>) -> Arg<'_, 'a, A> {
+        let n = match n.try_into() {
+            Ok(v) => v,
+            Err(_) => panic!("zero is not a valid argument index"),
+        };
+
+        Arg::new(self, n)
+    }
+}
+
+impl<'a, A> Context<'a, A, Ret> {
+    /// Insert `v` at `i` by shift all above values.
+    ///
+    /// # Panics
+    /// - If `i` is lower than the first result or not a valid stack index.
+    /// - If `v` come from different [Lua](crate::Lua) instance.
+    pub fn insert(
+        &self,
+        i: impl TryInto<NonZero<usize>>,
+        v: impl Into<UnsafeValue<A>>,
+    ) -> Result<(), StackOverflow> {
+        // Check if index lower than the first result.
+        let i = match i.try_into() {
+            Ok(v) => v,
+            Err(_) => panic!("zero is not a valid stack index"),
+        };
+
+        if i.get() <= self.payload.0 {
+            panic!("{i} is lower than the first result");
+        }
+
+        unsafe { lua_checkstack(self.th, 1, 5)? };
+
+        // Check if index valid.
+        let th = self.th;
+        let stack = th.stack.get();
+        let ci = th.ci.get();
+        let top = unsafe {
+            self.th
+                .top
+                .get()
+                .offset_from_unsigned(stack.add((*ci).func))
+        };
+
+        if i.get() > top {
+            panic!("{i} is not a valid stack index");
+        }
+
+        // Check if value come from the same Lua.
+        let v = v.into();
+
+        if unsafe { (v.tt_ & 1 << 6 != 0) && (*v.value_.gc).global != self.th.hdr.global } {
+            panic!("attempt to push a value created from a different Lua");
+        }
+
+        // Insert the value.
+        let src = unsafe { stack.add((*ci).func + i.get()) };
+        let dst = unsafe { stack.add((*ci).func + i.get() + 1) };
+
+        for i in (0..(top - i.get())).rev() {
+            let src = unsafe { src.add(i) };
+            let dst = unsafe { dst.add(i) };
+
+            unsafe { (*dst).tt_ = (*src).tt_ };
+            unsafe { (*dst).value_ = (*src).value_ };
+        }
+
+        unsafe { (*src).tt_ = v.tt_ };
+        unsafe { (*src).value_ = v.value_ };
+
+        unsafe { self.th.top.add(1) };
+        self.ret.set(self.ret.get() + 1);
+
+        Ok(())
+    }
+
+    /// Removes the last value from call results.
+    ///
+    /// # Panics
+    /// If results is empty.
+    pub fn pop(&mut self) {
+        let ret = self.ret.get().checked_sub(1).unwrap();
+
+        unsafe { self.th.top.sub(1) };
+        self.ret.set(ret);
+    }
+
+    /// Shortens the call results, keeping the first `len` values and remove the rest.
+    ///
+    /// This has no effect if `len` is equal or greater than call results.
+    pub fn truncate(&mut self, len: usize) {
+        let remove = match self.ret.get().checked_sub(len) {
+            Some(v) => v,
+            None => return,
+        };
+
+        unsafe { self.th.top.sub(remove) };
+        self.ret.set(len);
+    }
+
+    #[inline]
+    pub(crate) fn results(self) -> usize {
+        self.ret.get()
+    }
+}
+
+impl<'a, A> From<Context<'a, A, Args>> for Context<'a, A, Ret> {
+    #[inline(always)]
+    fn from(value: Context<'a, A, Args>) -> Self {
+        Self {
+            th: value.th,
+            ret: value.ret,
+            payload: Ret(value.payload.0),
+            yieldable: value.yieldable,
+        }
+    }
+}
+
+/// Call arguments encapsulated in [Context].
+pub struct Args(usize);
+
+impl Args {
+    #[inline(always)]
+    pub(crate) fn new(v: usize) -> Self {
+        Self(v)
+    }
+}
+
+/// Call results encapsulated in [Context];
+pub struct Ret(usize); // The value is offset of the first result.
+
+/// Future of [Context::new()].
+struct New<'a, A, T> {
+    td: &'a Thread<A>,
+    payload: Option<T>,
+}
+
+impl<'a, A, T> Future for New<'a, A, T>
+where
+    T: Unpin,
+{
+    type Output = Context<'a, A, T>;
+
+    #[inline(always)]
+    fn poll(mut self: Pin<&mut Self>, cx: &mut core::task::Context<'_>) -> Poll<Self::Output> {
+        Poll::Ready(Context {
+            th: self.td,
+            ret: Cell::new(0),
+            payload: self.payload.take().unwrap(),
+            yieldable: addr_eq(cx.waker().vtable(), &YIELDABLE_WAKER),
+        })
+    }
+}

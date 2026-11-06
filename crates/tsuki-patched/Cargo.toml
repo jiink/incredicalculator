@@ -1,0 +1,30 @@
+# Vendored copy of tsuki 0.4.8 (Lua 5.4 ported to Rust), patched for the
+# incredicalculator's scripted apps. See PATCHES.md for what changed.
+[package]
+edition = "2024"
+name = "tsuki"
+version = "0.4.8"
+description = "Lua 5.4 ported to Rust"
+readme = "README.md"
+license = "MIT"
+repository = "https://github.com/ultimaweapon/tsuki"
+
+[features]
+default = ["rand", "std"]
+rand = ["dep:rand"]
+serde = ["dep:serde"]
+std = ["libm/arch", "tsuki-macros/std"]
+
+[lib]
+name = "tsuki"
+path = "src/lib.rs"
+
+[dependencies]
+erdp = "0.2.0"
+libc = "0.2.172"
+libm = { version = "0.2.15", default-features = false }
+memchr = { version = "2.7.6", features = ["alloc"], default-features = false }
+rand = { version = "0.9.1", features = ["thread_rng"], optional = true, default-features = false }
+serde = { version = "1.0.228", features = ["alloc"], optional = true, default-features = false }
+thiserror = { version = "2.0.12", default-features = false }
+tsuki-macros = "=0.1.3"

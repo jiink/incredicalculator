@@ -1,8 +1,9 @@
 //! Scripted apps: apps whose behavior comes from a script instead of
 //! compiled-in Rust.
 //!
-//! The script engine is chosen at compile time with a Cargo feature
-//! (`script-rhai` for now). Every engine implements [`ScriptEngine`], and
+//! The script engine is chosen at compile time with a Cargo feature,
+//! `script-rhai` or `script-lua` (only one at a time; with either on,
+//! build.rs sets `cfg(scripting)`). Every engine implements [`ScriptEngine`], and
 //! [`ScriptApp`](crate::apps::ScriptApp) wraps whichever one is active as an
 //! [`IcApp`](crate::app::IcApp), so the shell never knows which language a
 //! scripted app is written in.
@@ -20,17 +21,44 @@ use rgb::RGB8;
 use crate::input::IcKey;
 use crate::text::HAlign;
 
+#[cfg(feature = "script-lua")]
+mod lua_engine;
 #[cfg(feature = "script-rhai")]
 mod rhai_engine;
 
 /// The engine selected by Cargo features.
 #[cfg(feature = "script-rhai")]
 pub type ActiveEngine = rhai_engine::RhaiEngine;
+#[cfg(feature = "script-lua")]
+pub type ActiveEngine = lua_engine::LuaEngine;
 
 /// Hard-coded example script, shown in the apps menu until scripts can be
 /// loaded from storage.
 #[cfg(feature = "script-rhai")]
 pub const EXAMPLE_SCRIPT: (&str, &str) = ("bouncer", include_str!("../../scripts/bouncer.rhai"));
+#[cfg(feature = "script-lua")]
+pub const EXAMPLE_SCRIPT: (&str, &str) = ("bouncer", include_str!("../../scripts/bouncer.lua"));
+
+/// The same small scripts in each engine's language, for tests shared by
+/// all engines.
+#[cfg(test)]
+pub(crate) mod test_sources {
+    #[cfg(feature = "script-rhai")]
+    mod sources {
+        pub const RUNTIME_ERROR: &str = "fn update() { this.x = undefined_fn(); }";
+        pub const SYNTAX_ERROR: &str = "fn update( {";
+        pub const ENDLESS_LOOP: &str = "fn update() { loop { } }";
+        pub const DRAW_FLOOD: &str = "fn update() { for i in 0..10000 { clear(0); } }";
+    }
+    #[cfg(feature = "script-lua")]
+    mod sources {
+        pub const RUNTIME_ERROR: &str = "function update() x = undefined_fn() end";
+        pub const SYNTAX_ERROR: &str = "function update( end";
+        pub const ENDLESS_LOOP: &str = "function update() while true do end end";
+        pub const DRAW_FLOOD: &str = "function update() for i = 1, 10000 do clear(0) end end";
+    }
+    pub use sources::*;
+}
 
 /// Most drawing commands one script call may record. Scripts that draw more
 /// stop with an error rather than growing the heap without bound.
@@ -76,6 +104,7 @@ pub enum DrawCmd {
 /// Everything a script can see of, or do to, the outside world during one
 /// call. The app fills in the inputs before each call and drains the outputs
 /// afterwards.
+#[derive(Debug)]
 pub struct ScriptHost {
     pub millis: u64,
     pub keys_down: [bool; IcKey::COUNT],
