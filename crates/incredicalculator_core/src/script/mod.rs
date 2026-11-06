@@ -25,7 +25,10 @@ mod lua_engine;
 pub type ActiveEngine = lua_engine::LuaEngine;
 
 /// Example script bundled into the firmware, as (file name, source).
-pub const EXAMPLE_SCRIPT: (&str, &str) = ("bouncer.lua", include_str!("../../scripts/bouncer.lua"));
+pub const EXAMPLE_SCRIPT: (&str, &str) = (
+    "bouncer.lua",
+    include_str!("../../../../example_scripts/bouncer.lua"),
+);
 
 /// Small scripts for tests.
 #[cfg(test)]

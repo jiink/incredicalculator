@@ -2,7 +2,7 @@
 //! vendored copy in `crates/tsuki-patched` adds a no_std build, a budget for
 //! endless loops and a smaller stack limit).
 //!
-//! Scripts keep state in ordinary top-level `local`s or globals. See `scripts/bouncer.lua` for
+//! Scripts keep state in ordinary top-level `local`s or globals. See `example_scripts/bouncer.lua` for
 //! the API from the script's side.
 
 use alloc::boxed::Box;
