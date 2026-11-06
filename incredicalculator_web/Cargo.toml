@@ -27,3 +27,7 @@ features = [
   "Performance",
   "Storage",
 ]
+
+[features]
+default = ["script-rhai"]
+script-rhai = ["incredicalculator_core/script-rhai"]

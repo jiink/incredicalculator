@@ -12,6 +12,22 @@ glam = { version = "0.30.9", default-features = false, features = ["libm", "scal
 rgb = "0.8.52"
 num-derive = "0.4.2"
 culsynth = { version = "0.2.0" }
+rhai = { version = "1.27.0", optional = true, default-features = false, features = [
+    "no_std",
+    "only_i32",
+    "f32_float",
+    "no_module",
+    "no_custom_syntax",
+    "no_closure",
+    # The optimizer briefly duplicates the AST while compiling, costing more
+    # heap (about 18 KB for the example script) and flash than it saves.
+    "no_optimize",
+] }
+
+[features]
+# Script engine used for scripted apps. Enable at most one; with none,
+# scripted apps are left out entirely.
+script-rhai = ["dep:rhai"]
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 exp-rs = { version = "0.2.0", default-features = false, features = ["libm"] }

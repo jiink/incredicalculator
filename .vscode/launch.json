@@ -50,6 +50,55 @@
                     "--package=incredicalculator_pc"
                 ]
             }
+        },
+        {
+            // Builds, flashes and runs the firmware under the debugger.
+            // Needs the "probe-rs.probe-rs-debugger" extension (install it in
+            // WSL when using Remote - WSL).
+            "name": "Debug incredicalculator_rp (probe-rs, flash)",
+            "type": "probe-rs-debug",
+            "request": "launch",
+            "preLaunchTask": "build incredicalculator_rp (release)",
+            "cwd": "${workspaceFolder}/incredicalculator_rp",
+            "chip": "RP235x",
+            "flashingConfig": {
+                "flashingEnabled": true,
+                "haltAfterReset": false
+            },
+            "coreConfigs": [
+                {
+                    "coreIndex": 0,
+                    "programBinary": "${workspaceFolder}/target/thumbv8m.main-none-eabihf/release/incredicalculator_rp",
+                    "rttEnabled": true
+                },
+                {
+                    "coreIndex": 1,
+                    "programBinary": "${workspaceFolder}/target/thumbv8m.main-none-eabihf/release/incredicalculator_rp"
+                }
+            ],
+            "consoleLogLevel": "Console"
+        },
+        {
+            // Attaches to firmware that is already running (for example,
+            // already stuck) without flashing or resetting it. The ELF must
+            // match what is on the chip.
+            "name": "Attach to incredicalculator_rp (probe-rs)",
+            "type": "probe-rs-debug",
+            "request": "attach",
+            "cwd": "${workspaceFolder}/incredicalculator_rp",
+            "chip": "RP235x",
+            "coreConfigs": [
+                {
+                    "coreIndex": 0,
+                    "programBinary": "${workspaceFolder}/target/thumbv8m.main-none-eabihf/release/incredicalculator_rp",
+                    "rttEnabled": true
+                },
+                {
+                    "coreIndex": 1,
+                    "programBinary": "${workspaceFolder}/target/thumbv8m.main-none-eabihf/release/incredicalculator_rp"
+                }
+            ],
+            "consoleLogLevel": "Console"
         }
     ]
 }

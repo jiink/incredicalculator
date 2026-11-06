@@ -74,3 +74,7 @@ Every push to `main` that changes more than Markdown files runs `.github/workflo
 To rebuild without pushing, open the Actions tab, pick **Nightly**, and click **Run workflow**.
 
 The Settings screen shows the firmware version at the bottom right, from `git describe` over `v`-numbered tags: `v2` is a build of the commit tagged `v2`, and `v2-67-g394ebc3` is the 67th commit after `v2`, at commit `394ebc3`. The workflow manages the `nightly` tag itself, so don't create or move it by hand.
+
+## Debugging
+
+See `incredicalculator_rp/.cargo/config.toml`

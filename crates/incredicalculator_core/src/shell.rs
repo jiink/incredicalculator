@@ -19,6 +19,8 @@ use crate::platform::{CANVAS_HEIGHT, CANVAS_WIDTH, IcPlatform};
 use crate::settings::SettingsMenu;
 use crate::text::*;
 use alloc::boxed::Box;
+use alloc::vec;
+use alloc::vec::Vec;
 use glam::Affine2;
 use glam::{IVec2, Vec2};
 use num_traits::FromPrimitive;
@@ -56,7 +58,8 @@ pub enum Adjustable {
 }
 
 pub struct IcShell {
-    apps: [Box<dyn IcApp>; 10], // INCREASE THIS SIZE WHEN ADDING NEW APPS
+    /// Compiled apps first, then scripted apps.
+    apps: Vec<Box<dyn IcApp>>,
     active_app_idx: Option<usize>,
     last_active_app_idx: Option<usize>,
     selector_page: usize,
@@ -74,19 +77,26 @@ pub struct IcShell {
 
 impl IcShell {
     pub fn new() -> Self {
+        #[allow(unused_mut)]
+        let mut apps: Vec<Box<dyn IcApp>> = vec![
+            Box::new(Calculator::new(EngineMode::Programmer)),
+            Box::new(Calculator::new(EngineMode::Scientific)),
+            Box::new(AspectRatioCalculator::new()),
+            Box::new(RangeMapperCalculator::new()),
+            Box::new(ColorCalculator::new()),
+            Box::new(SoundTest::new()),
+            Box::new(ScaleKeys::new()),
+            Box::new(ChordPad::new()),
+            Box::new(Bytebeat::new()),
+            Box::new(FaceCalculator::new()),
+        ];
+        #[cfg(feature = "script-rhai")]
+        {
+            let (name, source) = crate::script::EXAMPLE_SCRIPT;
+            apps.push(Box::new(crate::apps::ScriptApp::new(name, source)));
+        }
         Self {
-            apps: [
-                Box::new(Calculator::new(EngineMode::Programmer)),
-                Box::new(Calculator::new(EngineMode::Scientific)),
-                Box::new(AspectRatioCalculator::new()),
-                Box::new(RangeMapperCalculator::new()),
-                Box::new(ColorCalculator::new()),
-                Box::new(SoundTest::new()),
-                Box::new(ScaleKeys::new()),
-                Box::new(ChordPad::new()),
-                Box::new(Bytebeat::new()),
-                Box::new(FaceCalculator::new()),
-            ],
+            apps,
             active_app_idx: Some(0),
             last_active_app_idx: None,
             selector_page: 0,
@@ -659,7 +669,8 @@ impl IcShell {
             }
         }
         if backspace_closes_menu || menu_chord {
-            if self.active_app_idx.is_some() {
+            if let Some(idx) = self.active_app_idx {
+                self.apps[idx].on_exit();
                 self.last_active_app_idx = self.active_app_idx;
                 self.active_app_idx = None;
                 self.selector_hints_started_at = Some(platform.millis());

@@ -17,3 +17,7 @@ mod bytebeat;
 pub use bytebeat::Bytebeat;
 mod color_calculator;
 pub use color_calculator::ColorCalculator;
+#[cfg(feature = "script-rhai")]
+mod script_app;
+#[cfg(feature = "script-rhai")]
+pub use script_app::ScriptApp;

@@ -33,6 +33,9 @@ pub trait IcApp {
     /// for things like games that shouldnt only update when you press a button
     fn requires_realtime_updates(&self) -> bool;
     fn on_enter(&mut self);
+    /// Called when the user leaves the app for the menu. Apps can release
+    /// memory they only need while open.
+    fn on_exit(&mut self) {}
     fn on_key(&mut self, key: IcKey, ctx: &InputContext);
     fn update(
         &mut self,

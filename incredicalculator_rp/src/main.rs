@@ -59,8 +59,12 @@ const DISPLAY_FREQ: u32 = 60_000_000;
 #[global_allocator]
 static HEAP: memory::TrackingHeap = memory::TrackingHeap::empty();
 
+/// Sized to also fit one scripted app's engine (about 35-40 KB for the
+/// example script) on top of the compiled apps.
+const HEAP_SIZE: usize = 96 * 1024;
+
 #[unsafe(link_section = ".uninit.HEAP_MEM")]
-static mut HEAP_MEM: [u8; 64_000] = [0; 64_000];
+static mut HEAP_MEM: [u8; HEAP_SIZE] = [0; HEAP_SIZE];
 
 const RENDER_W: u32 = 320;
 const RENDER_H: u32 = 240;
@@ -1167,7 +1171,7 @@ async fn main(spawner: Spawner) {
         // Compute how many bytes we lost to alignment adjustment
         let adjust = aligned - base;
         // Total size of the static buffer (compile-time)
-        let total = core::mem::size_of::<[u8; 64_000]>();
+        let total = HEAP_SIZE;
         // Remaining usable bytes after alignment
         let usable = total - adjust;
         HEAP.init(aligned, usable);
