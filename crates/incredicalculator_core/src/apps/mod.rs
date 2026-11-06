@@ -17,7 +17,7 @@ mod bytebeat;
 pub use bytebeat::Bytebeat;
 mod color_calculator;
 pub use color_calculator::ColorCalculator;
-#[cfg(scripting)]
+#[cfg(feature = "scripting")]
 mod script_app;
-#[cfg(scripting)]
+#[cfg(feature = "scripting")]
 pub use script_app::ScriptApp;

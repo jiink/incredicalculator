@@ -57,9 +57,23 @@ pub enum Adjustable {
     Volume,
 }
 
+/// Identifies a loaded scripted app, to tell whether its script has changed.
+#[cfg(feature = "scripting")]
+#[derive(PartialEq, Eq)]
+struct ScriptKey {
+    file_name: alloc::string::String,
+    source_hash: u64,
+}
+
 pub struct IcShell {
-    /// Compiled apps first, then scripted apps.
+    /// Compiled apps first, then scripted apps (one per entry in
+    /// `script_keys`, in the same order).
     apps: Vec<Box<dyn IcApp>>,
+    /// Platform's `scripts_version` when the scripted apps were last loaded.
+    #[cfg(feature = "scripting")]
+    scripts_version: Option<u32>,
+    #[cfg(feature = "scripting")]
+    script_keys: Vec<ScriptKey>,
     active_app_idx: Option<usize>,
     last_active_app_idx: Option<usize>,
     selector_page: usize,
@@ -77,8 +91,8 @@ pub struct IcShell {
 
 impl IcShell {
     pub fn new() -> Self {
-        #[allow(unused_mut)]
-        let mut apps: Vec<Box<dyn IcApp>> = vec![
+        // Scripted apps are added by `sync_scripts` on the first update.
+        let apps: Vec<Box<dyn IcApp>> = vec![
             Box::new(Calculator::new(EngineMode::Programmer)),
             Box::new(Calculator::new(EngineMode::Scientific)),
             Box::new(AspectRatioCalculator::new()),
@@ -90,13 +104,12 @@ impl IcShell {
             Box::new(Bytebeat::new()),
             Box::new(FaceCalculator::new()),
         ];
-        #[cfg(scripting)]
-        {
-            let (name, source) = crate::script::EXAMPLE_SCRIPT;
-            apps.push(Box::new(crate::apps::ScriptApp::new(name, source)));
-        }
         Self {
             apps,
+            #[cfg(feature = "scripting")]
+            scripts_version: None,
+            #[cfg(feature = "scripting")]
+            script_keys: Vec::new(),
             active_app_idx: Some(0),
             last_active_app_idx: None,
             selector_page: 0,
@@ -111,6 +124,86 @@ impl IcShell {
             adjusting_something: None,
             audio: AudioEngine::new(),
         }
+    }
+
+    /// Reloads the scripted apps when the platform's installed scripts have
+    /// changed. Unchanged scripts keep their running app. An open app whose
+    /// script was edited restarts with the new code; one whose script was
+    /// deleted closes back to the menu.
+    #[cfg(feature = "scripting")]
+    fn sync_scripts(&mut self, platform: &mut dyn IcPlatform) {
+        use crate::apps::ScriptApp;
+        use alloc::string::String;
+
+        let version = platform.scripts_version();
+        if self.scripts_version == Some(version) {
+            return;
+        }
+        self.scripts_version = Some(version);
+
+        let files: Vec<(String, String)> = match platform.list_scripts() {
+            None => {
+                let (file_name, source) = crate::script::EXAMPLE_SCRIPT;
+                vec![(file_name.into(), source.into())]
+            }
+            Some(mut names) => {
+                names.sort();
+                names
+                    .into_iter()
+                    .filter_map(|name| platform.read_script(&name).map(|source| (name, source)))
+                    .collect()
+            }
+        };
+
+        let compiled = self.apps.len() - self.script_keys.len();
+        let old_keys = core::mem::take(&mut self.script_keys);
+        let mut old_apps: Vec<Option<Box<dyn IcApp>>> = self
+            .apps
+            .split_off(compiled)
+            .into_iter()
+            .map(Some)
+            .collect();
+        // For each old script: its new index, and whether its code changed.
+        let mut moved: Vec<Option<(usize, bool)>> = vec![None; old_keys.len()];
+        for (file_name, source) in files {
+            let key = ScriptKey {
+                source_hash: fnv1a(source.as_bytes()),
+                file_name,
+            };
+            let old = old_keys.iter().position(|k| k.file_name == key.file_name);
+            let reused = old
+                .filter(|&i| old_keys[i] == key)
+                .and_then(|i| old_apps[i].take());
+            if let Some(i) = old {
+                moved[i] = Some((self.apps.len(), reused.is_none()));
+            }
+            let app = reused.unwrap_or_else(|| Box::new(ScriptApp::new(&key.file_name, source)));
+            self.apps.push(app);
+            self.script_keys.push(key);
+        }
+
+        let remap = |idx: usize| match idx.checked_sub(compiled) {
+            None => Some((idx, false)),
+            Some(i) => moved[i],
+        };
+        if let Some(idx) = self.active_app_idx {
+            match remap(idx) {
+                Some((new_idx, changed)) => {
+                    self.active_app_idx = Some(new_idx);
+                    if changed {
+                        self.apps[new_idx].on_enter();
+                    }
+                }
+                None => {
+                    self.active_app_idx = None;
+                    self.selector_hints_started_at = Some(platform.millis());
+                    self.audio.release_all();
+                }
+            }
+        }
+        self.last_active_app_idx = self.last_active_app_idx.and_then(remap).map(|(idx, _)| idx);
+        let pages = self.apps.len().div_ceil(APPS_PER_PAGE).max(1);
+        self.selector_page = self.selector_page.min(pages - 1);
     }
 
     pub fn audio_mut(&mut self) -> &mut AudioEngine {
@@ -560,6 +653,8 @@ impl IcShell {
             self.settings_menu.load(platform);
             self.settings_loaded = true;
         }
+        #[cfg(feature = "scripting")]
+        self.sync_scripts(platform);
         for s in self.key_states.iter_mut() {
             s.just_pressed = s.is_down && !s.was_down;
             s.just_released = !s.is_down && s.was_down;
@@ -745,4 +840,177 @@ fn mix_colors(color_a: RGB8, color_b: RGB8, color_a_weight: u8) -> RGB8 {
         mix_channel(color_a.g, color_b.g),
         mix_channel(color_a.b, color_b.b),
     )
+}
+
+/// FNV-1a, to notice when a script's source changes.
+#[cfg(feature = "scripting")]
+fn fnv1a(bytes: &[u8]) -> u64 {
+    bytes.iter().fold(0xCBF2_9CE4_8422_2325, |hash, &b| {
+        (hash ^ b as u64).wrapping_mul(0x0000_0100_0000_01B3)
+    })
+}
+
+#[cfg(all(test, feature = "scripting"))]
+mod tests {
+    use super::*;
+    use alloc::collections::BTreeMap;
+    use alloc::string::{String, ToString};
+    use glam::{IVec2, Vec2};
+
+    /// Platform that draws nothing and keeps scripts in memory.
+    #[derive(Default)]
+    struct FakePlatform {
+        scripts: Option<BTreeMap<String, String>>,
+        version: u32,
+    }
+
+    impl FakePlatform {
+        fn with_scripts(scripts: &[(&str, &str)]) -> Self {
+            let scripts = scripts
+                .iter()
+                .map(|(name, source)| (name.to_string(), source.to_string()))
+                .collect();
+            Self {
+                scripts: Some(scripts),
+                version: 0,
+            }
+        }
+
+        fn set_script(&mut self, name: &str, source: Option<&str>) {
+            let scripts = self.scripts.as_mut().unwrap();
+            match source {
+                Some(source) => scripts.insert(name.into(), source.into()),
+                None => scripts.remove(name),
+            };
+            self.version += 1;
+        }
+    }
+
+    impl IcPlatform for FakePlatform {
+        fn draw_line(&mut self, _: Vec2, _: Vec2, _: RGB8, _: u32) {}
+        fn draw_polygon(&mut self, _: &[Vec2], _: RGB8) {}
+        fn draw_rectangle(&mut self, _: IVec2, _: IVec2, _: RGB8, _: u32, _: Option<RGB8>) {}
+        fn draw_rectangle_rounded(
+            &mut self,
+            _: IVec2,
+            _: IVec2,
+            _: RGB8,
+            _: u32,
+            _: Option<RGB8>,
+            _: u32,
+        ) {
+        }
+        fn draw_triangle(
+            &mut self,
+            _: IVec2,
+            _: IVec2,
+            _: IVec2,
+            _: RGB8,
+            _: u32,
+            _: Option<RGB8>,
+        ) {
+        }
+        fn clear(&mut self, _: RGB8) {}
+        fn log(&mut self, _: core::fmt::Arguments) {}
+        fn millis(&self) -> u64 {
+            0
+        }
+        fn get_battery_soc(&self) -> Option<i32> {
+            None
+        }
+        fn get_brightness(&self) -> u8 {
+            255
+        }
+        fn set_brightness(&mut self, _: u8) {}
+        fn get_volume(&self) -> u8 {
+            0
+        }
+        fn set_volume(&mut self, _: u8) {}
+        fn get_screen_timeout_seconds(&self) -> u32 {
+            30
+        }
+        fn set_screen_timeout_seconds(&mut self, _: u32) {}
+        fn scripts_version(&self) -> u32 {
+            self.version
+        }
+        fn list_scripts(&mut self) -> Option<Vec<String>> {
+            Some(self.scripts.as_ref()?.keys().cloned().collect())
+        }
+        fn read_script(&mut self, file_name: &str) -> Option<String> {
+            self.scripts.as_ref()?.get(file_name).cloned()
+        }
+    }
+
+    fn script_names(shell: &IcShell) -> Vec<String> {
+        let compiled = shell.apps.len() - shell.script_keys.len();
+        shell.apps[compiled..]
+            .iter()
+            .map(|app| app.name().to_string())
+            .collect()
+    }
+
+    fn open_last_app(shell: &mut IcShell) -> usize {
+        let idx = shell.apps.len() - 1;
+        shell.active_app_idx = Some(idx);
+        shell.apps[idx].on_enter();
+        idx
+    }
+
+    #[test]
+    fn without_storage_the_example_is_shown() {
+        let mut shell = IcShell::new();
+        shell.update(&mut FakePlatform::default());
+        assert_eq!(script_names(&shell), ["Bouncer"]);
+    }
+
+    #[test]
+    fn scripts_are_listed_by_file_name() {
+        let mut platform = FakePlatform::with_scripts(&[("zeta.lua", ""), ("alpha.lua", "")]);
+        let mut shell = IcShell::new();
+        shell.update(&mut platform);
+        assert_eq!(script_names(&shell), ["alpha", "zeta"]);
+
+        platform.set_script("beta.lua", Some(""));
+        shell.update(&mut platform);
+        assert_eq!(script_names(&shell), ["alpha", "beta", "zeta"]);
+    }
+
+    #[test]
+    fn unchanged_scripts_keep_their_app() {
+        let mut platform = FakePlatform::with_scripts(&[("a.lua", ""), ("b.lua", "")]);
+        let mut shell = IcShell::new();
+        shell.update(&mut platform);
+        let before: *const dyn IcApp = &*shell.apps[shell.apps.len() - 1];
+
+        platform.set_script("a.lua", Some("x = 1"));
+        shell.update(&mut platform);
+        let after: *const dyn IcApp = &*shell.apps[shell.apps.len() - 1];
+        assert!(core::ptr::addr_eq(before, after), "b.lua was reloaded");
+    }
+
+    #[test]
+    fn editing_the_open_script_restarts_it() {
+        let mut platform = FakePlatform::with_scripts(&[("app.lua", "app = { name = \"Old\" }")]);
+        let mut shell = IcShell::new();
+        shell.update(&mut platform);
+        let idx = open_last_app(&mut shell);
+
+        platform.set_script("app.lua", Some("app = { name = \"New\" }"));
+        shell.update(&mut platform);
+        assert_eq!(shell.active_app_idx, Some(idx));
+        assert_eq!(shell.apps[idx].name(), "New");
+    }
+
+    #[test]
+    fn deleting_the_open_script_returns_to_the_menu() {
+        let mut platform = FakePlatform::with_scripts(&[("a.lua", ""), ("b.lua", "")]);
+        let mut shell = IcShell::new();
+        shell.update(&mut platform);
+        open_last_app(&mut shell);
+
+        platform.set_script("b.lua", None);
+        shell.update(&mut platform);
+        assert_eq!(shell.active_app_idx, None);
+        assert_eq!(script_names(&shell), ["a"]);
+    }
 }

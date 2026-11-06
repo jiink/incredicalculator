@@ -57,6 +57,67 @@
       .info-menu {
         z-index: 2;
       }
+      .scripts {
+        margin-top: 10px;
+      }
+      .scripts-hint {
+        font-size: 11px;
+        opacity: 0.7;
+      }
+      #script-list {
+        margin: 4px 0 0;
+        padding: 0;
+        list-style: none;
+      }
+      #script-list li {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      #script-list li button {
+        display: inline;
+        margin: 0;
+        padding: 0 5px;
+      }
+      #script-list .empty {
+        font-style: italic;
+        opacity: 0.7;
+      }
+      /* Author `display` rules beat the browser's own `[hidden]` style, so
+         restate it for elements that set one. */
+      [hidden] {
+        display: none !important;
+      }
+      /* Shown while a file is dragged over the page */
+      .drop-overlay {
+        position: fixed;
+        inset: 8px;
+        z-index: 3;
+        display: grid;
+        place-items: center;
+        border: 2px dashed rgba(255, 255, 255, 0.6);
+        border-radius: 12px;
+        background: rgba(11, 11, 18, 0.85);
+        color: #fff;
+        font-size: 20px;
+        pointer-events: none;
+      }
+      .toast {
+        position: fixed;
+        bottom: 12px;
+        left: 50%;
+        z-index: 3;
+        max-width: calc(100vw - 32px);
+        padding: 6px 12px;
+        border-radius: 6px;
+        background: rgba(40, 40, 56, 0.95);
+        color: #fff;
+        font-size: 14px;
+        transform: translateX(-50%);
+      }
+      .toast.error {
+        background: rgba(120, 24, 24, 0.95);
+      }
       /* Moved out of the (transformed) shell and sized by script so each
          canvas pixel covers exactly one screen pixel */
       canvas.pixel-perfect {
@@ -159,8 +220,17 @@
         <div id="frame-counter">frames: 0</div>
         <button id="pixel-perfect-toggle" aria-pressed="false">1:1 pixels</button>
         <button id="clear-settings">Clear settings</button>
+        <div class="scripts">
+          <div>Scripted apps</div>
+          <div class="scripts-hint">Drop .lua files on the page to add or update them.</div>
+          <ul id="script-list"></ul>
+          <button id="add-script">Add script…</button>
+          <input type="file" id="script-file" accept=".lua" multiple hidden />
+        </div>
       </div>
     </div>
+    <div class="drop-overlay" hidden>Drop .lua files to add them as apps</div>
+    <div class="toast" role="status" hidden></div>
     <div class="calculator-shell">
       <div class="display-slot">
         <canvas id="incredicalculator" width="320" height="240"></canvas>
@@ -193,7 +263,10 @@
     </div>
 
     <script type="module">
-      import init, { start, key_down, key_up, tick, fill_audio, has_active_audio, clear_settings } from './pkg/incredicalculator_web.js';
+      import init, {
+        start, key_down, key_up, tick, fill_audio, has_active_audio, clear_settings,
+        install_script, delete_script, installed_scripts,
+      } from './pkg/incredicalculator_web.js';
 
       // Frames are only rendered after input, or continuously while the
       // active app asks for realtime updates, to save battery.
@@ -214,6 +287,106 @@
           clear_settings();
           location.reload();
         }
+      });
+
+      // ---- Scripted apps ----
+      const scriptList = document.getElementById('script-list');
+      const scriptFile = document.getElementById('script-file');
+      const dropOverlay = document.querySelector('.drop-overlay');
+      const toast = document.querySelector('.toast');
+      let toastTimer = null;
+
+      function showToast(message, isError) {
+        toast.textContent = message;
+        toast.classList.toggle('error', isError);
+        toast.hidden = false;
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => { toast.hidden = true; }, isError ? 6000 : 3000);
+      }
+
+      function refreshScriptList() {
+        scriptList.replaceChildren();
+        const names = installed_scripts();
+        if (names.length === 0) {
+          const empty = document.createElement('li');
+          empty.className = 'empty';
+          empty.textContent = 'none installed';
+          scriptList.append(empty);
+        }
+        for (const name of names) {
+          const item = document.createElement('li');
+          const remove = document.createElement('button');
+          remove.textContent = '✕';
+          remove.title = `Delete ${name}`;
+          remove.setAttribute('aria-label', `Delete ${name}`);
+          remove.addEventListener('click', () => {
+            if (confirm(`Delete ${name}?`)) {
+              delete_script(name);
+              refreshScriptList();
+              requestFrame();
+            }
+          });
+          const label = document.createElement('span');
+          label.textContent = name;
+          item.append(remove, label);
+          scriptList.append(item);
+        }
+      }
+
+      async function installFiles(files) {
+        if (!ready) {
+          return;
+        }
+        const installed = [];
+        for (const file of files) {
+          try {
+            installed.push(install_script(file.name, await file.text()));
+          } catch (message) {
+            showToast(String(message), true);
+          }
+        }
+        if (installed.length > 0) {
+          showToast(`Installed ${installed.join(', ')}. Find it in the apps menu.`, false);
+          refreshScriptList();
+          requestFrame();
+        }
+      }
+
+      document.getElementById('add-script').addEventListener('click', () => scriptFile.click());
+      scriptFile.addEventListener('change', () => {
+        installFiles([...scriptFile.files]);
+        scriptFile.value = '';
+      });
+
+      // Only react to drags that carry files, not text or links.
+      const draggingFiles = (event) => event.dataTransfer?.types.includes('Files');
+      let dragDepth = 0;
+      document.addEventListener('dragenter', (event) => {
+        if (draggingFiles(event)) {
+          dragDepth += 1;
+          dropOverlay.hidden = false;
+        }
+      });
+      document.addEventListener('dragleave', (event) => {
+        if (draggingFiles(event) && --dragDepth <= 0) {
+          dragDepth = 0;
+          dropOverlay.hidden = true;
+        }
+      });
+      document.addEventListener('dragover', (event) => {
+        if (draggingFiles(event)) {
+          event.preventDefault();
+          event.dataTransfer.dropEffect = 'copy';
+        }
+      });
+      document.addEventListener('drop', (event) => {
+        if (!draggingFiles(event)) {
+          return;
+        }
+        event.preventDefault();
+        dragDepth = 0;
+        dropOverlay.hidden = true;
+        installFiles([...event.dataTransfer.files]);
       });
 
       function requestFrame() {
@@ -402,6 +575,7 @@
       await init();
       start();
       ready = true;
+      refreshScriptList();
       requestFrame();
     </script>
   </body>

@@ -1,7 +1,7 @@
 # Patches to tsuki 0.4.8
 
 This is a vendored copy of [tsuki](https://github.com/ultimaweapon/tsuki) 0.4.8, a
-port of Lua 5.4 to Rust, used by the `script-lua` engine for scripted apps. It is
+port of Lua 5.4 to Rust, used for scripted apps. It is
 wired in through `[patch.crates-io]` in the workspace `Cargo.toml`. Tests,
 benches and dev-dependencies were left out: a path dependency inside the
 workspace becomes a workspace member, and its dev-dependencies would otherwise

@@ -1,5 +1,5 @@
 use core::fmt;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use glam::{IVec2, Vec2};
@@ -10,6 +10,8 @@ use web_sys::{console, window, CanvasRenderingContext2d, HtmlCanvasElement, Stor
 
 thread_local! {
     static APP: RefCell<Option<BrowserState>> = RefCell::new(None);
+    /// Bumped whenever the page installs or deletes a script.
+    static SCRIPTS_VERSION: Cell<u32> = const { Cell::new(0) };
 }
 
 struct BrowserState {
@@ -20,7 +22,8 @@ struct BrowserState {
 
 use incredicalculator_core::input::IcKey;
 use incredicalculator_core::platform::{
-    IcPlatform, CANVAS_HEIGHT, CANVAS_WIDTH, SETTINGS_STORAGE_LEN,
+    CANVAS_HEIGHT, CANVAS_WIDTH, IcPlatform, MAX_SCRIPT_BYTES, SCRIPT_EXTENSION,
+    SETTINGS_STORAGE_LEN,
 };
 use incredicalculator_core::shell::IcShell;
 
@@ -241,6 +244,18 @@ impl IcPlatform for BrowserPlatform {
             console::warn_1(&"failed to save settings to localStorage".into());
         }
     }
+
+    fn scripts_version(&self) -> u32 {
+        SCRIPTS_VERSION.with(Cell::get)
+    }
+
+    fn list_scripts(&mut self) -> Option<Vec<String>> {
+        Some(script_file_names(&local_storage()?))
+    }
+
+    fn read_script(&mut self, file_name: &str) -> Option<String> {
+        local_storage()?.get_item(&script_key(file_name)).ok()?
+    }
 }
 
 /// localStorage key holding the settings blob as a hex string.
@@ -249,6 +264,108 @@ const SETTINGS_STORAGE_KEY: &str = "incredicalculator.settings";
 /// Returns `None` when storage is unavailable, e.g. blocked by privacy settings.
 fn local_storage() -> Option<Storage> {
     window()?.local_storage().ok()?
+}
+
+/// Installed scripts are stored under this prefix plus their file name.
+const SCRIPT_KEY_PREFIX: &str = "incredicalculator.script.";
+/// Set once the example script has been installed on first run, so deleting
+/// it sticks.
+const SCRIPTS_SEEDED_KEY: &str = "incredicalculator.scripts_seeded";
+/// Longest script file name accepted, extension included.
+const MAX_SCRIPT_NAME_LEN: usize = 48;
+
+fn script_key(file_name: &str) -> String {
+    format!("{SCRIPT_KEY_PREFIX}{file_name}")
+}
+
+fn script_file_names(storage: &Storage) -> Vec<String> {
+    let len = storage.length().unwrap_or(0);
+    let mut names: Vec<String> = (0..len)
+        .filter_map(|i| storage.key(i).ok().flatten())
+        .filter_map(|key| key.strip_prefix(SCRIPT_KEY_PREFIX).map(String::from))
+        .collect();
+    names.sort();
+    names
+}
+
+fn bump_scripts_version() {
+    SCRIPTS_VERSION.with(|v| v.set(v.get().wrapping_add(1)));
+}
+
+/// Checks a dropped file's name and returns the name to store it under.
+fn validate_script_name(file_name: &str) -> Result<String, String> {
+    // Browsers give just the name, but strip any path to be safe.
+    let name = file_name.rsplit(['/', '\\']).next().unwrap_or(file_name);
+    let extension = format!(".{SCRIPT_EXTENSION}");
+    let Some(stem) = name
+        .len()
+        .checked_sub(extension.len())
+        .filter(|&i| name.is_char_boundary(i) && name[i..].eq_ignore_ascii_case(&extension))
+        .map(|i| &name[..i])
+    else {
+        return Err(format!("\"{name}\" isn't a {extension} file."));
+    };
+    if stem.is_empty() || stem.starts_with('.') || stem.chars().any(char::is_control) {
+        return Err(format!("\"{name}\" isn't a usable file name."));
+    }
+    if name.len() > MAX_SCRIPT_NAME_LEN {
+        return Err(format!(
+            "\"{name}\" has a name longer than {MAX_SCRIPT_NAME_LEN} characters."
+        ));
+    }
+    Ok(format!("{stem}{extension}"))
+}
+
+/// Installs (or replaces) a script, returning the file name it was stored
+/// under. The error is a message for the user.
+#[wasm_bindgen]
+pub fn install_script(file_name: &str, source: &str) -> Result<String, String> {
+    let name = validate_script_name(file_name)?;
+    if source.len() > MAX_SCRIPT_BYTES {
+        return Err(format!(
+            "\"{name}\" is {} KiB; scripts can be at most {} KiB.",
+            source.len().div_ceil(1024),
+            MAX_SCRIPT_BYTES / 1024
+        ));
+    }
+    let storage = local_storage().ok_or("Browser storage isn't available.")?;
+    storage
+        .set_item(&script_key(&name), source)
+        .map_err(|_| String::from("Browser storage is full."))?;
+    bump_scripts_version();
+    Ok(name)
+}
+
+/// Deletes an installed script by its file name.
+#[wasm_bindgen]
+pub fn delete_script(file_name: &str) {
+    if let Some(storage) = local_storage() {
+        let _ = storage.remove_item(&script_key(file_name));
+        bump_scripts_version();
+    }
+}
+
+/// File names of the installed scripts, sorted.
+#[wasm_bindgen]
+pub fn installed_scripts() -> Vec<String> {
+    local_storage()
+        .map(|storage| script_file_names(&storage))
+        .unwrap_or_default()
+}
+
+/// Installs the example script the first time the page is opened.
+#[cfg(feature = "scripting")]
+fn seed_example_script() {
+    let Some(storage) = local_storage() else {
+        return;
+    };
+    if let Ok(Some(_)) = storage.get_item(SCRIPTS_SEEDED_KEY) {
+        return;
+    }
+    let (file_name, source) = incredicalculator_core::script::EXAMPLE_SCRIPT;
+    if install_script(file_name, source).is_ok() {
+        let _ = storage.set_item(SCRIPTS_SEEDED_KEY, "1");
+    }
 }
 
 /// Deletes the saved settings. The running shell keeps its current values, so
@@ -396,6 +513,8 @@ pub fn tick() -> bool {
 #[wasm_bindgen(start)]
 pub fn start() {
     console_error_panic_hook::set_once();
+    #[cfg(feature = "scripting")]
+    seed_example_script();
 
     let window = window().expect("browser window should exist");
     let document = window.document().expect("document should exist");

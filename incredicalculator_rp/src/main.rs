@@ -59,8 +59,8 @@ const DISPLAY_FREQ: u32 = 60_000_000;
 #[global_allocator]
 static HEAP: memory::TrackingHeap = memory::TrackingHeap::empty();
 
-/// Sized to also fit one scripted app's engine (about 35-40 KB for the
-/// example script) on top of the compiled apps.
+/// Sized to also fit one scripted app's Lua engine (about 33 KB for the
+/// example script, measured on the host) on top of the compiled apps.
 const HEAP_SIZE: usize = 96 * 1024;
 
 #[unsafe(link_section = ".uninit.HEAP_MEM")]

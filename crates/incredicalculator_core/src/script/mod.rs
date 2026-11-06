@@ -1,12 +1,10 @@
-//! Scripted apps: apps whose behavior comes from a script instead of
-//! compiled-in Rust.
+//! Scripted apps: apps whose behavior comes from a Lua script instead of
+//! compiled-in Rust. Built with the `scripting` feature.
 //!
-//! The script engine is chosen at compile time with a Cargo feature,
-//! `script-rhai` or `script-lua` (only one at a time; with either on,
-//! build.rs sets `cfg(scripting)`). Every engine implements [`ScriptEngine`], and
-//! [`ScriptApp`](crate::apps::ScriptApp) wraps whichever one is active as an
-//! [`IcApp`](crate::app::IcApp), so the shell never knows which language a
-//! scripted app is written in.
+//! The Lua bindings implement [`ScriptEngine`], and
+//! [`ScriptApp`](crate::apps::ScriptApp) wraps the engine as an
+//! [`IcApp`](crate::app::IcApp), so the shell and the app logic stay separate
+//! from the language bindings.
 //!
 //! Engines never touch the platform. A script's drawing calls are recorded
 //! into [`ScriptHost::commands`], which the app replays on the platform after
@@ -21,43 +19,21 @@ use rgb::RGB8;
 use crate::input::IcKey;
 use crate::text::HAlign;
 
-#[cfg(feature = "script-lua")]
 mod lua_engine;
-#[cfg(feature = "script-rhai")]
-mod rhai_engine;
 
-/// The engine selected by Cargo features.
-#[cfg(feature = "script-rhai")]
-pub type ActiveEngine = rhai_engine::RhaiEngine;
-#[cfg(feature = "script-lua")]
+/// The engine that runs scripted apps.
 pub type ActiveEngine = lua_engine::LuaEngine;
 
-/// Hard-coded example script, shown in the apps menu until scripts can be
-/// loaded from storage.
-#[cfg(feature = "script-rhai")]
-pub const EXAMPLE_SCRIPT: (&str, &str) = ("bouncer", include_str!("../../scripts/bouncer.rhai"));
-#[cfg(feature = "script-lua")]
-pub const EXAMPLE_SCRIPT: (&str, &str) = ("bouncer", include_str!("../../scripts/bouncer.lua"));
+/// Example script bundled into the firmware, as (file name, source).
+pub const EXAMPLE_SCRIPT: (&str, &str) = ("bouncer.lua", include_str!("../../scripts/bouncer.lua"));
 
-/// The same small scripts in each engine's language, for tests shared by
-/// all engines.
+/// Small scripts for tests.
 #[cfg(test)]
 pub(crate) mod test_sources {
-    #[cfg(feature = "script-rhai")]
-    mod sources {
-        pub const RUNTIME_ERROR: &str = "fn update() { this.x = undefined_fn(); }";
-        pub const SYNTAX_ERROR: &str = "fn update( {";
-        pub const ENDLESS_LOOP: &str = "fn update() { loop { } }";
-        pub const DRAW_FLOOD: &str = "fn update() { for i in 0..10000 { clear(0); } }";
-    }
-    #[cfg(feature = "script-lua")]
-    mod sources {
-        pub const RUNTIME_ERROR: &str = "function update() x = undefined_fn() end";
-        pub const SYNTAX_ERROR: &str = "function update( end";
-        pub const ENDLESS_LOOP: &str = "function update() while true do end end";
-        pub const DRAW_FLOOD: &str = "function update() for i = 1, 10000 do clear(0) end end";
-    }
-    pub use sources::*;
+    pub const RUNTIME_ERROR: &str = "function update() x = undefined_fn() end";
+    pub const SYNTAX_ERROR: &str = "function update( end";
+    pub const ENDLESS_LOOP: &str = "function update() while true do end end";
+    pub const DRAW_FLOOD: &str = "function update() for i = 1, 10000 do clear(0) end end";
 }
 
 /// Most drawing commands one script call may record. Scripts that draw more

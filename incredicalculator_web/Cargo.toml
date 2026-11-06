@@ -29,6 +29,5 @@ features = [
 ]
 
 [features]
-default = ["script-rhai"]
-script-rhai = ["incredicalculator_core/script-rhai"]
-script-lua = ["incredicalculator_core/script-lua"]
+default = ["scripting"]
+scripting = ["incredicalculator_core/scripting"]

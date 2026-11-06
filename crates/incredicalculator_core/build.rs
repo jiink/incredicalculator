@@ -8,7 +8,6 @@ use std::process::Command;
 
 fn main() {
     emit_firmware_version();
-    emit_scripting_cfg();
 
     let manifest_dir = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
     let assets_dir = manifest_dir.join("assets");
@@ -269,18 +268,4 @@ fn color_literal(color: [u8; 4]) -> String {
         "Color {{ r: {}, g: {}, b: {}, a: {} }}",
         color[0], color[1], color[2], color[3]
     )
-}
-
-/// Sets `cfg(scripting)` when a script engine feature is on, so code shared by
-/// all engines can use one cfg instead of listing every engine feature.
-fn emit_scripting_cfg() {
-    println!("cargo::rustc-check-cfg=cfg(scripting)");
-    let rhai = env::var_os("CARGO_FEATURE_SCRIPT_RHAI").is_some();
-    let lua = env::var_os("CARGO_FEATURE_SCRIPT_LUA").is_some();
-    if rhai && lua {
-        panic!("enable only one script engine feature: script-rhai or script-lua");
-    }
-    if rhai || lua {
-        println!("cargo::rustc-cfg=scripting");
-    }
 }

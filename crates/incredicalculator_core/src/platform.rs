@@ -1,3 +1,5 @@
+use alloc::string::String;
+use alloc::vec::Vec;
 use core::fmt;
 use glam::{IVec2, Vec2};
 use rgb::*;
@@ -6,6 +8,10 @@ pub const CANVAS_WIDTH: u32 = 320;
 pub const CANVAS_HEIGHT: u32 = 240;
 /// Size of the opaque settings blob a platform persists between sessions.
 pub const SETTINGS_STORAGE_LEN: usize = 9;
+/// File extension of scripted apps (Lua), without the dot.
+pub const SCRIPT_EXTENSION: &str = "lua";
+/// Largest script file a platform should store, in bytes.
+pub const MAX_SCRIPT_BYTES: usize = 16 * 1024;
 
 pub trait IcPlatform {
     fn draw_line(&mut self, start: Vec2, end: Vec2, color: RGB8, width: u32);
@@ -57,6 +63,21 @@ pub trait IcPlatform {
         None
     }
     fn save_settings(&mut self, _data: &[u8; SETTINGS_STORAGE_LEN]) {}
+    /// Changes whenever installed scripts are added, removed or edited, so the
+    /// shell knows to reload its scripted apps. Any change in value works.
+    fn scripts_version(&self) -> u32 {
+        0
+    }
+    /// File names (like `bouncer.lua`) of the installed scripts, or `None`
+    /// when the platform has no script storage, in which case the shell shows
+    /// the example script bundled into the firmware instead.
+    fn list_scripts(&mut self) -> Option<Vec<String>> {
+        None
+    }
+    /// Source of an installed script, by a file name from `list_scripts`.
+    fn read_script(&mut self, _file_name: &str) -> Option<String> {
+        None
+    }
     /// RAM usage, for platforms with a fixed memory budget. Shown by the
     /// shell when the "Show memory" setting is on.
     fn memory_stats(&self) -> Option<MemoryStats> {

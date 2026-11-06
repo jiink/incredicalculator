@@ -35,9 +35,13 @@ pub struct ScriptApp {
 }
 
 impl ScriptApp {
-    /// `file_stem` is the script's file name without extension, used as the
-    /// app name unless the script declares one.
-    pub fn new(file_stem: &str, source: impl Into<Cow<'static, str>>) -> Self {
+    /// `file_name` (like `bouncer.lua`), without its extension, is the app
+    /// name unless the script declares one.
+    pub fn new(file_name: &str, source: impl Into<Cow<'static, str>>) -> Self {
+        let file_stem = file_name
+            .strip_suffix(crate::platform::SCRIPT_EXTENSION)
+            .and_then(|stem| stem.strip_suffix('.'))
+            .unwrap_or(file_name);
         let mut app = Self {
             name: String::from(file_stem),
             color: default_color(file_stem),
@@ -298,6 +302,7 @@ mod tests {
         let app = ScriptApp::new(name, source);
         assert!(app.error.is_none(), "{:?}", app.error);
         assert_eq!(app.name(), "Bouncer");
+        assert_eq!(ScriptApp::new("my-app.lua", "").name(), "my-app");
         assert!(app.requires_realtime_updates());
     }
 
