@@ -5,7 +5,7 @@
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use flash_disk::fat::{self, Volume};
+use flash_disk::fat;
 use flash_disk::{DiskError, ERASE_SIZE, Flash, FlashDisk, PAGE_SIZE};
 
 struct CountingAlloc;
@@ -96,13 +96,11 @@ fn drive_operations_fit_the_heap_budget() {
         fat::format(&mut disk, 1, &[("big.lua", script.as_bytes())]).unwrap();
         disk.release_cache().unwrap();
     });
-    let volume = measure("mount", || Volume::mount(&mut disk).unwrap());
-    let entries = measure("list", || volume.list_root(&mut disk).unwrap());
+    measure("mount", || fat::check(&mut disk).unwrap());
+    let entries = measure("list", || fat::list_root(&mut disk).unwrap());
     assert_eq!(entries.len(), 1);
     let data = measure("read", || {
-        volume
-            .read_file(&mut disk, &entries[0], MAX_SCRIPT_BYTES)
-            .unwrap()
+        fat::read_file(&mut disk, &entries[0].name, MAX_SCRIPT_BYTES).unwrap()
     });
     assert_eq!(data, script.as_bytes());
 }

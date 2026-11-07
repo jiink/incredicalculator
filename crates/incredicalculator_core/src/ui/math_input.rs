@@ -400,6 +400,15 @@ impl<const N: usize> MathInput<N> {
     }
 
     pub fn evaluate(&self) -> Result<f32, MathInputError> {
+        let value = self.evaluate_f64()? as f32;
+        if !value.is_finite() {
+            return Err(MathInputError::NonFinite);
+        }
+        Ok(value)
+    }
+
+    /// Like [`evaluate`](Self::evaluate), at full precision.
+    pub fn evaluate_f64(&self) -> Result<f64, MathInputError> {
         if self.is_empty() {
             return Err(MathInputError::Empty);
         }
@@ -408,19 +417,19 @@ impl<const N: usize> MathInput<N> {
             MathInputMode::Integer => self
                 .text()
                 .parse::<i32>()
-                .map(|v| v as f32)
+                .map(f64::from)
                 .map_err(|_| MathInputError::InvalidValue)?,
 
             MathInputMode::Expression => exp_rs::interp(self.text(), None)
-                .map(|v| v as f32)
+                .map(|v| v as f64)
                 .map_err(|_| MathInputError::InvalidValue)?,
 
             MathInputMode::Hexadecimal => u32::from_str_radix(self.text(), 16)
-                .map(|v| v as f32)
+                .map(f64::from)
                 .map_err(|_| MathInputError::InvalidValue)?,
 
             MathInputMode::Bytebeat => bitwise_expr::evaluate(self.text())
-                .map(|v| v as f32)
+                .map(|v| v as f64)
                 .map_err(|_| MathInputError::InvalidValue)?,
         };
 

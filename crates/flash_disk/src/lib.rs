@@ -5,8 +5,8 @@
 //!   device with 512-byte sectors, caching one erase block so a run of sector
 //!   writes costs one erase.
 //! - [`fat`] formats such a device as FAT12 and lists and reads files in its
-//!   root directory. Everything else (creating, editing and deleting files)
-//!   is left to the PC, which writes sectors through [`scsi`].
+//!   root directory, using rust-fatfs. Everything else (creating, editing and
+//!   deleting files) is left to the PC, which writes sectors through [`scsi`].
 //! - [`scsi`] parses USB Bulk-Only Transport command blocks and answers the
 //!   SCSI commands PCs send to a USB drive. The USB transfers themselves are
 //!   up to the platform.

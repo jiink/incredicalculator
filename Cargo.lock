@@ -1321,6 +1321,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "37909eebbb50d72f9059c3b6d82c0463f2ff062c9e95845c43a6c9c0355411be"
 
 [[package]]
+name = "fatfs"
+version = "0.4.0"
+source = "git+https://github.com/rafalh/rust-fatfs?rev=38b3a7950bf0#38b3a7950bf0e765e34286d1dfe76c519ee347e2"
+dependencies = [
+ "bitflags 2.13.0",
+ "log",
+]
+
+[[package]]
 name = "find-msvc-tools"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1347,6 +1356,9 @@ checksum = "1d674e81391d1e1ab681a28d99df07927c6d4aa5b027d7da16ba32d1d21ecd99"
 [[package]]
 name = "flash_disk"
 version = "0.1.0"
+dependencies = [
+ "fatfs",
+]
 
 [[package]]
 name = "float-cmp"

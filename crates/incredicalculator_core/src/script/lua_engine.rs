@@ -20,11 +20,14 @@ use tsuki::context::{Args, Context, Ret};
 use tsuki::{CallError, Lua, RegKey, Thread, Value, fp};
 
 use super::{
-    DrawCmd, ScriptEngine, ScriptHost, ScriptMeta, align_from_name, color_from_int, key_from_name,
-    key_name,
+    DrawCmd, INPUT_CAPACITY, MAX_INPUTS, ScriptEngine, ScriptHost, ScriptInput, ScriptMeta,
+    align_from_name, color_from_int, key_action, key_from_name, key_name,
 };
-use crate::input::IcKey;
+use crate::app::InputContext;
+use crate::input::{IcKey, KeyMode, KeyState};
+use crate::platform::rgb8_hex;
 use crate::text::{HAlign, TextStyle, text_width};
+use crate::ui::{MathInputDirection, MathInputEvent, MathInputMode};
 
 /// Jumps, loop iterations and calls allowed per hook call before it is
 /// stopped, so an endless loop shows an error instead of freezing.
@@ -82,20 +85,35 @@ pub struct LuaEngine {
 impl LuaEngine {
     /// Calls the global function `name`, with the caller's host swapped into
     /// the state the native functions write to.
-    fn call(&mut self, host: &mut ScriptHost, name: &str, key: Option<&str>) -> Result<(), String> {
+    /// `on_key` gets the key's name and its legend's meaning (or nil).
+    fn call(
+        &mut self,
+        host: &mut ScriptHost,
+        name: &str,
+        key: Option<IcKey>,
+    ) -> Result<(), String> {
+        host.key = key;
         core::mem::swap(&mut *self.lua.associated_data().get(), host);
         self.lua.set_budget(Some(MAX_BUDGET));
         let thread = self.lua.registry::<HookThread>().expect("hook thread");
         let function = self.lua.global().get_str_key(name);
         let result = match key {
             Some(key) => {
-                let key = self.lua.create_str(key);
-                thread.call::<()>(function, key)
+                let action = {
+                    let data = self.lua.associated_data().get();
+                    key_action(key, data.shifted(), data.super_held())
+                };
+                let key = self.lua.create_str(key_name(key));
+                match action {
+                    Some(action) => thread.call::<()>(function, (key, self.lua.create_str(action))),
+                    None => thread.call::<()>(function, (key, tsuki::Nil)),
+                }
             }
             None => thread.call::<()>(function, ()),
         };
         self.lua.set_budget(None);
         core::mem::swap(&mut *self.lua.associated_data().get(), host);
+        host.key = None;
         result.map_err(|e| describe(&*e))
     }
 }
@@ -114,7 +132,7 @@ fn describe(error: &(dyn Error + 'static)) -> String {
 impl ScriptEngine for LuaEngine {
     const FILE_EXTENSION: &'static str = "lua";
 
-    fn load(source: &str) -> Result<(Self, ScriptMeta), String> {
+    fn load(source: &str, host: &mut ScriptHost) -> Result<(Self, ScriptMeta), String> {
         let lua = Lua::with_seed(
             Host {
                 host: RefCell::new(ScriptHost::new()),
@@ -132,12 +150,15 @@ impl ScriptEngine for LuaEngine {
         lua.set_registry::<HookThread>(&lua.create_thread());
 
         let chunk = lua.load("script", source).map_err(|e| e.to_string())?;
+        // The top level may make input boxes, which belong in `host`.
+        core::mem::swap(&mut *lua.associated_data().get(), host);
         lua.set_budget(Some(MAX_BUDGET));
         let ran = lua
             .registry::<HookThread>()
             .expect("hook thread")
             .call::<()>(&*chunk, ());
         lua.set_budget(None);
+        core::mem::swap(&mut *lua.associated_data().get(), host);
         drop(chunk);
         ran.map_err(|e| describe(&*e))?;
         let meta = read_meta(&lua)?;
@@ -173,7 +194,7 @@ impl ScriptEngine for LuaEngine {
         if !self.has_on_key {
             return Ok(());
         }
-        self.call(host, "on_key", Some(key_name(key)))
+        self.call(host, "on_key", Some(key))
     }
 }
 
@@ -222,6 +243,7 @@ fn register_api(lua: &Lua<Host>) {
     g.set_str_key("triangle", fp!(triangle));
     g.set_str_key("polygon", fp!(polygon));
     g.set_str_key("text", fp!(text));
+    g.set_str_key("math_input", fp!(math_input));
 
     // Standard functions tsuki doesn't implement yet.
     if let Value::Table(table) = g.get_str_key("table") {
@@ -497,13 +519,209 @@ fn text(cx: Cx) -> FnResult {
     Ok(cx.into())
 }
 
+// ---- Input boxes ----
+
+/// Number of an optional field of an options table.
+fn field_num(table: &tsuki::Table<Host>, name: &str) -> Result<Option<f32>, Box<dyn Error>> {
+    match table.get_str_key(name) {
+        Value::Nil => Ok(None),
+        Value::Int(v) => Ok(Some(v as f32)),
+        Value::Float(v) => Ok(Some(f64::from(v) as f32)),
+        _ => Err(format!("math_input: {name} must be a number").into()),
+    }
+}
+
+fn field_color(
+    table: &tsuki::Table<Host>,
+    name: &str,
+) -> Result<Option<rgb::RGB8>, Box<dyn Error>> {
+    match table.get_str_key(name) {
+        Value::Nil => Ok(None),
+        Value::Int(v) => Ok(Some(color_from_int(v))),
+        _ => Err(format!("math_input: {name} must be a color like 0xRRGGBB").into()),
+    }
+}
+
+fn field_str(table: &tsuki::Table<Host>, name: &str) -> Result<Option<String>, Box<dyn Error>> {
+    match table.get_str_key(name) {
+        Value::Nil => Ok(None),
+        Value::Str(v) => Ok(v.as_utf8().map(String::from)),
+        _ => Err(format!("math_input: {name} must be a string").into()),
+    }
+}
+
+/// `math_input{ x =, y =, w =, h =, mode =, text =, size =, bg =, focus_bg =, border = }`
+/// makes an input box and returns it as a table of methods.
+fn math_input(cx: Cx) -> FnResult {
+    let opts = match cx.args() {
+        0 => None,
+        _ => Some(cx.arg(1).get_table()?),
+    };
+    let get = |name| opts.map_or(Ok(None), |t| field_num(t, name));
+    let x = get("x")?.unwrap_or(10.0);
+    let y = get("y")?.unwrap_or(40.0);
+    let w = get("w")?.unwrap_or(300.0);
+    let h = get("h")?.unwrap_or(40.0);
+    let size = get("size")?.unwrap_or(h * 0.4);
+    let color = |name, default| {
+        opts.map_or(Ok(None), |t| field_color(t, name))
+            .map(|c| c.unwrap_or(default))
+    };
+    let bg = color("bg", rgb8_hex(0x1D2733))?;
+    let focus_bg = color("focus_bg", rgb8_hex(0xFFFFFF))?;
+    let border = opts.map_or(Ok(None), |t| field_color(t, "border"))?;
+    let mode = match opts.map_or(Ok(None), |t| field_str(t, "mode"))?.as_deref() {
+        None | Some("expression") => MathInputMode::Expression,
+        Some("integer") => MathInputMode::Integer,
+        Some("hex") => MathInputMode::Hexadecimal,
+        Some(other) => {
+            return Err(format!(
+                "math_input: mode must be \"expression\", \"integer\" or \"hex\", not \"{other}\""
+            )
+            .into());
+        }
+    };
+    let mut input = ScriptInput::new(
+        IVec2::new(x as i32, y as i32),
+        IVec2::new(w as i32, h as i32),
+        mode,
+        (size * 0.5).max(1.0),
+        size.max(1.0),
+        bg,
+        focus_bg,
+        border,
+    );
+    if let Some(text) = opts.map_or(Ok(None), |t| field_str(t, "text"))? {
+        input
+            .set_text(&text)
+            .map_err(|_| format!("math_input: can't start with the text \"{text}\""))?;
+    }
+    let index = {
+        let mut host = cx.associated_data().get();
+        if host.inputs.len() >= MAX_INPUTS {
+            return Err(format!("a script can make at most {MAX_INPUTS} math_input boxes").into());
+        }
+        host.inputs.push(input);
+        host.inputs.len() - 1
+    };
+    let handle = cx.create_table();
+    handle.set_str_key("id", index as i64);
+    handle.set_str_key("key", fp!(input_key));
+    handle.set_str_key("text", fp!(input_text));
+    handle.set_str_key("set_text", fp!(input_set_text));
+    handle.set_str_key("clear", fp!(input_clear));
+    handle.set_str_key("value", fp!(input_value));
+    handle.set_str_key("draw", fp!(input_draw));
+    cx.push(handle)?;
+    Ok(cx.into())
+}
+
+/// Index of the input box `box` in `box:method(...)`.
+fn input_index(cx: &Cx) -> Result<usize, Box<dyn Error>> {
+    let arg = cx.arg(1);
+    let not_a_box =
+        || arg.error("expected a math_input box (call its methods with a colon, like box:text())");
+    let table = arg.get_table().map_err(|_| not_a_box())?;
+    let index = match table.get_str_key("id") {
+        Value::Int(id) => id as usize,
+        _ => return Err(not_a_box()),
+    };
+    if index >= cx.associated_data().get().inputs.len() {
+        return Err(not_a_box());
+    }
+    Ok(index)
+}
+
+fn with_input<R>(cx: &Cx, f: impl FnOnce(&mut ScriptInput) -> R) -> Result<R, Box<dyn Error>> {
+    let index = input_index(cx)?;
+    Ok(f(&mut cx.associated_data().get().inputs[index]))
+}
+
+/// `box:key()`, from `on_key`: gives the key being handled to the box.
+/// Returns "changed", "handled", "enter", "up", "down", "left" or "right",
+/// or nil if the box has no use for the key.
+fn input_key(cx: Cx) -> FnResult {
+    let index = input_index(&cx)?;
+    let event = {
+        let mut host = cx.associated_data().get();
+        let key = host.key.ok_or("box:key() only works in on_key")?;
+        let mut states = [KeyState::default(); IcKey::COUNT];
+        for (state, &down) in states.iter_mut().zip(&host.keys_down) {
+            state.is_down = down;
+        }
+        let ctx = InputContext {
+            key_states: &states,
+            key_mode: KeyMode::Normal,
+            shift_engaged: false,
+            shift_disengaged: false,
+        };
+        host.inputs[index].handle_key(key, &ctx)
+    };
+    let result = match event {
+        MathInputEvent::Ignored => None,
+        MathInputEvent::Handled => Some("handled"),
+        MathInputEvent::Changed => Some("changed"),
+        MathInputEvent::Submitted => Some("enter"),
+        MathInputEvent::Navigate(MathInputDirection::Up) => Some("up"),
+        MathInputEvent::Navigate(MathInputDirection::Down) => Some("down"),
+        MathInputEvent::Navigate(MathInputDirection::Left) => Some("left"),
+        MathInputEvent::Navigate(MathInputDirection::Right) => Some("right"),
+    };
+    match result {
+        Some(result) => cx.push_str(result)?,
+        None => cx.push(tsuki::Nil)?,
+    }
+    Ok(cx.into())
+}
+
+/// `box:text()`
+fn input_text(cx: Cx) -> FnResult {
+    let text = with_input(&cx, |input| String::from(input.text()))?;
+    cx.push_str(text)?;
+    Ok(cx.into())
+}
+
+/// `box:set_text(s)`: returns false, leaving the box alone, if `s` doesn't
+/// fit or has characters the box's mode can't type.
+fn input_set_text(cx: Cx) -> FnResult {
+    let text = cx.arg(2).to_utf8()?.to_string();
+    let ok =
+        text.len() <= INPUT_CAPACITY && with_input(&cx, |input| input.set_text(&text).is_ok())?;
+    cx.push(ok)?;
+    Ok(cx.into())
+}
+
+/// `box:clear()`
+fn input_clear(cx: Cx) -> FnResult {
+    with_input(&cx, |input| input.clear())?;
+    Ok(cx.into())
+}
+
+/// `box:value()`: the number typed or worked out, or nil if the box is
+/// empty or doesn't hold a valid expression.
+fn input_value(cx: Cx) -> FnResult {
+    match with_input(&cx, |input| input.evaluate_f64().ok())? {
+        Some(value) => cx.push(value)?,
+        None => cx.push(tsuki::Nil)?,
+    }
+    Ok(cx.into())
+}
+
+/// `box:draw([focused])`: a focused box is highlighted and shows the cursor.
+fn input_draw(cx: Cx) -> FnResult {
+    let index = input_index(&cx)?;
+    let focused = cx.arg(2).to_bool().unwrap_or(false);
+    push(&cx, DrawCmd::Input { index, focused })?;
+    Ok(cx.into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn run(source: &str) -> Result<ScriptHost, String> {
-        let (mut engine, _) = LuaEngine::load(source)?;
         let mut host = ScriptHost::new();
+        let (mut engine, _) = LuaEngine::load(source, &mut host)?;
         engine.update(&mut host)?;
         Ok(host)
     }
@@ -514,6 +732,12 @@ mod tests {
             function update()
                 assert(math.floor(3.7) == 3)
                 assert(string.format("%d!", 7) == "7!")
+                assert(string.format("%.3g", 1234.5) == "1.23e+03")
+                assert(string.format("%g %g %g", 0.0001, 100000, 1e6) == "0.0001 100000 1e+06")
+                assert(string.format("%g", 2.5) == "2.5")
+                assert(string.format("%.2e", -12345) == "-1.23e+04")
+                assert(string.format("%08.3g|%-6g|", 3.14159, 1.5) == "00003.14|1.5   |")
+                assert(string.format("%G %+.1f", 1e-10, 2) == "1E-10 +2.0")
                 local t = {1, 2}
                 table.insert(t, 5)
                 assert(#t == 3 and t[3] == 5)
@@ -546,6 +770,122 @@ mod tests {
         ] {
             assert!(run(source).is_err(), "{source}");
         }
+    }
+
+    /// Loads `source`, then presses each `(key, shift, super)` in turn.
+    fn press_all(source: &str, keys: &[(IcKey, bool, bool)]) -> ScriptHost {
+        let mut host = ScriptHost::new();
+        let (mut engine, _) = LuaEngine::load(source, &mut host).unwrap();
+        engine.init(&mut host).unwrap();
+        for &(key, shift, super_held) in keys {
+            host.keys_down[IcKey::Shift as usize] = shift;
+            host.keys_down[IcKey::Super as usize] = super_held;
+            engine.on_key(key, &mut host).unwrap();
+        }
+        host.keys_down = [false; IcKey::COUNT];
+        engine.update(&mut host).unwrap();
+        host
+    }
+
+    #[test]
+    fn on_key_gets_the_legends_meaning() {
+        let host = press_all(
+            "function on_key(key, action) print(key, action) end",
+            &[
+                (IcKey::Num7, false, false),
+                (IcKey::Num7, true, false),
+                (IcKey::Num8, false, true),
+                (IcKey::Func1, false, false),
+                (IcKey::Func6, false, false),
+                (IcKey::Func2, false, true),
+                (IcKey::Shift, true, false),
+            ],
+        );
+        assert_eq!(
+            host.logs,
+            [
+                "7\t7",
+                "7\t(",
+                "8\tup",
+                "f1\tbackspace",
+                "f6\tenter",
+                "f2\tF2",
+                "shift\tnil"
+            ]
+        );
+    }
+
+    #[test]
+    fn math_input_types_like_the_calculator() {
+        let source = r#"
+            local box = math_input{ x = 0, y = 0, w = 100, h = 30, text = "1" }
+            local events = {}
+            function on_key(key) events[#events + 1] = tostring(box:key()) end
+            function update()
+                print(box:text(), box:value(), table.concat(events, ","))
+                box:draw(true)
+            end
+        "#;
+        let host = press_all(
+            source,
+            &[
+                (IcKey::Func5, false, false), // +
+                (IcKey::Num2, false, false),
+                (IcKey::Num0, false, true), // .
+                (IcKey::Num5, false, false),
+                (IcKey::Func3, false, false), // *
+                (IcKey::Num2, false, false),
+                (IcKey::Func1, false, false), // backspace
+                (IcKey::Num4, false, false),
+                (IcKey::Num8, false, true),   // up
+                (IcKey::Func6, false, false), // enter
+                (IcKey::Shift, true, false),
+            ],
+        );
+        assert_eq!(
+            host.logs,
+            [
+                "1+2.5*4\t11.0\tchanged,changed,changed,changed,changed,changed,changed,changed,up,enter,nil"
+            ]
+        );
+        assert!(matches!(
+            host.commands[..],
+            [DrawCmd::Input {
+                index: 0,
+                focused: true
+            }]
+        ));
+        assert_eq!(host.inputs.len(), 1);
+    }
+
+    #[test]
+    fn math_input_values_and_errors() {
+        let host = run(r#"
+            function update()
+                local box = math_input{ mode = "integer" }
+                assert(box:value() == nil)
+                assert(box:set_text("-12") and box:value() == -12)
+                assert(not box:set_text("1.5") and box:text() == "-12")
+                box:clear()
+                assert(box:text() == "")
+                local hex = math_input{ mode = "hex", text = "FF" }
+                assert(hex:value() == 255)
+                local bad = math_input{ text = "1/" }
+                assert(bad:value() == nil)
+                -- How ohmslaw.lua writes small numbers.
+                local small = math_input{ text = "1.5*10^-5" }
+                assert(math.abs(small:value() - 1.5e-5) < 1e-12, small:value())
+                assert(text_width("Super+8/2 move   Super+9 clear   F4 reset", 4) < 310)
+                assert(not pcall(box.key, box))
+                assert(not pcall(box.text, {}))
+                assert(not pcall(math_input, { mode = "roman" }))
+            end
+        "#)
+        .unwrap();
+        assert_eq!(host.inputs.len(), 4);
+
+        let error = run("function update() for i = 1, 20 do math_input() end end").unwrap_err();
+        assert!(error.contains("at most"), "{error}");
     }
 
     #[test]

@@ -5,3 +5,5 @@ edition = "2024"
 description = "A FAT12 drive in a region of NOR flash, and the SCSI commands to share it over USB mass storage."
 
 [dependencies]
+# rust-fatfs's no_std support is only on git; crates.io's 0.3 needs std.
+fatfs = { git = "https://github.com/rafalh/rust-fatfs", rev = "38b3a7950bf0", default-features = false, features = ["alloc", "lfn"] }

@@ -45,3 +45,10 @@ can't build for `thumbv8m.main-none-eabihf` (the RP2350) or
 tsuki doesn't implement `table.insert`, `table.remove` or `math.random`;
 `incredicalculator_core`'s Lua engine registers its own versions. There is still
 no memory cap: a script that allocates without bound panics on out-of-memory.
+
+## `string.format` conversions
+
+- `src/builtin/string/mod.rs`: `%e`, `%E`, `%g` and `%G` work as in C Lua
+  (flags, width and precision included). Upstream rejects them, which left
+  scripts without a way to print a float with a set number of significant
+  digits.

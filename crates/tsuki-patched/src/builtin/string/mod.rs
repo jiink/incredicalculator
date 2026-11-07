@@ -93,7 +93,7 @@ pub fn find<A>(cx: Context<A, Args>) -> Result<Context<A, Ret>, Box<dyn core::er
 /// The main differences from Lua is:
 ///
 /// - First argument accept only a UTF-8 string.
-/// - `a`, `A`, `e`, `E`, `g` and `G` format is not supported.
+/// - `a` and `A` format is not supported.
 /// - `q` format requires string value to be UTF-8 and will use decimal notation instead of
 ///   hexadecimal exponent notation for float.
 /// - Format have unlimited length.
@@ -398,6 +398,34 @@ pub fn format<A>(cx: Context<A, Args>) -> Result<Context<A, Ret>, Box<dyn core::
                 }
 
                 if alt {}
+            }
+            // PATCH (incredicalculator): `e`, `E`, `g` and `G`, which upstream
+            // tsuki rejects.
+            'e' | 'E' | 'g' | 'G' => {
+                let Float(n) = arg.to_float()?;
+                let upper = ch.is_ascii_uppercase();
+                let body = if ch == 'e' || ch == 'E' {
+                    format_exp(n, precision.unwrap_or(6), upper, alt)
+                } else {
+                    format_general(n, precision.unwrap_or(6), upper, alt)
+                };
+                let sign_str = if n.is_sign_negative() && !n.is_nan() {
+                    "-"
+                } else {
+                    match sign {
+                        Sign::Always => "+",
+                        Sign::SpaceIfPositive => " ",
+                        Sign::Negative => "",
+                    }
+                };
+                buf.extend_from_slice(sign_str.as_bytes());
+                let w = usize::from(width.map(|v| v.get()).unwrap_or(0));
+                if lz && !left && n.is_finite() {
+                    for _ in (sign_str.len() + body.len())..w {
+                        buf.push(b'0');
+                    }
+                }
+                buf.extend_from_slice(body.as_bytes());
             }
             'p' if sign == Sign::Negative && !alt && !lz && precision.is_none() => {
                 let p = arg.as_ptr();
@@ -1925,6 +1953,81 @@ enum Replacement<'a, A> {
     Str(&'a Str<A>),
     Table(&'a Table<A>),
     LuaFn(&'a LuaFn<A>),
+}
+
+// PATCH (incredicalculator): C's `%e` and `%g` for string.format. Both take
+// the magnitude of `n`; the caller writes the sign.
+
+/// `%e`: one digit, `precision` decimals and an exponent of at least two
+/// digits, like `1.500000e+03`.
+fn format_exp(n: f64, precision: usize, upper: bool, alt: bool) -> String {
+    let n = n.abs();
+    if !n.is_finite() {
+        return special_float(n, upper);
+    }
+    let rust = format!("{:.*e}", precision, n);
+    let (mantissa, exp) = rust.split_once('e').unwrap_or((&rust, "0"));
+    let exp: i32 = exp.parse().unwrap_or(0);
+    let mut out = String::from(mantissa);
+    if alt && precision == 0 {
+        out.push('.');
+    }
+    push_exponent(&mut out, exp, upper);
+    out
+}
+
+/// `%g`: `precision` significant digits, as `%f` or `%e` depending on the
+/// exponent, without trailing zeros unless `alt`.
+fn format_general(n: f64, precision: usize, upper: bool, alt: bool) -> String {
+    let n = n.abs();
+    if !n.is_finite() {
+        return special_float(n, upper);
+    }
+    let p = precision.max(1);
+    // The exponent after rounding to `p` digits.
+    let rounded = format!("{:.*e}", p - 1, n);
+    let exp: i32 = rounded
+        .split_once('e')
+        .and_then(|(_, e)| e.parse().ok())
+        .unwrap_or(0);
+    if exp < -4 || exp >= p as i32 {
+        let (mantissa, _) = rounded.split_once('e').unwrap_or((&rounded, ""));
+        let mut out = String::from(mantissa);
+        if !alt {
+            trim_fraction(&mut out);
+        }
+        push_exponent(&mut out, exp, upper);
+        out
+    } else {
+        let decimals = (p as i32 - 1 - exp).max(0) as usize;
+        let mut out = format!("{:.*}", decimals, n);
+        if !alt {
+            trim_fraction(&mut out);
+        }
+        out
+    }
+}
+
+fn trim_fraction(s: &mut String) {
+    if s.contains('.') {
+        while s.ends_with('0') {
+            s.pop();
+        }
+        if s.ends_with('.') {
+            s.pop();
+        }
+    }
+}
+
+fn push_exponent(out: &mut String, exp: i32, upper: bool) {
+    out.push(if upper { 'E' } else { 'e' });
+    out.push(if exp < 0 { '-' } else { '+' });
+    write!(out, "{:02}", exp.unsigned_abs()).unwrap();
+}
+
+fn special_float(n: f64, upper: bool) -> String {
+    let s = if n.is_nan() { "nan" } else { "inf" };
+    if upper { s.to_ascii_uppercase() } else { String::from(s) }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

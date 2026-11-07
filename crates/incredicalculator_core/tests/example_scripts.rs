@@ -32,9 +32,10 @@ fn every_example_script_runs() {
         let source = std::fs::read_to_string(&path).unwrap();
         assert!(source.len() <= MAX_SCRIPT_BYTES, "{name} is too big");
 
-        let (mut engine, _) = ActiveEngine::load(&source).unwrap_or_else(|e| panic!("{name}: {e}"));
         let mut host = ScriptHost::new();
-        let mut step = |result: Result<(), String>| {
+        let (mut engine, _) =
+            ActiveEngine::load(&source, &mut host).unwrap_or_else(|e| panic!("{name}: {e}"));
+        let step = |result: Result<(), String>| {
             result.unwrap_or_else(|e| panic!("{name}: {e}"));
         };
         step(engine.init(&mut host));

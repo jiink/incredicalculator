@@ -5,12 +5,39 @@
 app = { name = "Bouncer", color = 0x2a6f97, realtime = true }
 
 -- Hooks (all optional, defined as global functions):
---   init()       runs each time the app is opened
---   update()     draws the screen; drawing only works here
---   on_key(key)  key is "0"-"9", "f1"-"f6", "shift" or "super"
+--   init()               runs each time the app is opened
+--   update()             draws the screen; drawing only works here
+--   on_key(key, action)  a key was pressed; see Keys below
 --
 -- Keep state in variables declared at the top of the file. It lasts while the
 -- app is open and starts over each time the app is opened.
+--
+-- Keys: `key` is the physical key: "0"-"9", "shift", "super", or "f1"-"f6"
+-- for the right-hand column from top to bottom (backspace / * - + =). Those
+-- are not the F1-F4 printed on the keys, which are Super + backspace / * -.
+-- `action` is what the key's printed legend means with Shift or Super held,
+-- so apps can use the same keys as the built-in ones:
+--   alone   "0"-"9", "backspace", "/", "*", "-", "+", "enter" (the = key)
+--   Shift   0-5 "A"-"F", 6 "~", 7 "(", 8 ")", 9 "0x",
+--           backspace "&", / "|", * "%", - "<<", + ">>", = "^"
+--   Super   0 ".", 1 "end", 2 "down", 3 "undo", 4 "left", 5 "ok", 6 "right",
+--           7 "home", 8 "up", 9 "clear", backspace / * - "F1" "F2" "F3" "F4"
+-- action is nil for Shift and Super themselves. Apps never see Super + Shift
+-- (leaves the app) or Super with + or = (volume and brightness).
+--
+-- Typing numbers: math_input{...} makes the input box the calculators use,
+-- typed with the same keys (Super+0 for ".", Super+4/6 to move the cursor,
+-- Super+9 to clear, Super+3 to undo, ...). Options, all optional:
+--   x, y, w, h, mode ("expression", "integer" or "hex"), text, size,
+--   bg, focus_bg, border
+-- Make boxes at the top of the file or in init() (at most 8), then:
+--   box:key()            in on_key: hand it the key; returns "changed",
+--                        "handled", "enter", "up", "down", "left", "right",
+--                        or nil if the box doesn't use the key
+--   box:draw(focused)    in update
+--   box:value()          the number typed or worked out, or nil
+--   box:text()   box:set_text(s)   box:clear()
+-- See ohmslaw.lua in the project's example_scripts folder.
 --
 -- Drawing (screen is 320x240, colors are 0xRRGGBB or rgb(r, g, b)):
 --   clear(color)
@@ -22,7 +49,8 @@ app = { name = "Bouncer", color = 0x2a6f97, realtime = true }
 --   text(string, x, y, size, color [, "left" | "center" | "right"])
 --   text_width(string, size)
 -- Input and time: is_down(key), millis().  print(...) writes to the log.
--- Also available: Lua's math, string and table libraries.
+-- Also available: Lua's math, string and table libraries, including
+-- string.format("%.3g", x) and friends.
 
 local SIZE = 28
 local COLORS = { 0xff5e5b, 0xffed66, 0x00cecb, 0xd8d8d8, 0x9b5de5 }

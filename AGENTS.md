@@ -8,6 +8,7 @@ For the web app, first install the `wasm32-unknown-unknown` target with
 `cargo build --target wasm32-unknown-unknown --manifest-path incredicalculator_web/Cargo.toml` from this project's root directory.
 A root-level build may include embedded targets and produce irrelevant host-target errors.
 Rust formatting: Don’t run cargo fmt --all just to validate a localized change. Check only the touched Rust files with rustfmt --check --config skip_children=true <files>. Don’t reformat unrelated files; if a broad check reports pre-existing differences, report that and use a scoped check instead.
+You are allowed to install new crates, in fact that is often preferred over rolling a custom solution (but not always). Patching crates is allowed too. 
 
 ## Validation
 

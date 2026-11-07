@@ -84,8 +84,8 @@ pub async fn usb_drive_task(mut usb: Peri<'static, USB>) {
         }
         info!("usb drive: sharing");
         let clock_guard = power::keep_awake();
-        let unformatted = !script_drive::is_mounted();
         script_drive::unmount();
+        let unformatted = !script_drive::has_filesystem();
         start_usb_clocks();
         update_status(|status| {
             *status = UsbDriveStatus {
@@ -196,16 +196,23 @@ async fn run_session(usb: Peri<'_, USB>) {
     select4(device.run(), bulk_only, idle_flush, stop).await;
 }
 
+/// Writes cached sectors to flash. Then, since the computer may have just
+/// formatted the drive (or damaged it), checks for a filesystem again.
 fn flush() {
     let result = with_disk(|disk| {
         if disk.is_dirty() {
-            disk.flush()
+            disk.flush().map(|()| true)
         } else {
-            Ok(())
+            Ok(false)
         }
     });
-    if result.is_err() {
-        error!("usb drive: flushing to flash failed");
+    match result {
+        Ok(true) => {
+            let unformatted = !script_drive::has_filesystem();
+            update_status(|status| status.unformatted = unformatted);
+        }
+        Ok(false) => {}
+        Err(_) => error!("usb drive: flushing to flash failed"),
     }
 }
 

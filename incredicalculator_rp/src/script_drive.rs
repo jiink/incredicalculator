@@ -19,7 +19,7 @@ use embassy_rp::flash::{Blocking, ERASE_SIZE, Flash};
 use embassy_rp::peripherals::FLASH;
 use embassy_sync::blocking_mutex::Mutex;
 use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
-use flash_disk::fat::{self, FatError, Volume};
+use flash_disk::fat::{self, FatError};
 use flash_disk::{DiskError, FlashDisk};
 use incredicalculator_core::platform::{MAX_SCRIPT_BYTES, SCRIPT_EXTENSION};
 
@@ -109,53 +109,58 @@ pub type Disk = FlashDisk<DriveFlash>;
 static DISK: Mutex<ThreadModeRawMutex, RefCell<Disk>> =
     Mutex::new(RefCell::new(FlashDisk::new(DriveFlash)));
 
-/// The mounted filesystem, or `None` if the drive holds none (or while it is
-/// shared over USB).
-static VOLUME: Mutex<ThreadModeRawMutex, Cell<Option<Volume>>> = Mutex::new(Cell::new(None));
+/// Whether the drive holds a filesystem the calculator may read: false while
+/// it is shared over USB, or if it can't be read.
+static MOUNTED: Mutex<ThreadModeRawMutex, Cell<bool>> = Mutex::new(Cell::new(false));
 
 /// Runs `f` on the drive. Never hold this across an `.await`.
 pub fn with_disk<R>(f: impl FnOnce(&mut Disk) -> R) -> R {
     DISK.lock(|disk| f(&mut disk.borrow_mut()))
 }
 
-/// Whether the drive holds a filesystem the calculator can read.
-pub fn is_mounted() -> bool {
-    VOLUME.lock(|volume| volume.get().is_some())
+/// Whether the drive holds a FAT filesystem.
+pub fn has_filesystem() -> bool {
+    with_disk(|disk| fat::check(disk)).is_ok()
 }
 
-/// Mounts the drive, first formatting it (with the example script) if the
-/// flash there has never been written. A drive holding something else is
-/// left alone, so the computer can be used to repair or format it.
+/// Mounts the drive, first formatting it (with the example script) if it
+/// holds no FAT filesystem: the region is only ever used for this drive, so
+/// anything else there is left over from older firmware or a fresh chip.
 pub fn mount_or_format() {
-    let volume = with_disk(|disk| match Volume::mount(disk) {
-        Err(FatError::NotFat) if fat::is_blank(disk) == Ok(true) => {
-            info!("script drive: blank, formatting");
+    let result = with_disk(|disk| match fat::check(disk) {
+        Err(FatError::NotFat) => {
+            info!("script drive: no filesystem, formatting");
             let (name, source) = incredicalculator_core::script::EXAMPLE_SCRIPT;
             let volume_id = embassy_time::Instant::now().as_ticks() as u32;
             fat::format(disk, volume_id, &[(name, source.as_bytes())])
                 .and_then(|()| disk.release_cache().map_err(FatError::from))
-                .and_then(|()| Volume::mount(disk))
+                .and_then(|()| fat::check(disk))
         }
         result => result,
     });
-    match volume {
-        Ok(_) => info!("script drive: mounted"),
+    match result {
+        Ok(()) => info!("script drive: mounted"),
         Err(e) => warn!("script drive: can't mount: {}", defmt::Debug2Format(&e)),
     }
-    VOLUME.lock(|cell| cell.set(volume.ok()));
+    MOUNTED.lock(|cell| cell.set(result.is_ok()));
 }
 
-/// Forgets the mounted filesystem, before a computer gets to change it.
+/// Stops reading the drive, before a computer gets to change it.
 pub fn unmount() {
-    VOLUME.lock(|cell| cell.set(None));
+    MOUNTED.lock(|cell| cell.set(false));
+}
+
+fn is_mounted() -> bool {
+    MOUNTED.lock(Cell::get)
 }
 
 /// Names of the `*.lua` files in the drive's root directory, or `None` if it
 /// isn't mounted.
 pub fn list_scripts() -> Option<Vec<String>> {
-    let volume = VOLUME.lock(Cell::get)?;
-    let entries = with_disk(|disk| volume.list_root(disk));
-    match entries {
+    if !is_mounted() {
+        return None;
+    }
+    match with_disk(|disk| fat::list_root(disk)) {
         Ok(entries) => Some(
             entries
                 .into_iter()
@@ -179,11 +184,10 @@ fn is_script_name(name: &str) -> bool {
 /// come back as a script that fails with an explanation, so they show up as
 /// an app with an error instead of disappearing.
 pub fn read_script(name: &str) -> Option<String> {
-    let volume = VOLUME.lock(Cell::get)?;
-    let data = with_disk(|disk| {
-        let entry = volume.find(disk, name)?;
-        volume.read_file(disk, &entry, MAX_SCRIPT_BYTES)
-    });
+    if !is_mounted() {
+        return None;
+    }
+    let data = with_disk(|disk| fat::read_file(disk, name, MAX_SCRIPT_BYTES));
     let problem = match data {
         Ok(data) => match String::from_utf8(data) {
             Ok(source) => return Some(source),

@@ -9,7 +9,7 @@ use crate::audio_engine::AudioEngine;
 use crate::graphics::{self, Vitmap};
 use crate::input::IcKey;
 use crate::platform::{CANVAS_WIDTH, IcPlatform, rgb8_hex};
-use crate::script::{ActiveEngine, DrawCmd, ScriptEngine, ScriptHost, ScriptMeta};
+use crate::script::{ActiveEngine, DrawCmd, ScriptEngine, ScriptHost, ScriptInput, ScriptMeta};
 use crate::text::{TextStyle, draw_text, wrap_text};
 
 /// Card colors for scripts that don't pick their own, chosen by name hash.
@@ -54,13 +54,16 @@ impl ScriptApp {
         // Load once for the menu's name and color, then free the engine.
         app.load();
         app.engine = None;
+        app.host = ScriptHost::new();
         app
     }
 
+    /// Starts the script from scratch, with a fresh host.
     fn load(&mut self) {
         self.engine = None;
         self.error = None;
-        match ActiveEngine::load(&self.source) {
+        self.host = ScriptHost::new();
+        match ActiveEngine::load(&self.source, &mut self.host) {
             Ok((engine, meta)) => {
                 self.apply_meta(meta);
                 self.engine = Some(engine);
@@ -88,6 +91,12 @@ impl ScriptApp {
         if let Err(error) = hook(engine, &mut self.host) {
             self.error = Some(error);
             self.engine = None;
+        }
+    }
+
+    fn read_keys(&mut self, ctx: &InputContext) {
+        for (down, state) in self.host.keys_down.iter_mut().zip(ctx.key_states) {
+            *down = state.is_down;
         }
     }
 
@@ -154,7 +163,8 @@ impl IcApp for ScriptApp {
         self.host = ScriptHost::new();
     }
 
-    fn on_key(&mut self, key: IcKey, _ctx: &InputContext) {
+    fn on_key(&mut self, key: IcKey, ctx: &InputContext) {
+        self.read_keys(ctx);
         self.run(|engine, host| engine.on_key(key, host));
         self.host.commands.clear();
     }
@@ -166,9 +176,7 @@ impl IcApp for ScriptApp {
         _audio: &mut AudioEngine,
     ) {
         self.host.millis = platform.millis();
-        for (down, state) in self.host.keys_down.iter_mut().zip(ctx.key_states) {
-            *down = state.is_down;
-        }
+        self.read_keys(ctx);
         self.host.commands.clear();
         self.run(|engine, host| engine.update(host));
         self.flush_logs(platform);
@@ -177,14 +185,22 @@ impl IcApp for ScriptApp {
             self.draw_error(platform, error);
             return;
         }
-        for command in self.host.commands.drain(..) {
-            replay(platform, command);
+        let ScriptHost {
+            commands, inputs, ..
+        } = &mut self.host;
+        for command in commands.drain(..) {
+            replay(platform, command, inputs);
         }
     }
 }
 
-fn replay(platform: &mut dyn IcPlatform, command: DrawCmd) {
+fn replay(platform: &mut dyn IcPlatform, command: DrawCmd, inputs: &[ScriptInput]) {
     match command {
+        DrawCmd::Input { index, focused } => {
+            if let Some(input) = inputs.get(index) {
+                input.draw(platform, focused);
+            }
+        }
         DrawCmd::Clear(color) => platform.clear(color),
         DrawCmd::Line {
             start,
@@ -268,8 +284,8 @@ mod tests {
     #[test]
     fn example_script_draws_and_handles_keys() {
         let (name, source) = crate::script::EXAMPLE_SCRIPT;
-        let (mut engine, _) = ActiveEngine::load(source).unwrap();
         let mut host = ScriptHost::new();
+        let (mut engine, _) = ActiveEngine::load(source, &mut host).unwrap();
         engine.init(&mut host).unwrap();
         for key in [IcKey::Num5, IcKey::Num8, IcKey::Func2] {
             engine.on_key(key, &mut host).unwrap();
@@ -313,15 +329,16 @@ mod tests {
 
     #[test]
     fn endless_loops_are_stopped() {
-        let (mut engine, _) = ActiveEngine::load(test_sources::ENDLESS_LOOP).unwrap();
-        let error = engine.update(&mut ScriptHost::new()).unwrap_err();
+        let mut host = ScriptHost::new();
+        let (mut engine, _) = ActiveEngine::load(test_sources::ENDLESS_LOOP, &mut host).unwrap();
+        let error = engine.update(&mut host).unwrap_err();
         assert!(!error.is_empty());
     }
 
     #[test]
     fn drawing_is_capped() {
-        let (mut engine, _) = ActiveEngine::load(test_sources::DRAW_FLOOD).unwrap();
         let mut host = ScriptHost::new();
+        let (mut engine, _) = ActiveEngine::load(test_sources::DRAW_FLOOD, &mut host).unwrap();
         let error = engine.update(&mut host).unwrap_err();
         assert!(error.contains("too many drawing calls"), "{error}");
         assert_eq!(host.commands.len(), crate::script::MAX_DRAW_COMMANDS);

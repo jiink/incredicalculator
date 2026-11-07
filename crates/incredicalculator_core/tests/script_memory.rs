@@ -42,9 +42,9 @@ fn example_script_fits_heap_budget() {
     let base = USED.load(Ordering::Relaxed);
     PEAK.store(base, Ordering::Relaxed);
 
-    let (mut engine, _) = ActiveEngine::load(EXAMPLE_SCRIPT.1).unwrap();
-    let after_load = USED.load(Ordering::Relaxed) - base;
     let mut host = ScriptHost::new();
+    let (mut engine, _) = ActiveEngine::load(EXAMPLE_SCRIPT.1, &mut host).unwrap();
+    let after_load = USED.load(Ordering::Relaxed) - base;
     engine.init(&mut host).unwrap();
     for frame in 0..120 {
         host.millis = frame * 16;
