@@ -17,6 +17,6 @@ For changes in `crates/incredicalculator_core`, validate compilation with:
 
 Run the host tests with:
 
-`cargo test -p incredicalculator_pc -p incredicalculator_core -p bitwise_expr`
+`cargo test -p incredicalculator_pc -p incredicalculator_core -p bitwise_expr -p flash_disk`
 
 Include `-p incredicalculator_pc` even though it has no tests of its own: it enables the `std` feature of `critical-section`, which the core tests need to link. Testing `incredicalculator_core` alone fails to link with missing `critical_section_1_0_acquire`/`critical_section_1_0_release` symbols. Plain `cargo test` inside `incredicalculator_pc` only tests that package and runs 0 tests. Do not run tests for `incredicalculator_web` or `incredicalculator_rp` on the host; they target other architectures.

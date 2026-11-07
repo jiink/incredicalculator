@@ -2,16 +2,14 @@
 use core::ops::Range;
 
 use defmt::*;
-use embassy_rp::flash::{Async, ERASE_SIZE, Flash};
-use embassy_rp::peripherals::FLASH;
+use embassy_rp::flash::ERASE_SIZE;
 use incredicalculator_core::platform::SETTINGS_STORAGE_LEN;
 use sequential_storage::cache::{Cache, Uncached};
 use sequential_storage::map::{MapConfig, MapStorage};
 
-// Must match the 2 MiB assumed by memory.x, whose FLASH region stops
-// `SETTINGS_SECTORS` sectors short so firmware never overlaps this range.
-const FLASH_SIZE: usize = 2 * 1024 * 1024;
-const SETTINGS_SECTORS: usize = 4;
+use crate::script_drive::{FLASH_SIZE, SETTINGS_SECTORS, SharedFlash};
+
+// The last sectors of flash, above the script drive.
 const SETTINGS_FLASH_RANGE: Range<u32> =
     (FLASH_SIZE - SETTINGS_SECTORS * ERASE_SIZE) as u32..FLASH_SIZE as u32;
 
@@ -20,17 +18,15 @@ const SETTINGS_KEY: u8 = 0;
 // flash word size internally, so a little headroom is plenty.
 const DATA_BUFFER_LEN: usize = SETTINGS_STORAGE_LEN + 16;
 
-pub type BoardFlash = Flash<'static, FLASH, Async, FLASH_SIZE>;
-
 pub struct SettingsStorage {
-    map: MapStorage<u8, BoardFlash, Cache<Uncached, Uncached, Uncached, u8>>,
+    map: MapStorage<u8, SharedFlash, Cache<Uncached, Uncached, Uncached, u8>>,
 }
 
 impl SettingsStorage {
-    pub fn new(flash: BoardFlash) -> Self {
+    pub fn new() -> Self {
         Self {
             map: MapStorage::new(
-                flash,
+                SharedFlash,
                 const { MapConfig::new(SETTINGS_FLASH_RANGE) },
                 Cache::new_uncached(),
             ),

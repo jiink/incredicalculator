@@ -6,6 +6,7 @@ use crate::apps::ChordPad;
 use crate::apps::ColorCalculator;
 use crate::apps::ScaleKeys;
 use crate::apps::SoundTest;
+use crate::apps::UsbDrive;
 use crate::apps::{Calculator, EngineMode};
 use crate::apps::{FaceCalculator, RangeMapperCalculator};
 use crate::audio_engine::AudioEngine;
@@ -74,6 +75,11 @@ pub struct IcShell {
     scripts_version: Option<u32>,
     #[cfg(feature = "scripting")]
     script_keys: Vec<ScriptKey>,
+    /// Whether apps that depend on the platform (like "USB Drive") have been
+    /// added, which happens on the first update.
+    platform_apps_added: bool,
+    /// Last value passed to `IcPlatform::set_usb_drive_mode`.
+    usb_drive_shared: bool,
     active_app_idx: Option<usize>,
     last_active_app_idx: Option<usize>,
     selector_page: usize,
@@ -110,6 +116,8 @@ impl IcShell {
             scripts_version: None,
             #[cfg(feature = "scripting")]
             script_keys: Vec::new(),
+            platform_apps_added: false,
+            usb_drive_shared: false,
             active_app_idx: Some(0),
             last_active_app_idx: None,
             selector_page: 0,
@@ -653,6 +661,13 @@ impl IcShell {
             self.settings_menu.load(platform);
             self.settings_loaded = true;
         }
+        if !self.platform_apps_added {
+            // Before any scripted apps, which go after the compiled ones.
+            if platform.usb_drive_status().is_some() {
+                self.apps.push(Box::new(UsbDrive::new()));
+            }
+            self.platform_apps_added = true;
+        }
         #[cfg(feature = "scripting")]
         self.sync_scripts(platform);
         for s in self.key_states.iter_mut() {
@@ -792,6 +807,13 @@ impl IcShell {
             });
             self.draw_app_selector(platform, hint_opacity);
         }
+        let share_drive = self
+            .active_app_idx
+            .is_some_and(|idx| self.apps[idx].shares_usb_drive());
+        if share_drive != self.usb_drive_shared {
+            self.usb_drive_shared = share_drive;
+            platform.set_usb_drive_mode(share_drive);
+        }
         if let Some(adjustable) = self.adjusting_something {
             let v = Self::get_adjustable(platform, adjustable);
             Self::draw_adjustable_readout(platform, adjustable, v);
@@ -853,6 +875,7 @@ fn fnv1a(bytes: &[u8]) -> u64 {
 #[cfg(all(test, feature = "scripting"))]
 mod tests {
     use super::*;
+    use crate::platform::UsbDriveStatus;
     use alloc::collections::BTreeMap;
     use alloc::string::{String, ToString};
     use glam::{IVec2, Vec2};
@@ -862,6 +885,8 @@ mod tests {
     struct FakePlatform {
         scripts: Option<BTreeMap<String, String>>,
         version: u32,
+        /// `Some` gives the platform a USB drive.
+        usb_drive: Option<UsbDriveStatus>,
     }
 
     impl FakePlatform {
@@ -872,7 +897,7 @@ mod tests {
                 .collect();
             Self {
                 scripts: Some(scripts),
-                version: 0,
+                ..Self::default()
             }
         }
 
@@ -939,6 +964,17 @@ mod tests {
         fn read_script(&mut self, file_name: &str) -> Option<String> {
             self.scripts.as_ref()?.get(file_name).cloned()
         }
+        fn usb_drive_status(&self) -> Option<UsbDriveStatus> {
+            self.usb_drive
+        }
+        fn set_usb_drive_mode(&mut self, shared: bool) {
+            let drive = self.usb_drive.as_mut().expect("no USB drive");
+            assert_ne!(drive.shared, shared, "redundant set_usb_drive_mode");
+            drive.shared = shared;
+            if !shared {
+                self.version += 1;
+            }
+        }
     }
 
     fn script_names(shell: &IcShell) -> Vec<String> {
@@ -954,6 +990,53 @@ mod tests {
         shell.active_app_idx = Some(idx);
         shell.apps[idx].on_enter();
         idx
+    }
+
+    fn app_index(shell: &IcShell, name: &str) -> Option<usize> {
+        shell.apps.iter().position(|app| app.name() == name)
+    }
+
+    #[test]
+    fn usb_drive_app_only_appears_with_a_drive() {
+        let mut shell = IcShell::new();
+        shell.update(&mut FakePlatform::default());
+        assert_eq!(app_index(&shell, "USB Drive"), None);
+
+        let mut platform = FakePlatform::with_scripts(&[("a.lua", "")]);
+        platform.usb_drive = Some(UsbDriveStatus::default());
+        let mut shell = IcShell::new();
+        shell.update(&mut platform);
+        // Listed after the compiled apps and before the scripts.
+        let idx = app_index(&shell, "USB Drive").unwrap();
+        assert_eq!(idx + 1, app_index(&shell, "a").unwrap());
+    }
+
+    #[test]
+    fn the_drive_is_shared_while_the_usb_drive_app_is_open() {
+        let mut platform = FakePlatform::with_scripts(&[("a.lua", "")]);
+        platform.usb_drive = Some(UsbDriveStatus::default());
+        let mut shell = IcShell::new();
+        shell.update(&mut platform);
+        let idx = app_index(&shell, "USB Drive").unwrap();
+        shell.active_app_idx = Some(idx);
+        shell.update(&mut platform);
+        assert!(platform.usb_drive.unwrap().shared);
+
+        // The computer adds a script while the drive is shared; it shows up
+        // once the drive is handed back.
+        platform
+            .scripts
+            .as_mut()
+            .unwrap()
+            .insert("b.lua".into(), "".into());
+        shell.key_down(IcKey::Shift);
+        shell.update(&mut platform);
+        shell.key_down(IcKey::Super);
+        shell.update(&mut platform);
+        assert_eq!(shell.active_app_idx, None);
+        assert!(!platform.usb_drive.unwrap().shared);
+        shell.update(&mut platform);
+        assert_eq!(script_names(&shell), ["a", "b"]);
     }
 
     #[test]

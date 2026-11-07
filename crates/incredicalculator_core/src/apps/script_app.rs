@@ -10,7 +10,7 @@ use crate::graphics::{self, Vitmap};
 use crate::input::IcKey;
 use crate::platform::{CANVAS_WIDTH, IcPlatform, rgb8_hex};
 use crate::script::{ActiveEngine, DrawCmd, ScriptEngine, ScriptHost, ScriptMeta};
-use crate::text::{TextStyle, draw_text, text_width};
+use crate::text::{TextStyle, draw_text, wrap_text};
 
 /// Card colors for scripts that don't pick their own, chosen by name hash.
 const DEFAULT_COLORS: [u32; 6] = [0x2A6F97, 0x6A4C93, 0x1B998B, 0xC05746, 0x8D6A9F, 0x3D5A80];
@@ -233,52 +233,11 @@ fn default_color(name: &str) -> RGB8 {
     rgb8_hex(DEFAULT_COLORS[hash as usize % DEFAULT_COLORS.len()])
 }
 
-/// Inserts line breaks so no line is wider than `max_width` at `size`.
-/// Words longer than a line are split by character.
-fn wrap_text(text: &str, max_width: f32, size: f32) -> String {
-    let style = TextStyle::new(size, RGB8::default());
-    let fits = |s: &str| text_width(s, style.scale, style.font) <= max_width;
-    let mut out = String::new();
-    for paragraph in text.split('\n') {
-        let mut line = String::new();
-        for word in paragraph.split(' ') {
-            let candidate_len = line.len();
-            if !line.is_empty() {
-                line.push(' ');
-            }
-            line.push_str(word);
-            if fits(&line) {
-                continue;
-            }
-            // Move the word to its own line, splitting it if still too wide.
-            line.truncate(candidate_len);
-            if !line.is_empty() {
-                out.push_str(&line);
-                out.push('\n');
-                line.clear();
-            }
-            for ch in word.chars() {
-                line.push(ch);
-                if !fits(&line) && line.chars().count() > 1 {
-                    line.pop();
-                    out.push_str(&line);
-                    out.push('\n');
-                    line.clear();
-                    line.push(ch);
-                }
-            }
-        }
-        out.push_str(&line);
-        out.push('\n');
-    }
-    out.pop();
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::script::test_sources;
+    use crate::text::text_width;
 
     #[test]
     fn wrap_keeps_lines_within_width() {

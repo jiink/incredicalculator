@@ -6,7 +6,9 @@ extern crate alloc;
 mod backlight;
 mod memory;
 mod power;
+mod script_drive;
 mod settings_storage;
+mod usb_drive;
 
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use core::{fmt, mem};
@@ -41,7 +43,9 @@ use embedded_graphics::primitives::PrimitiveStyleBuilder;
 use embedded_graphics::text::Text;
 use glam::{IVec2, Vec2};
 use incredicalculator_core::input::IcKey;
-use incredicalculator_core::platform::{IcPlatform, SETTINGS_STORAGE_LEN, rgb8_hex};
+use incredicalculator_core::platform::{
+    IcPlatform, SETTINGS_STORAGE_LEN, UsbDriveStatus, rgb8_hex,
+};
 use incredicalculator_core::shell::IcShell;
 use lcd_async::interface::SpiInterface;
 use lcd_async::models::ST7789;
@@ -283,6 +287,13 @@ pub struct IcRpPlatform<'d> {
     // update and writes `pending_settings_save` after each update.
     loaded_settings: Option<[u8; SETTINGS_STORAGE_LEN]>,
     pending_settings_save: Option<[u8; SETTINGS_STORAGE_LEN]>,
+    // Starting or stopping USB sharing is async too, so the main loop does it
+    // after the update that asked for it.
+    pending_usb_drive_mode: Option<bool>,
+    usb_drive_shared: bool,
+    /// Bumped whenever the script drive may have changed: when USB sharing
+    /// ends.
+    scripts_version: u32,
     backlight: Pwm<'d>,
     backlight2: Pwm<'d>,
     charging_status: Input<'d>,
@@ -308,6 +319,9 @@ impl<'d> IcRpPlatform<'d> {
             canvas: Some(canvas),
             loaded_settings: None,
             pending_settings_save: None,
+            pending_usb_drive_mode: None,
+            usb_drive_shared: false,
+            scripts_version: 0,
             backlight,
             backlight2,
             charging_status,
@@ -565,6 +579,35 @@ impl<'d> IcPlatform for IcRpPlatform<'d> {
 
     fn save_settings(&mut self, data: &[u8; SETTINGS_STORAGE_LEN]) {
         self.pending_settings_save = Some(*data);
+    }
+
+    fn scripts_version(&self) -> u32 {
+        self.scripts_version
+    }
+
+    fn list_scripts(&mut self) -> Option<alloc::vec::Vec<alloc::string::String>> {
+        if self.usb_drive_shared {
+            // The computer owns the drive; this isn't reached because the
+            // version only changes once sharing ends.
+            return Some(alloc::vec::Vec::new());
+        }
+        script_drive::list_scripts()
+    }
+
+    fn read_script(&mut self, file_name: &str) -> Option<alloc::string::String> {
+        if self.usb_drive_shared {
+            return None;
+        }
+        script_drive::read_script(file_name)
+    }
+
+    fn usb_drive_status(&self) -> Option<UsbDriveStatus> {
+        Some(usb_drive::status())
+    }
+
+    fn set_usb_drive_mode(&mut self, shared: bool) {
+        self.usb_drive_shared = shared;
+        self.pending_usb_drive_mode = Some(shared);
     }
 
     fn memory_stats(&self) -> Option<memory::MemoryStats> {
@@ -1459,8 +1502,10 @@ async fn main(spawner: Spawner) {
         .await;
         Timer::after_secs(5).await;
     }
-    let mut settings_storage = SettingsStorage::new(Flash::new(p.FLASH, p.DMA_CH2));
+    script_drive::init_flash(Flash::new_blocking(p.FLASH));
+    let mut settings_storage = SettingsStorage::new();
     ic_rp_platform.loaded_settings = settings_storage.load().await;
+    script_drive::mount_or_format();
     let spare_canvas = FrameBuffer {
         pixels: CANVAS_DATA1.take(),
     };
@@ -1473,6 +1518,7 @@ async fn main(spawner: Spawner) {
     let audio_spawner = AUDIO_EXECUTOR.start(interrupt::SWI_IRQ_0);
     unwrap!(audio_spawner.spawn(audio_task(i2s, audio_shutdown_n)));
     unwrap!(spawner.spawn(display_task(display)));
+    unwrap!(spawner.spawn(usb_drive::usb_drive_task(p.USB)));
 
     let core1_stack = unsafe {
         // consider changing to new syntax: `&mut *&raw mut CORE1_STACK`
@@ -1548,11 +1594,15 @@ async fn main(spawner: Spawner) {
                 None => core::future::pending::<()>().await,
             }
         };
-        let (first_input, mut audio_buffer, realtime_tick) =
+        // Something already wants a redraw (see the USB drive handling below).
+        let (first_input, mut audio_buffer, realtime_tick) = if screen_dirty {
+            (None, None, false)
+        } else {
             match select(wait_for_work, wait_for_backlight).await {
                 Either::First(work) => work,
                 Either::Second(()) => (None, None, false),
-            };
+            }
+        };
         let _clock_guard = power::keep_awake();
         ic_rp_platform.update_backlight();
 
@@ -1616,6 +1666,17 @@ async fn main(spawner: Spawner) {
 
         if let Some(data) = ic_rp_platform.pending_settings_save.take() {
             settings_storage.save(&data).await;
+        }
+
+        if let Some(shared) = ic_rp_platform.pending_usb_drive_mode.take() {
+            usb_drive::set_shared(shared).await;
+            if !shared {
+                // The computer may have changed anything; rescan the scripts
+                // right away instead of on the next key press.
+                script_drive::mount_or_format();
+                ic_rp_platform.scripts_version = ic_rp_platform.scripts_version.wrapping_add(1);
+                screen_dirty = true;
+            }
         }
 
         if icalc.has_active_audio() && !audio_is_running {

@@ -78,11 +78,35 @@ pub trait IcPlatform {
     fn read_script(&mut self, _file_name: &str) -> Option<String> {
         None
     }
+    /// State of the USB drive that holds installed scripts, or `None` if the
+    /// platform has none. Platforms with one get a "USB Drive" app.
+    fn usb_drive_status(&self) -> Option<UsbDriveStatus> {
+        None
+    }
+    /// Shares the script drive with a computer over USB (`true`), or takes it
+    /// back (`false`). While shared, the platform doesn't read the drive
+    /// itself. Taking it back changes `scripts_version`, once the drive is
+    /// safe to read again.
+    fn set_usb_drive_mode(&mut self, _shared: bool) {}
     /// RAM usage, for platforms with a fixed memory budget. Shown by the
     /// shell when the "Show memory" setting is on.
     fn memory_stats(&self) -> Option<MemoryStats> {
         None
     }
+}
+
+/// What a computer is doing with the script drive, from
+/// [`IcPlatform::usb_drive_status`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct UsbDriveStatus {
+    /// The drive is being offered over USB.
+    pub shared: bool,
+    /// A computer has set up the USB connection.
+    pub connected: bool,
+    /// The computer ejected the drive, so its writes have all been saved.
+    pub ejected: bool,
+    /// The drive holds no readable filesystem. The computer can format it.
+    pub unformatted: bool,
 }
 
 /// Memory use in bytes. Stack figures are high-water marks: the deepest each

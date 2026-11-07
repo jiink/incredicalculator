@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/bitwise_expr",
+    "crates/flash_disk",
     "crates/incredicalculator_core",
     "crates/exp-rs-patched",
     "crates/tsuki-patched",

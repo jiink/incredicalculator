@@ -1,0 +1,7 @@
+[package]
+name = "flash_disk"
+version = "0.1.0"
+edition = "2024"
+description = "A FAT12 drive in a region of NOR flash, and the SCSI commands to share it over USB mass storage."
+
+[dependencies]

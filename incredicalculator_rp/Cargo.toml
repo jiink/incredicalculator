@@ -33,6 +33,8 @@ format_no_std = "1.2.0"
 static_cell = "2.1.1"
 max170xx = "1.0.0"
 sequential-storage = { version = "8.0.2", features = ["defmt"] }
+embedded-storage-async = "0.4.1"
+flash_disk = { path = "../crates/flash_disk" }
 
 [features]
 default = ["scripting"]

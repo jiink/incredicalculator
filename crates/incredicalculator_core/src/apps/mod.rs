@@ -21,3 +21,5 @@ pub use color_calculator::ColorCalculator;
 mod script_app;
 #[cfg(feature = "scripting")]
 pub use script_app::ScriptApp;
+mod usb_drive;
+pub use usb_drive::UsbDrive;

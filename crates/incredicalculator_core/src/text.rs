@@ -302,6 +302,48 @@ pub fn text_to_pos(text: &str, x: f32, scale: f32, cursor: usize, font_id: fonts
     current_x
 }
 
+/// Inserts line breaks so no line is wider than `max_width` at `size`.
+/// Words longer than a line are split by character.
+pub fn wrap_text(text: &str, max_width: f32, size: f32) -> alloc::string::String {
+    let style = TextStyle::new(size, RGB8::default());
+    let fits = |s: &str| text_width(s, style.scale, style.font) <= max_width;
+    let mut out = alloc::string::String::new();
+    for paragraph in text.split('\n') {
+        let mut line = alloc::string::String::new();
+        for word in paragraph.split(' ') {
+            let candidate_len = line.len();
+            if !line.is_empty() {
+                line.push(' ');
+            }
+            line.push_str(word);
+            if fits(&line) {
+                continue;
+            }
+            // Move the word to its own line, splitting it if still too wide.
+            line.truncate(candidate_len);
+            if !line.is_empty() {
+                out.push_str(&line);
+                out.push('\n');
+                line.clear();
+            }
+            for ch in word.chars() {
+                line.push(ch);
+                if !fits(&line) && line.chars().count() > 1 {
+                    line.pop();
+                    out.push_str(&line);
+                    out.push('\n');
+                    line.clear();
+                    line.push(ch);
+                }
+            }
+        }
+        out.push_str(&line);
+        out.push('\n');
+    }
+    out.pop();
+    out
+}
+
 /// Width of the widest line in `text`, in screen pixels.
 pub fn text_width(text: &str, scale: f32, font_id: fonts::FontId) -> f32 {
     let font = fonts::get_font(font_id);
