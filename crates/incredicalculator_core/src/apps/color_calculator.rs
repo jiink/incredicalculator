@@ -270,10 +270,10 @@ impl IcApp for ColorCalculator {
     fn on_key(&mut self, key: IcKey, ctx: &InputContext) {
         if ctx.is_super() && !ctx.is_shifted() {
             let mode = match key {
-                IcKey::Func1 => Some(EntryMode::Rgb),
-                IcKey::Func2 => Some(EntryMode::Unit),
-                IcKey::Func3 => Some(EntryMode::Hex),
-                IcKey::Func4 => Some(EntryMode::Rgb565),
+                IcKey::Multiply => Some(EntryMode::Rgb),
+                IcKey::Minus => Some(EntryMode::Unit),
+                IcKey::Plus => Some(EntryMode::Hex),
+                IcKey::Equals => Some(EntryMode::Rgb565),
                 _ => None,
             };
             if let Some(mode) = mode {

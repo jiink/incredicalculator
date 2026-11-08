@@ -292,7 +292,7 @@ mod tests {
         let mut host = ScriptHost::new();
         let (mut engine, _) = ActiveEngine::load(source, &mut host).unwrap();
         engine.init(&mut host).unwrap();
-        for key in [IcKey::Num5, IcKey::Num8, IcKey::Func2] {
+        for key in [IcKey::Num5, IcKey::Num8, IcKey::Divide] {
             engine.on_key(key, &mut host).unwrap();
         }
         for frame in 0..60 {

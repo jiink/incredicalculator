@@ -1008,30 +1008,30 @@ struct KeyMatrix<'d> {
 
 impl<'d> KeyMatrix<'d> {
     const MAP: [[Option<IcKey>; MATRIX_COLS]; MATRIX_ROWS] = [
-        [None, None, Some(IcKey::Func1), Some(IcKey::Func2)],
+        [None, None, Some(IcKey::Backspace), Some(IcKey::Divide)],
         [
             Some(IcKey::Num7),
             Some(IcKey::Num8),
             Some(IcKey::Num9),
-            Some(IcKey::Func3),
+            Some(IcKey::Multiply),
         ],
         [
             Some(IcKey::Num4),
             Some(IcKey::Num5),
             Some(IcKey::Num6),
-            Some(IcKey::Func4),
+            Some(IcKey::Minus),
         ],
         [
             Some(IcKey::Num1),
             Some(IcKey::Num2),
             Some(IcKey::Num3),
-            Some(IcKey::Func5),
+            Some(IcKey::Plus),
         ],
         [
             Some(IcKey::Shift),
             Some(IcKey::Num0),
             Some(IcKey::Super),
-            Some(IcKey::Func6),
+            Some(IcKey::Equals),
         ],
     ];
 
@@ -1142,12 +1142,12 @@ impl<'d> KeyMatrix<'d> {
             7 => Some(IcKey::Num7),
             8 => Some(IcKey::Num8),
             9 => Some(IcKey::Num9),
-            10 => Some(IcKey::Func1),
-            11 => Some(IcKey::Func2),
-            12 => Some(IcKey::Func3),
-            13 => Some(IcKey::Func4),
-            14 => Some(IcKey::Func5),
-            15 => Some(IcKey::Func6),
+            10 => Some(IcKey::Backspace),
+            11 => Some(IcKey::Divide),
+            12 => Some(IcKey::Multiply),
+            13 => Some(IcKey::Minus),
+            14 => Some(IcKey::Plus),
+            15 => Some(IcKey::Equals),
             16 => Some(IcKey::Shift),
             17 => Some(IcKey::Super),
             _ => None,
@@ -1297,24 +1297,24 @@ async fn main(spawner: Spawner) {
     // row  column  button num  button func
     // row0 col0    no button present
     // row0 col1    no button present
-    // row0 col2    switch 1    Func1
-    // row0 col3    switch 2    Func2
+    // row0 col2    switch 1    Backspace
+    // row0 col3    switch 2    Divide
     // row1 col0    switch 3    Num7
     // row1 col1    switch 4    Num8
     // row1 col2    switch 5    Num9
-    // row1 col3    switch 6    Func3
+    // row1 col3    switch 6    Multiply
     // row2 col0    switch 7    Num4
     // row2 col1    switch 8    Num5
     // row2 col2    switch 9    Num6
-    // row2 col3    switch 10   Func4
+    // row2 col3    switch 10   Minus
     // row3 col0    switch 11   Num1
     // row3 col1    switch 12   Num2
     // row3 col2    switch 13   Num3
-    // row3 col3    switch 14   Func5
+    // row3 col3    switch 14   Plus
     // row4 col0    switch 15   Num0
     // row4 col1    switch 16   Shift
     // row4 col2    switch 17   Super
-    // row4 col3    switch 18   Func6
+    // row4 col3    switch 18   Equals
     let matrix_rows = [
         Output::new(p.PIN_13, Level::High),
         Output::new(p.PIN_14, Level::High),

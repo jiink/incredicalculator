@@ -683,10 +683,10 @@ impl IcApp for FaceCalculator {
             IcKey::Num7 => self.eyes.sweat = true,
             IcKey::Num8 => self.eyes.sweat = false,
 
-            IcKey::Func1 => self.eyes.set_position(RoboPosition::NW),
-            IcKey::Func2 => self.eyes.set_position(RoboPosition::N),
-            IcKey::Func3 => self.eyes.set_position(RoboPosition::NE),
-            IcKey::Func5 => self.eyes.set_position(RoboPosition::Center),
+            IcKey::Backspace => self.eyes.set_position(RoboPosition::NW),
+            IcKey::Divide => self.eyes.set_position(RoboPosition::N),
+            IcKey::Multiply => self.eyes.set_position(RoboPosition::NE),
+            IcKey::Plus => self.eyes.set_position(RoboPosition::Center),
 
             _ => {}
         }

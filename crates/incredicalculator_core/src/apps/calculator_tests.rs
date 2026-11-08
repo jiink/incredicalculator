@@ -195,11 +195,11 @@ fn press_with(calculator: &mut Calculator, modifiers: &[IcKey], key: IcKey) {
 }
 
 fn undo(calculator: &mut Calculator) {
-    press_with(calculator, &[IcKey::Super], IcKey::Num3);
+    press_with(calculator, &[IcKey::Super], IcKey::Divide);
 }
 
 #[test]
-fn super_num3_undoes_one_key_press_at_a_time() {
+fn super_divide_undoes_one_key_press_at_a_time() {
     let mut calculator = Calculator::new(EngineMode::Scientific);
     press_with(&mut calculator, &[], IcKey::Num1);
     press_with(&mut calculator, &[], IcKey::Num2);
@@ -225,12 +225,12 @@ fn super_num3_undoes_one_key_press_at_a_time() {
 fn undo_restores_cleared_and_submitted_equations() {
     let mut calculator = Calculator::new(EngineMode::Programmer);
     press_with(&mut calculator, &[], IcKey::Num4);
-    press_with(&mut calculator, &[IcKey::Super], IcKey::Num9);
+    press_with(&mut calculator, &[IcKey::Super], IcKey::Backspace);
     assert_eq!(calculator.current_eq.as_str(), "");
     undo(&mut calculator);
     assert_eq!(calculator.current_eq.as_str(), "4");
 
-    press_with(&mut calculator, &[], IcKey::Func6);
+    press_with(&mut calculator, &[], IcKey::Equals);
     assert_eq!(calculator.current_eq.as_str(), "");
     assert_eq!(calculator.eq_history_len, 1);
     undo(&mut calculator);

@@ -184,17 +184,16 @@ pub fn draw_text_fit(
     text::draw_text(platform, text, pos, TextStyle { scale, ..style });
 }
 
-/// The F1-F6 labels for whichever modifier is held. Super+F5/F6 always
-/// belong to the shell's volume and brightness.
+/// The labels for the right-hand column (⌫ / * - + =) for whichever
+/// modifier is held. With Super, the bottom four are F1-F4.
 pub fn function_labels<'a>(
     ctx: &InputContext,
     plain: &'a [&'a str; 6],
     shifted: &'a [&'a str; 6],
-    super_held: [&'a str; 4],
+    super_held: &'a [&'a str; 6],
 ) -> [&'a str; 6] {
     if ctx.is_super() {
-        let [f1, f2, f3, f4] = super_held;
-        [f1, f2, f3, f4, "Vol", "Light"]
+        *super_held
     } else if ctx.is_shifted() {
         *shifted
     } else {
@@ -202,7 +201,7 @@ pub fn function_labels<'a>(
     }
 }
 
-/// Labels for F1-F6, which run down the right side of the device. Empty
+/// Labels for the keys that run down the right side of the device. Empty
 /// labels are skipped, and `lit` highlights the label at that index.
 pub fn draw_function_column(platform: &mut dyn IcPlatform, labels: &[&str; 6], lit: Option<usize>) {
     const LEFT: i32 = 262;

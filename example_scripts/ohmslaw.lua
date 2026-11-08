@@ -1,9 +1,9 @@
 -- Ohm's Law: type any two of voltage, current and resistance; the third updates.
 --
 -- Each value is a math_input box, so it types like the calculator: digits,
--- Super+0 for ".", the operator keys, Shift+7/8 for parentheses, Super+9 to
--- clear and Super+3 to undo. A box can hold an expression such as 3.3/2.
--- Super+8 and Super+2 (or =) move between boxes. F4 (Super+-) resets.
+-- Super+0 for ".", the operator keys, Shift+7/8 for parentheses, Super+Backspace
+-- to clear and Super+/ to undo. A box can hold an expression such as 3.3/2.
+-- Super+8 and Super+2 (or =) move between boxes. F4 (Super+=) resets.
 --
 -- The two boxes you edited most recently are the inputs; the remaining box is
 -- calculated from them (V = I * R). Typing into the calculated box makes it an
@@ -128,5 +128,5 @@ function update()
         boxes[f.key]:draw(i == sel)
     end
 
-    text("Super+8/2 move   Super+9 clear   F4 reset", 160, 235, 4, DIM, "center")
+    text("Super+8/2 move   Super+Bk clear   F4 reset", 160, 235, 4, DIM, "center")
 end

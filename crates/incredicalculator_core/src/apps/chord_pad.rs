@@ -386,7 +386,7 @@ impl ChordPad {
             ctx,
             &["Strum", "Hold", "Oct-", "Oct+", "Voice", "Mode"],
             &["Speed", "", "Root-", "Root+", "", ""],
-            ["Snd+", "Snd-", "", ""],
+            &["", "", "Snd+", "Snd-", "", ""],
         );
         let hold_lit = self.hold && !ctx.is_super() && !ctx.is_shifted();
         music::draw_function_column(platform, &labels, hold_lit.then_some(1));
@@ -536,34 +536,34 @@ impl IcApp for ChordPad {
 
     fn on_key(&mut self, key: IcKey, ctx: &InputContext) {
         if ctx.is_super() {
-            // Super+F5/F6 belong to the shell's volume and brightness.
+            // F1 and F2.
             match key {
-                IcKey::Func1 => {
+                IcKey::Multiply => {
                     self.sound_idx = music::cycle(self.sound_idx, SOUND_PRESETS.len(), true)
                 }
-                IcKey::Func2 => {
+                IcKey::Minus => {
                     self.sound_idx = music::cycle(self.sound_idx, SOUND_PRESETS.len(), false)
                 }
                 _ => {}
             }
         } else if ctx.is_shifted() {
             match key {
-                IcKey::Func1 => {
+                IcKey::Backspace => {
                     self.strum_speed_idx =
                         music::cycle(self.strum_speed_idx, STRUM_SPEEDS.len(), true)
                 }
-                IcKey::Func3 => self.root = (self.root + 11) % 12,
-                IcKey::Func4 => self.root = (self.root + 1) % 12,
+                IcKey::Multiply => self.root = (self.root + 11) % 12,
+                IcKey::Minus => self.root = (self.root + 1) % 12,
                 _ => {}
             }
         } else {
             match key {
-                IcKey::Func1 => self.strum = self.strum.next(),
-                IcKey::Func2 => self.hold = !self.hold,
-                IcKey::Func3 => self.octave = (self.octave - 1).max(MIN_OCTAVE),
-                IcKey::Func4 => self.octave = (self.octave + 1).min(MAX_OCTAVE),
-                IcKey::Func5 => self.smooth_voicing = !self.smooth_voicing,
-                IcKey::Func6 => self.minor_key = !self.minor_key,
+                IcKey::Backspace => self.strum = self.strum.next(),
+                IcKey::Divide => self.hold = !self.hold,
+                IcKey::Multiply => self.octave = (self.octave - 1).max(MIN_OCTAVE),
+                IcKey::Minus => self.octave = (self.octave + 1).min(MAX_OCTAVE),
+                IcKey::Plus => self.smooth_voicing = !self.smooth_voicing,
+                IcKey::Equals => self.minor_key = !self.minor_key,
                 _ => {}
             }
         }

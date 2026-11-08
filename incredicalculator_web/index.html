@@ -237,35 +237,35 @@
       </div>
 
       <div class="virtual-keypad" aria-label="Calculator keypad">
-        <button class="virtual-key" data-code="Backspace" style="left: 214px; top: 9px;"><span class="main-label">⌫</span><span class="shift-label">&amp;</span><span class="super-label">F1</span></button>
-        <button class="virtual-key" data-code="Slash" style="left: 214px; top: 78px;"><span class="main-label">/</span><span class="shift-label">|</span><span class="super-label">F2</span></button>
+        <button class="virtual-key" data-code="Backspace" style="left: 214px; top: 9px;"></button>
+        <button class="virtual-key" data-code="Slash" style="left: 214px; top: 78px;"></button>
 
-        <button class="virtual-key" data-code="Digit7" style="left: 7px; top: 147px;"><span class="main-label">7</span><span class="shift-label">(</span><span class="super-label">Hm</span></button>
-        <button class="virtual-key" data-code="Digit8" style="left: 76px; top: 147px;"><span class="main-label">8</span><span class="shift-label">)</span><span class="super-label">^</span></button>
-        <button class="virtual-key" data-code="Digit9" style="left: 145px; top: 147px;"><span class="main-label">9</span><span class="shift-label">0x</span><span class="super-label">Clr</span></button>
-        <button class="virtual-key" data-code="NumpadMultiply" style="left: 214px; top: 147px;"><span class="main-label">*</span><span class="shift-label">%</span><span class="super-label">F3</span></button>
+        <button class="virtual-key" data-code="Digit7" style="left: 7px; top: 147px;"></button>
+        <button class="virtual-key" data-code="Digit8" style="left: 76px; top: 147px;"></button>
+        <button class="virtual-key" data-code="Digit9" style="left: 145px; top: 147px;"></button>
+        <button class="virtual-key" data-code="NumpadMultiply" style="left: 214px; top: 147px;"></button>
 
-        <button class="virtual-key" data-code="Digit4" style="left: 7px; top: 216px;"><span class="main-label">4</span><span class="shift-label">E</span><span class="super-label">&lt;</span></button>
-        <button class="virtual-key" data-code="Digit5" style="left: 76px; top: 216px;"><span class="main-label">5</span><span class="shift-label">F</span><span class="super-label">✔️</span></button>
-        <button class="virtual-key" data-code="Digit6" style="left: 145px; top: 216px;"><span class="main-label">6</span><span class="shift-label">~</span><span class="super-label">&gt;</span></button>
-        <button class="virtual-key" data-code="Minus" style="left: 214px; top: 216px;"><span class="main-label">-</span><span class="shift-label">&lt;&lt;</span><span class="super-label">F4</span></button>
+        <button class="virtual-key" data-code="Digit4" style="left: 7px; top: 216px;"></button>
+        <button class="virtual-key" data-code="Digit5" style="left: 76px; top: 216px;"></button>
+        <button class="virtual-key" data-code="Digit6" style="left: 145px; top: 216px;"></button>
+        <button class="virtual-key" data-code="Minus" style="left: 214px; top: 216px;"></button>
 
-        <button class="virtual-key" data-code="Digit1" style="left: 7px; top: 285px;"><span class="main-label">1</span><span class="shift-label">B</span><span class="super-label">End</span></button>
-        <button class="virtual-key" data-code="Digit2" style="left: 76px; top: 285px;"><span class="main-label">2</span><span class="shift-label">C</span><span class="super-label">v</span></button>
-        <button class="virtual-key" data-code="Digit3" style="left: 145px; top: 285px;"><span class="main-label">3</span><span class="shift-label">D</span><span class="super-label">↩</span></button>
-        <button class="virtual-key" data-code="NumpadAdd" style="left: 214px; top: 285px;"><span class="main-label">+</span><span class="shift-label">&gt;&gt;</span><span class="super-label">🔊</span></button>
+        <button class="virtual-key" data-code="Digit1" style="left: 7px; top: 285px;"></button>
+        <button class="virtual-key" data-code="Digit2" style="left: 76px; top: 285px;"></button>
+        <button class="virtual-key" data-code="Digit3" style="left: 145px; top: 285px;"></button>
+        <button class="virtual-key" data-code="NumpadAdd" style="left: 214px; top: 285px;"></button>
 
-        <button class="virtual-key" data-code="Digit0" style="left: 7px; top: 354px;"><span class="main-label">0</span><span class="shift-label">A</span><span class="super-label">.</span></button>
-        <button class="virtual-key" data-code="ShiftLeft" style="left: 76px; top: 354px;"><span class="main-label">⇪</span><span class="shift-label"></span><span class="super-label"></span></button>
-        <button class="virtual-key" data-code="ControlLeft" style="left: 145px; top: 354px;"><span class="main-label">Ⓢ</span><span class="shift-label"></span><span class="super-label"></span></button>
-        <button class="virtual-key" data-code="Equal" style="left: 214px; top: 354px;"><span class="main-label">=</span><span class="shift-label">^</span><span class="super-label">🔆</span></button>
+        <button class="virtual-key" data-code="Digit0" style="left: 7px; top: 354px;"></button>
+        <button class="virtual-key" data-code="ShiftLeft" style="left: 76px; top: 354px;"></button>
+        <button class="virtual-key" data-code="ControlLeft" style="left: 145px; top: 354px;"></button>
+        <button class="virtual-key" data-code="Equal" style="left: 214px; top: 354px;"></button>
       </div>
     </div>
 
     <script type="module">
       import init, {
         start, key_down, key_up, tick, fill_audio, has_active_audio, clear_settings,
-        install_script, delete_script, installed_scripts,
+        install_script, delete_script, installed_scripts, key_legends,
       } from './pkg/incredicalculator_web.js';
 
       // Frames are only rendered after input, or continuously while the
@@ -456,6 +456,23 @@
         requestFrame();
       }
 
+      // Fills each keycap with its legends from the shared table in core.
+      function labelKeys() {
+        document.querySelectorAll('.virtual-key').forEach((button) => {
+          const [main = '', shift = '', sup = ''] = key_legends(button.dataset.code);
+          button.replaceChildren(
+            ...[['main-label', main], ['shift-label', shift], ['super-label', sup]].map(
+              ([className, text]) => {
+                const span = document.createElement('span');
+                span.className = className;
+                span.textContent = text;
+                return span;
+              },
+            ),
+          );
+        });
+      }
+
       document.querySelectorAll('.virtual-key').forEach((button) => {
         const code = button.dataset.code;
 
@@ -573,6 +590,7 @@
       window.addEventListener('resize', layoutCanvas);
 
       await init();
+      labelKeys();
       start();
       ready = true;
       refreshScriptList();

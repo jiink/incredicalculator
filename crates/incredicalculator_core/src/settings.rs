@@ -226,7 +226,7 @@ impl SettingsMenu {
     ) -> bool {
         if self.editing_value {
             match key {
-                IcKey::Func6 => {
+                IcKey::Equals => {
                     if let Ok(value) = self.value_input.text().parse::<u32>() {
                         if let SettingDisplay::Integer { kind, .. } =
                             SETTINGS[self.selected_entry].display
@@ -252,7 +252,7 @@ impl SettingsMenu {
                 self.selected_entry += 1;
                 self.update_scroll();
             }
-            IcKey::Func6 => {
+            IcKey::Equals => {
                 let entry = SETTINGS[self.selected_entry];
                 match entry.display {
                     SettingDisplay::Integer { kind, .. } => {
@@ -273,7 +273,7 @@ impl SettingsMenu {
                     },
                 }
             }
-            IcKey::Func1 => return true,
+            IcKey::Backspace => return true,
             _ => {}
         }
         false

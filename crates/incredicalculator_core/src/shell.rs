@@ -86,6 +86,9 @@ pub struct IcShell {
     modifiers: ModifierKeys,
     shift_was_engaged: bool,
     adjusting_something: Option<Adjustable>,
+    /// Keys whose press the shell kept. Apps see them as up until released,
+    /// so apps that poll held keys don't act on them too.
+    held_by_shell: [bool; IcKey::COUNT],
     audio: AudioEngine,
 }
 
@@ -122,6 +125,7 @@ impl IcShell {
             modifiers: ModifierKeys::default(),
             shift_was_engaged: false,
             adjusting_something: None,
+            held_by_shell: [false; IcKey::COUNT],
             audio: AudioEngine::new(),
         }
     }
@@ -686,7 +690,7 @@ impl IcShell {
         }
         let backspace_closes_menu = self.active_app_idx.is_none()
             && !self.settings_open
-            && self.key_states[IcKey::Func1 as usize].just_pressed;
+            && self.key_states[IcKey::Backspace as usize].just_pressed;
         for i in 0..IcKey::COUNT {
             if !self.key_states[i].just_pressed {
                 continue;
@@ -700,11 +704,11 @@ impl IcShell {
             let mut input_consumed_by_shell: bool = false;
             if ctx.is_super() {
                 match key {
-                    IcKey::Func6 => {
+                    IcKey::Num3 => {
                         self.adjusting_something = Some(Adjustable::Brightness);
                         input_consumed_by_shell = true;
                     }
-                    IcKey::Func5 => {
+                    IcKey::Num9 => {
                         self.adjusting_something = Some(Adjustable::Volume);
                         input_consumed_by_shell = true;
                     }
@@ -714,10 +718,10 @@ impl IcShell {
                 let adjust_amt = 32;
                 input_consumed_by_shell = true;
                 match key {
-                    IcKey::Func4 => {
+                    IcKey::Minus => {
                         Self::adjust_adjustable(platform, adjustable, -adjust_amt);
                     }
-                    IcKey::Func5 => {
+                    IcKey::Plus => {
                         Self::adjust_adjustable(platform, adjustable, adjust_amt);
                     }
                     _ => {
@@ -725,6 +729,7 @@ impl IcShell {
                     }
                 }
             }
+            self.held_by_shell[i] |= input_consumed_by_shell;
             if let Some(app_idx) = self.active_app_idx {
                 if !input_consumed_by_shell {
                     self.apps[app_idx].on_key(key, &ctx);
@@ -780,8 +785,19 @@ impl IcShell {
             }
         }
         self.audio.set_volume(platform.get_volume());
+        let mut app_states = effective_states;
+        for (i, held) in self.held_by_shell.iter_mut().enumerate() {
+            *held &= self.key_states[i].is_down;
+            if *held {
+                app_states[i] = KeyState::default();
+            }
+        }
+        let app_ctx = InputContext {
+            key_states: &app_states,
+            ..ctx
+        };
         if let Some(appidx) = self.active_app_idx {
-            self.apps[appidx].update(platform, &ctx, &mut self.audio);
+            self.apps[appidx].update(platform, &app_ctx, &mut self.audio);
         } else if self.settings_open {
             self.settings_menu.draw(platform);
         } else {

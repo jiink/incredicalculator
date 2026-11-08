@@ -21,7 +21,7 @@ use tsuki::{CallError, Lua, RegKey, Thread, Value, fp};
 
 use super::{
     DrawCmd, INPUT_CAPACITY, MAX_INPUTS, ScriptEngine, ScriptHost, ScriptInput, ScriptMeta,
-    align_from_name, color_from_int, key_action, key_from_name, key_name,
+    align_from_name, color_from_int, key_action,
 };
 use crate::app::InputContext;
 use crate::input::{IcKey, KeyMode, KeyState};
@@ -103,7 +103,7 @@ impl LuaEngine {
                     let data = self.lua.associated_data().get();
                     key_action(key, data.shifted(), data.super_held())
                 };
-                let key = self.lua.create_str(key_name(key));
+                let key = self.lua.create_str(key.name());
                 match action {
                     Some(action) => thread.call::<()>(function, (key, self.lua.create_str(action))),
                     None => thread.call::<()>(function, (key, tsuki::Nil)),
@@ -364,7 +364,7 @@ fn millis(cx: Cx) -> FnResult {
 fn is_down(cx: Cx) -> FnResult {
     let arg = cx.arg(1);
     let name = arg.to_utf8()?;
-    let key = key_from_name(name).ok_or_else(|| arg.error(format!("unknown key \"{name}\"")))?;
+    let key = IcKey::from_name(name).ok_or_else(|| arg.error(format!("unknown key \"{name}\"")))?;
     let down = cx.associated_data().get().keys_down[key as usize];
     cx.push(down)?;
     Ok(cx.into())
@@ -795,9 +795,9 @@ mod tests {
                 (IcKey::Num7, false, false),
                 (IcKey::Num7, true, false),
                 (IcKey::Num8, false, true),
-                (IcKey::Func1, false, false),
-                (IcKey::Func6, false, false),
-                (IcKey::Func2, false, true),
+                (IcKey::Backspace, false, false),
+                (IcKey::Equals, false, false),
+                (IcKey::Divide, false, true),
                 (IcKey::Shift, true, false),
             ],
         );
@@ -807,9 +807,9 @@ mod tests {
                 "7\t7",
                 "7\t(",
                 "8\tup",
-                "f1\tbackspace",
-                "f6\tenter",
-                "f2\tF2",
+                "backspace\tbackspace",
+                "=\tenter",
+                "/\tundo",
                 "shift\tnil"
             ]
         );
@@ -829,16 +829,16 @@ mod tests {
         let host = press_all(
             source,
             &[
-                (IcKey::Func5, false, false), // +
+                (IcKey::Plus, false, false), // +
                 (IcKey::Num2, false, false),
                 (IcKey::Num0, false, true), // .
                 (IcKey::Num5, false, false),
-                (IcKey::Func3, false, false), // *
+                (IcKey::Multiply, false, false), // *
                 (IcKey::Num2, false, false),
-                (IcKey::Func1, false, false), // backspace
+                (IcKey::Backspace, false, false), // backspace
                 (IcKey::Num4, false, false),
-                (IcKey::Num8, false, true),   // up
-                (IcKey::Func6, false, false), // enter
+                (IcKey::Num8, false, true),    // up
+                (IcKey::Equals, false, false), // enter
                 (IcKey::Shift, true, false),
             ],
         );
@@ -875,7 +875,7 @@ mod tests {
                 -- How ohmslaw.lua writes small numbers.
                 local small = math_input{ text = "1.5*10^-5" }
                 assert(math.abs(small:value() - 1.5e-5) < 1e-12, small:value())
-                assert(text_width("Super+8/2 move   Super+9 clear   F4 reset", 4) < 310)
+                assert(text_width("Super+8/2 move   Super+Bk clear   F4 reset", 4) < 310)
                 assert(not pcall(box.key, box))
                 assert(not pcall(box.text, {}))
                 assert(not pcall(math_input, { mode = "roman" }))

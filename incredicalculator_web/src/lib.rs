@@ -410,28 +410,36 @@ fn map_code(code: &str) -> Option<IcKey> {
         "Numpad7" => Some(IcKey::Num7),
         "Numpad8" => Some(IcKey::Num8),
         "Numpad9" => Some(IcKey::Num9),
-        "KeyA" => Some(IcKey::Func1),
-        "KeyB" => Some(IcKey::Func2),
-        "KeyC" => Some(IcKey::Func3),
-        "KeyD" => Some(IcKey::Func4),
-        "KeyE" => Some(IcKey::Func6),
-        "KeyF" => Some(IcKey::Func5),
-        "Backspace" => Some(IcKey::Func1),
-        "Slash" => Some(IcKey::Func2),
-        "NumpadMultiply" => Some(IcKey::Func3),
-        "Minus" | "NumpadSubtract" => Some(IcKey::Func4),
-        "NumpadAdd" => Some(IcKey::Func5),
-        "Equal" | "NumpadEnter" => Some(IcKey::Func6),
-        "F1" => Some(IcKey::Func1),
-        "F2" => Some(IcKey::Func2),
-        "F3" => Some(IcKey::Func3),
-        "F4" => Some(IcKey::Func4),
-        "F5" => Some(IcKey::Func5),
-        "F6" => Some(IcKey::Func6),
+        "KeyA" => Some(IcKey::Backspace),
+        "KeyB" => Some(IcKey::Divide),
+        "KeyC" => Some(IcKey::Multiply),
+        "KeyD" => Some(IcKey::Minus),
+        "KeyE" => Some(IcKey::Equals),
+        "KeyF" => Some(IcKey::Plus),
+        "Backspace" => Some(IcKey::Backspace),
+        "Slash" => Some(IcKey::Divide),
+        "NumpadMultiply" => Some(IcKey::Multiply),
+        "Minus" | "NumpadSubtract" => Some(IcKey::Minus),
+        "NumpadAdd" => Some(IcKey::Plus),
+        "Equal" | "NumpadEnter" => Some(IcKey::Equals),
         "ShiftLeft" | "ShiftRight" => Some(IcKey::Shift),
         "MetaLeft" | "MetaRight" | "ControlLeft" | "ControlRight" => Some(IcKey::Super),
         _ => None,
     }
+}
+
+/// The keycap legends (alone, with Shift, with Super) of the key that the
+/// `KeyboardEvent.code` `code` presses, or an empty list for other codes.
+#[wasm_bindgen]
+pub fn key_legends(code: &str) -> Vec<String> {
+    let Some(key) = map_code(code) else {
+        return Vec::new();
+    };
+    let legends = key.legends();
+    [legends.primary, legends.shift, legends.super_]
+        .iter()
+        .map(|legend| legend.label.into())
+        .collect()
 }
 
 #[wasm_bindgen]

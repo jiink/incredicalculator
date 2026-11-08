@@ -193,119 +193,28 @@ pub trait ScriptEngine: Sized {
     /// Runs the script's `update` hook. Drawing calls are only honored here.
     fn update(&mut self, host: &mut ScriptHost) -> Result<(), String>;
     /// Runs the script's `on_key` hook with the key's script name (see
-    /// [`key_name`]) and what its legend means with the modifiers in
+    /// [`IcKey::name`]) and what its legend means with the modifiers in
     /// `host.keys_down` (see [`key_action`]).
     fn on_key(&mut self, key: IcKey, host: &mut ScriptHost) -> Result<(), String>;
 }
 
-/// The name scripts use for a key: "0"-"9", "f1"-"f6", "shift" or "super".
-pub fn key_name(key: IcKey) -> &'static str {
-    match key {
-        IcKey::Num0 => "0",
-        IcKey::Num1 => "1",
-        IcKey::Num2 => "2",
-        IcKey::Num3 => "3",
-        IcKey::Num4 => "4",
-        IcKey::Num5 => "5",
-        IcKey::Num6 => "6",
-        IcKey::Num7 => "7",
-        IcKey::Num8 => "8",
-        IcKey::Num9 => "9",
-        IcKey::Func1 => "f1",
-        IcKey::Func2 => "f2",
-        IcKey::Func3 => "f3",
-        IcKey::Func4 => "f4",
-        IcKey::Func5 => "f5",
-        IcKey::Func6 => "f6",
-        IcKey::Shift => "shift",
-        IcKey::Super => "super",
-        IcKey::_Max => "",
-    }
-}
-
 /// What a key press means by the legends printed on the keypad, given the
-/// held modifiers, or `None` for Shift and Super themselves (and for the
-/// presses the shell keeps: Super with `+` or `=` adjust volume and
-/// brightness).
-///
-/// | key  | alone       | Shift | Super   |
-/// |------|-------------|-------|---------|
-/// | 0    | `0`         | `A`   | `.`     |
-/// | 1    | `1`         | `B`   | `end`   |
-/// | 2    | `2`         | `C`   | `down`  |
-/// | 3    | `3`         | `D`   | `undo`  |
-/// | 4    | `4`         | `E`   | `left`  |
-/// | 5    | `5`         | `F`   | `ok`    |
-/// | 6    | `6`         | `~`   | `right` |
-/// | 7    | `7`         | `(`   | `home`  |
-/// | 8    | `8`         | `)`   | `up`    |
-/// | 9    | `9`         | `0x`  | `clear` |
-/// | f1 ⌫ | `backspace` | `&`   | `F1`    |
-/// | f2 / | `/`         | `\|` | `F2`    |
-/// | f3 * | `*`         | `%`   | `F3`    |
-/// | f4 - | `-`         | `<<`  | `F4`    |
-/// | f5 + | `+`         | `>>`  |         |
-/// | f6 = | `enter`     | `^`   |         |
+/// held modifiers, or `None` for Shift and Super themselves and for the
+/// presses the shell keeps (see [`IcKey::legends`]).
 pub fn key_action(key: IcKey, shift: bool, super_held: bool) -> Option<&'static str> {
-    use IcKey::*;
-    const ALONE: [&str; 16] = [
-        "0",
-        "1",
-        "2",
-        "3",
-        "4",
-        "5",
-        "6",
-        "7",
-        "8",
-        "9",
-        "backspace",
-        "/",
-        "*",
-        "-",
-        "+",
-        "enter",
-    ];
-    const SHIFT: [&str; 16] = [
-        "A", "B", "C", "D", "E", "F", "~", "(", ")", "0x", "&", "|", "%", "<<", ">>", "^",
-    ];
-    const SUPER: [&str; 14] = [
-        ".", "end", "down", "undo", "left", "ok", "right", "home", "up", "clear", "F1", "F2", "F3",
-        "F4",
-    ];
-    if matches!(key, Shift | Super | _Max) {
-        return None;
-    }
-    let i = key as usize;
-    // Super + Shift opens the menu, so both never reach an app together.
-    if super_held {
-        SUPER.get(i).copied()
-    } else if shift {
-        Some(SHIFT[i])
-    } else {
-        Some(ALONE[i])
-    }
+    key.legends().with(shift, super_held).action
 }
 
 #[cfg(test)]
 #[test]
 fn every_key_has_one_meaning_per_modifier() {
-    use num_traits::FromPrimitive;
-    for key in (0..IcKey::Shift as usize).filter_map(IcKey::from_usize) {
+    for key in IcKey::all().take_while(|&key| key != IcKey::Shift) {
         assert!(key_action(key, false, false).is_some(), "{key:?}");
         assert!(key_action(key, true, false).is_some(), "{key:?}");
     }
-    assert_eq!(key_action(IcKey::Func5, false, true), None);
+    assert_eq!(key_action(IcKey::Num9, false, true), None);
     assert_eq!(key_action(IcKey::Num9, true, false), Some("0x"));
     assert_eq!(key_action(IcKey::Shift, true, false), None);
-}
-
-/// The key a script refers to by `name`, as returned by [`key_name`].
-pub fn key_from_name(name: &str) -> Option<IcKey> {
-    use num_traits::FromPrimitive;
-    (0..IcKey::COUNT)
-        .filter_map(IcKey::from_usize)
-        .find(|&key| key_name(key) == name)
 }
 
 pub(crate) fn align_from_name(name: &str) -> Option<HAlign> {

@@ -55,11 +55,11 @@ impl IcApp for SoundTest {
 
     fn on_key(&mut self, key: IcKey, _ctx: &InputContext) {
         match key {
-            IcKey::Func2 => self.toggle_vibrato(),
-            IcKey::Func3 => self.cycle_attack(),
-            IcKey::Func4 => self.cycle_release(),
-            IcKey::Func5 => self.adjust_square_mix(-16),
-            IcKey::Func6 => self.adjust_square_mix(16),
+            IcKey::Divide => self.toggle_vibrato(),
+            IcKey::Multiply => self.cycle_attack(),
+            IcKey::Minus => self.cycle_release(),
+            IcKey::Plus => self.adjust_square_mix(-16),
+            IcKey::Equals => self.adjust_square_mix(16),
             _ => {}
         }
     }
@@ -116,7 +116,7 @@ impl IcApp for SoundTest {
         text::draw_text_f(
             platform,
             format_args!(
-                "F2 Vibrato: {}",
+                "/ Vibrato: {}",
                 if self.patch.vibrato_depth_cents == 0 {
                     "Off"
                 } else {
@@ -128,20 +128,20 @@ impl IcApp for SoundTest {
         );
         text::draw_text_f(
             platform,
-            format_args!("F3 Attack: {} ms", self.patch.attack_ms),
+            format_args!("* Attack: {} ms", self.patch.attack_ms),
             Vec2::new(4.0, 48.0),
             TextStyle::new(6.0, RGB8::new(0, 0, 0)),
         );
         text::draw_text_f(
             platform,
-            format_args!("F4 Release: {} ms", self.patch.release_ms),
+            format_args!("- Release: {} ms", self.patch.release_ms),
             Vec2::new(4.0, 68.0),
             TextStyle::new(6.0, RGB8::new(0, 0, 0)),
         );
         text::draw_text_f(
             platform,
             format_args!(
-                "F5/F6 Triangle/Square: {}/{}",
+                "+/= Triangle/Square: {}/{}",
                 self.patch.triangle_mix, self.patch.square_mix
             ),
             Vec2::new(4.0, 88.0),

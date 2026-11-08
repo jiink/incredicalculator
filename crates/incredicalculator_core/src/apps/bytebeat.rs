@@ -193,11 +193,13 @@ impl Bytebeat {
             TextStyle::new(3.5, DIM_TEXT_COLOR).thickness(1.0),
         );
 
+        let play = if self.playing { "Stop" } else { "Play" };
+        let super_labels = ["Clr", "Undo", play, "Rate", "", ""];
         let labels = music::function_labels(
             ctx,
             &["Del", "/", "*", "-", "+", "Play"],
             &["&", "|", "%", "<<", ">>", "^"],
-            [if self.playing { "Stop" } else { "Play" }, "Rate", "", ""],
+            &super_labels,
         );
         music::draw_function_column(platform, &labels, None);
     }
@@ -334,10 +336,10 @@ impl IcApp for Bytebeat {
 
     fn on_key(&mut self, key: IcKey, ctx: &InputContext) {
         if ctx.is_super() && !ctx.is_shifted() {
-            // Super+F5/F6 belong to the shell's volume and brightness.
+            // F1 and F2.
             match key {
-                IcKey::Func1 => return self.toggle_playing(),
-                IcKey::Func2 => {
+                IcKey::Multiply => return self.toggle_playing(),
+                IcKey::Minus => {
                     self.rate_idx = music::cycle(self.rate_idx, T_RATES_HZ.len(), true);
                     return;
                 }

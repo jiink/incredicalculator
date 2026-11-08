@@ -360,7 +360,7 @@ impl<const N: usize> MathInput<N> {
 
     /// Navigation that leaves this input is returned for the app to handle.
     pub fn handle_key(&mut self, key: IcKey, ctx: &InputContext) -> MathInputEvent {
-        if ctx.is_super() && !ctx.is_shifted() && key == IcKey::Num3 {
+        if ctx.is_super() && !ctx.is_shifted() && key == IcKey::Divide {
             return Self::changed_from(self.undo());
         }
 
@@ -389,12 +389,12 @@ impl<const N: usize> MathInput<N> {
             IcKey::Num7 => Self::changed_from(self.insert_digit(7)),
             IcKey::Num8 => Self::changed_from(self.insert_digit(8)),
             IcKey::Num9 => Self::changed_from(self.insert_digit(9)),
-            IcKey::Func1 => Self::changed_from(self.buffer.backspace()),
-            IcKey::Func2 => Self::changed_from(self.insert_char('/')),
-            IcKey::Func3 => Self::changed_from(self.insert_char('*')),
-            IcKey::Func4 => Self::changed_from(self.insert_char('-')),
-            IcKey::Func5 => Self::changed_from(self.insert_char('+')),
-            IcKey::Func6 => MathInputEvent::Submitted,
+            IcKey::Backspace => Self::changed_from(self.buffer.backspace()),
+            IcKey::Divide => Self::changed_from(self.insert_char('/')),
+            IcKey::Multiply => Self::changed_from(self.insert_char('*')),
+            IcKey::Minus => Self::changed_from(self.insert_char('-')),
+            IcKey::Plus => Self::changed_from(self.insert_char('+')),
+            IcKey::Equals => MathInputEvent::Submitted,
             IcKey::Shift | IcKey::Super | IcKey::_Max => MathInputEvent::Ignored,
         }
     }
@@ -571,7 +571,7 @@ impl<const N: usize> MathInput<N> {
             IcKey::Num6 if self.mode == MathInputMode::Expression => Some('.'),
             IcKey::Num7 if self.mode == MathInputMode::Expression => Some('('),
             IcKey::Num8 if self.mode == MathInputMode::Expression => Some(')'),
-            IcKey::Func6 if self.mode == MathInputMode::Expression => Some('^'),
+            IcKey::Equals if self.mode == MathInputMode::Expression => Some('^'),
             _ => None,
         };
 
@@ -594,12 +594,12 @@ impl<const N: usize> MathInput<N> {
             IcKey::Num7 => "(",
             IcKey::Num8 => ")",
             IcKey::Num9 => "0x",
-            IcKey::Func1 => "&",
-            IcKey::Func2 => "|",
-            IcKey::Func3 => "%",
-            IcKey::Func4 => "<<",
-            IcKey::Func5 => ">>",
-            IcKey::Func6 => "^",
+            IcKey::Backspace => "&",
+            IcKey::Divide => "|",
+            IcKey::Multiply => "%",
+            IcKey::Minus => "<<",
+            IcKey::Plus => ">>",
+            IcKey::Equals => "^",
             IcKey::Shift | IcKey::Super | IcKey::_Max => return MathInputEvent::Ignored,
         };
         Self::changed_from(self.insert_str(token))
@@ -630,7 +630,7 @@ impl<const N: usize> MathInput<N> {
                 }
             }
             IcKey::Num7 => Self::handled_cursor_move(self.buffer.move_cursor_home()),
-            IcKey::Num9 => Self::changed_from(self.buffer.clear()),
+            IcKey::Backspace => Self::changed_from(self.buffer.clear()),
             IcKey::Num2 => MathInputEvent::Navigate(MathInputDirection::Down),
             IcKey::Num8 => MathInputEvent::Navigate(MathInputDirection::Up),
             _ => MathInputEvent::Ignored,
@@ -704,18 +704,18 @@ mod tests {
     }
 
     fn undo(input: &mut MathInput<8>) -> MathInputEvent {
-        press_with(input, &[IcKey::Super], IcKey::Num3)
+        press_with(input, &[IcKey::Super], IcKey::Divide)
     }
 
     #[test]
-    fn super_num3_undoes_edits_in_reverse_order() {
+    fn super_divide_undoes_edits_in_reverse_order() {
         let mut input = input();
         press_with(&mut input, &[], IcKey::Num1);
         press_with(&mut input, &[], IcKey::Num2);
         press_with(&mut input, &[IcKey::Shift], IcKey::Num7);
-        press_with(&mut input, &[], IcKey::Func1);
+        press_with(&mut input, &[], IcKey::Backspace);
         press_with(&mut input, &[IcKey::Super], IcKey::Num4);
-        press_with(&mut input, &[IcKey::Super], IcKey::Num9);
+        press_with(&mut input, &[IcKey::Super], IcKey::Backspace);
         assert_eq!(input.text(), "");
 
         assert_eq!(undo(&mut input), MathInputEvent::Changed);
@@ -739,7 +739,7 @@ mod tests {
         press_with(&mut input, &[], IcKey::Num5);
         // backspace at the start changes nothing
         press_with(&mut input, &[IcKey::Super], IcKey::Num7);
-        press_with(&mut input, &[], IcKey::Func1);
+        press_with(&mut input, &[], IcKey::Backspace);
         undo(&mut input);
         assert_eq!(input.text(), "");
     }
@@ -771,26 +771,26 @@ mod tests {
             None,
         );
         press_with(&mut input, &[IcKey::Super], IcKey::Num0);
-        press_with(&mut input, &[IcKey::Shift], IcKey::Func5);
+        press_with(&mut input, &[IcKey::Shift], IcKey::Plus);
         press_with(&mut input, &[], IcKey::Num7);
-        press_with(&mut input, &[IcKey::Shift], IcKey::Func2);
+        press_with(&mut input, &[IcKey::Shift], IcKey::Divide);
         press_with(&mut input, &[IcKey::Shift], IcKey::Num9);
         press_with(&mut input, &[IcKey::Shift], IcKey::Num5);
-        press_with(&mut input, &[], IcKey::Func3);
+        press_with(&mut input, &[], IcKey::Multiply);
         press_with(&mut input, &[IcKey::Super], IcKey::Num0);
         assert_eq!(
-            press_with(&mut input, &[IcKey::Shift], IcKey::Func6),
+            press_with(&mut input, &[IcKey::Shift], IcKey::Equals),
             MathInputEvent::Changed
         );
         assert_eq!(input.text(), "t>>7|0xF*t^");
         assert_eq!(
-            press_with(&mut input, &[], IcKey::Func6),
+            press_with(&mut input, &[], IcKey::Equals),
             MathInputEvent::Submitted
         );
 
         // A two-character token is all or nothing when space runs out.
         input.set_text("t>>7|0xF*t^1234").unwrap();
-        press_with(&mut input, &[IcKey::Shift], IcKey::Func4);
+        press_with(&mut input, &[IcKey::Shift], IcKey::Minus);
         assert_eq!(input.text(), "t>>7|0xF*t^1234");
     }
 }

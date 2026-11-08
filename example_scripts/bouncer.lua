@@ -12,22 +12,22 @@ app = { name = "Bouncer", color = 0x2a6f97, realtime = true }
 -- Keep state in variables declared at the top of the file. It lasts while the
 -- app is open and starts over each time the app is opened.
 --
--- Keys: `key` is the physical key: "0"-"9", "shift", "super", or "f1"-"f6"
--- for the right-hand column from top to bottom (backspace / * - + =). Those
--- are not the F1-F4 printed on the keys, which are Super + backspace / * -.
+-- Keys: `key` is the physical key, named by its main legend: "0"-"9",
+-- "backspace", "/", "*", "-", "+", "=", "shift" or "super".
 -- `action` is what the key's printed legend means with Shift or Super held,
 -- so apps can use the same keys as the built-in ones:
 --   alone   "0"-"9", "backspace", "/", "*", "-", "+", "enter" (the = key)
 --   Shift   0-5 "A"-"F", 6 "~", 7 "(", 8 ")", 9 "0x",
 --           backspace "&", / "|", * "%", - "<<", + ">>", = "^"
---   Super   0 ".", 1 "end", 2 "down", 3 "undo", 4 "left", 5 "ok", 6 "right",
---           7 "home", 8 "up", 9 "clear", backspace / * - "F1" "F2" "F3" "F4"
+--   Super   0 ".", 1 "end", 2 "down", 4 "left", 5 "ok", 6 "right",
+--           7 "home", 8 "up", backspace "clear", / "undo",
+--           * - + = "F1" "F2" "F3" "F4"
 -- action is nil for Shift and Super themselves. Apps never see Super + Shift
--- (leaves the app) or Super with + or = (volume and brightness).
+-- (leaves the app) or Super with 9 or 3 (volume and brightness).
 --
 -- Typing numbers: math_input{...} makes the input box the calculators use,
 -- typed with the same keys (Super+0 for ".", Super+4/6 to move the cursor,
--- Super+9 to clear, Super+3 to undo, ...). Options, all optional:
+-- Super+backspace to clear, Super+/ to undo, ...). Options, all optional:
 --   x, y, w, h, mode ("expression", "integer" or "hex"), text, size,
 --   bg, focus_bg, border
 -- Make boxes at the top of the file or in init() (at most 8), then:

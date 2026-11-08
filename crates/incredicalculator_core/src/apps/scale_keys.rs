@@ -410,7 +410,7 @@ impl ScaleKeys {
             ctx,
             &["Arp", "Latch", "Oct-", "Oct+", "BPM-", "BPM+"],
             &["Rate", "ArpOct", "Root-", "Root+", "Scl-", "Scl+"],
-            ["Snd+", "Snd-", "", ""],
+            &["", "", "Snd+", "Snd-", "", ""],
         );
         let latch_lit = self.latch && !ctx.is_super() && !ctx.is_shifted();
         music::draw_function_column(platform, &labels, latch_lit.then_some(1));
@@ -547,30 +547,30 @@ impl IcApp for ScaleKeys {
 
     fn on_key(&mut self, key: IcKey, ctx: &InputContext) {
         if ctx.is_super() {
-            // Super+F5/F6 belong to the shell's volume and brightness.
+            // F1 and F2.
             match key {
-                IcKey::Func1 => self.cycle_sound(true),
-                IcKey::Func2 => self.cycle_sound(false),
+                IcKey::Multiply => self.cycle_sound(true),
+                IcKey::Minus => self.cycle_sound(false),
                 _ => {}
             }
         } else if ctx.is_shifted() {
             match key {
-                IcKey::Func1 => self.arp_rate = self.arp_rate.next(),
-                IcKey::Func2 => self.arp_octaves = self.arp_octaves % MAX_ARP_OCTAVES + 1,
-                IcKey::Func3 => self.root = (self.root + 11) % 12,
-                IcKey::Func4 => self.root = (self.root + 1) % 12,
-                IcKey::Func5 => self.cycle_scale(false),
-                IcKey::Func6 => self.cycle_scale(true),
+                IcKey::Backspace => self.arp_rate = self.arp_rate.next(),
+                IcKey::Divide => self.arp_octaves = self.arp_octaves % MAX_ARP_OCTAVES + 1,
+                IcKey::Multiply => self.root = (self.root + 11) % 12,
+                IcKey::Minus => self.root = (self.root + 1) % 12,
+                IcKey::Plus => self.cycle_scale(false),
+                IcKey::Equals => self.cycle_scale(true),
                 _ => {}
             }
         } else {
             match key {
-                IcKey::Func1 => self.arp_mode = self.arp_mode.next(),
-                IcKey::Func2 => self.toggle_latch(),
-                IcKey::Func3 => self.adjust_octave(-1),
-                IcKey::Func4 => self.adjust_octave(1),
-                IcKey::Func5 => self.adjust_bpm(false),
-                IcKey::Func6 => self.adjust_bpm(true),
+                IcKey::Backspace => self.arp_mode = self.arp_mode.next(),
+                IcKey::Divide => self.toggle_latch(),
+                IcKey::Multiply => self.adjust_octave(-1),
+                IcKey::Minus => self.adjust_octave(1),
+                IcKey::Plus => self.adjust_bpm(false),
+                IcKey::Equals => self.adjust_bpm(true),
                 _ => {}
             }
         }

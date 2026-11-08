@@ -95,9 +95,6 @@ struct VirtualKey {
     y: u32,
     pressed: bool,
     hovered: bool,
-    label: &'static str,
-    shlabel: &'static str,
-    sulabel: &'static str,
     sticky: bool,
 }
 
@@ -584,23 +581,23 @@ fn main() {
     // -----------------------------------------------------------------------
     let key_map: HashMap<KeyboardKey, IcKey> = {
         let mut m = HashMap::new();
-        m.insert(KeyboardKey::KEY_E, IcKey::Func6);
-        m.insert(KeyboardKey::KEY_F, IcKey::Func5);
+        m.insert(KeyboardKey::KEY_E, IcKey::Equals);
+        m.insert(KeyboardKey::KEY_F, IcKey::Plus);
         m.insert(KeyboardKey::KEY_ZERO, IcKey::Num0);
-        m.insert(KeyboardKey::KEY_D, IcKey::Func4);
+        m.insert(KeyboardKey::KEY_D, IcKey::Minus);
         m.insert(KeyboardKey::KEY_ONE, IcKey::Num1);
         m.insert(KeyboardKey::KEY_TWO, IcKey::Num2);
         m.insert(KeyboardKey::KEY_THREE, IcKey::Num3);
-        m.insert(KeyboardKey::KEY_C, IcKey::Func3);
+        m.insert(KeyboardKey::KEY_C, IcKey::Multiply);
         m.insert(KeyboardKey::KEY_FOUR, IcKey::Num4);
         m.insert(KeyboardKey::KEY_FIVE, IcKey::Num5);
         m.insert(KeyboardKey::KEY_SIX, IcKey::Num6);
-        m.insert(KeyboardKey::KEY_B, IcKey::Func2);
+        m.insert(KeyboardKey::KEY_B, IcKey::Divide);
         m.insert(KeyboardKey::KEY_SEVEN, IcKey::Num7);
         m.insert(KeyboardKey::KEY_EIGHT, IcKey::Num8);
         m.insert(KeyboardKey::KEY_NINE, IcKey::Num9);
-        m.insert(KeyboardKey::KEY_A, IcKey::Func1);
-        m.insert(KeyboardKey::KEY_BACKSPACE, IcKey::Func1);
+        m.insert(KeyboardKey::KEY_A, IcKey::Backspace);
+        m.insert(KeyboardKey::KEY_BACKSPACE, IcKey::Backspace);
         m.insert(KeyboardKey::KEY_LEFT_SHIFT, IcKey::Shift);
         m.insert(KeyboardKey::KEY_LEFT_CONTROL, IcKey::Super);
         m
@@ -609,206 +606,35 @@ fn main() {
     // -----------------------------------------------------------------------
     // Virtual on-screen keyboard
     // -----------------------------------------------------------------------
-    let mut virtual_keys = [
-        VirtualKey {
-            key: IcKey::Func1,
-            x: 7 + 69 * 3,
-            y: 9 + 69 * 0,
-            pressed: false,
-            hovered: false,
-            label: "Bk", // backspace
-            shlabel: "&",
-            sulabel: "F1",
-            sticky: false,
-        },
-        VirtualKey {
-            key: IcKey::Func2,
-            x: 7 + 69 * 3,
-            y: 9 + 69 * 1,
-            pressed: false,
-            hovered: false,
-            label: "/",
-            shlabel: "|",
-            sulabel: "F2",
-            sticky: false,
-        },
-        VirtualKey {
-            key: IcKey::Num7,
-            x: 7 + 69 * 0,
-            y: 9 + 69 * 2,
-            pressed: false,
-            hovered: false,
-            label: "7",
-            shlabel: "(",
-            sulabel: "Hm", // home
-            sticky: false,
-        },
-        VirtualKey {
-            key: IcKey::Num8,
-            x: 7 + 69 * 1,
-            y: 9 + 69 * 2,
-            pressed: false,
-            hovered: false,
-            label: "8",
-            shlabel: ")",
-            sulabel: "^", // navigate up
-            sticky: false,
-        },
-        VirtualKey {
-            key: IcKey::Num9,
-            x: 7 + 69 * 2,
-            y: 9 + 69 * 2,
-            pressed: false,
-            hovered: false,
-            label: "9",
-            shlabel: "0x",
-            sulabel: "Clr", // clear
-            sticky: false,
-        },
-        VirtualKey {
-            key: IcKey::Func3,
-            x: 7 + 69 * 3,
-            y: 9 + 69 * 2,
-            pressed: false,
-            hovered: false,
-            label: "*",
-            shlabel: "%",
-            sulabel: "F3",
-            sticky: false,
-        },
-        VirtualKey {
-            key: IcKey::Num4,
-            x: 7 + 69 * 0,
-            y: 9 + 69 * 3,
-            pressed: false,
-            hovered: false,
-            label: "4",
-            shlabel: "E",
-            sulabel: "<", // nagivate left
-            sticky: false,
-        },
-        VirtualKey {
-            key: IcKey::Num5,
-            x: 7 + 69 * 1,
-            y: 9 + 69 * 3,
-            pressed: false,
-            hovered: false,
-            label: "5",
-            shlabel: "F",
-            sulabel: "Sel", // navigate select (have not found a good use yet, usually you would just use the "="/enter key)
-            sticky: false,
-        },
-        VirtualKey {
-            key: IcKey::Num6,
-            x: 7 + 69 * 2,
-            y: 9 + 69 * 3,
-            pressed: false,
-            hovered: false,
-            label: "6",
-            shlabel: "~",
-            sulabel: ">", // navigate right
-            sticky: false,
-        },
-        VirtualKey {
-            key: IcKey::Func4,
-            x: 7 + 69 * 3,
-            y: 9 + 69 * 3,
-            pressed: false,
-            hovered: false,
-            label: "-",
-            shlabel: "<<",
-            sulabel: "F4",
-            sticky: false,
-        },
-        VirtualKey {
-            key: IcKey::Num1,
-            x: 7 + 69 * 0,
-            y: 9 + 69 * 4,
-            pressed: false,
-            hovered: false,
-            label: "1",
-            shlabel: "B",
-            sulabel: "End",
-            sticky: false,
-        },
-        VirtualKey {
-            key: IcKey::Num2,
-            x: 7 + 69 * 1,
-            y: 9 + 69 * 4,
-            pressed: false,
-            hovered: false,
-            label: "2",
-            shlabel: "C",
-            sulabel: "v", // navigate down
-            sticky: false,
-        },
-        VirtualKey {
-            key: IcKey::Num3,
-            x: 7 + 69 * 2,
-            y: 9 + 69 * 4,
-            pressed: false,
-            hovered: false,
-            label: "3",
-            shlabel: "D",
-            sulabel: "Und", // undo
-            sticky: false,
-        },
-        VirtualKey {
-            key: IcKey::Func5,
-            x: 7 + 69 * 3,
-            y: 9 + 69 * 4,
-            pressed: false,
-            hovered: false,
-            label: "+",
-            shlabel: ">>",
-            sulabel: "F5", // reserved for volume control
-            sticky: false,
-        },
-        VirtualKey {
-            key: IcKey::Num0,
-            x: 7 + 69 * 0,
-            y: 9 + 69 * 5,
-            pressed: false,
-            hovered: false,
-            label: "0",
-            shlabel: "A",
-            sulabel: ".",
-            sticky: false,
-        },
-        VirtualKey {
-            key: IcKey::Shift,
-            x: 7 + 69 * 1,
-            y: 9 + 69 * 5,
-            pressed: false,
-            hovered: false,
-            label: "Shft", // shift
-            shlabel: "",
-            sulabel: "",
-            sticky: true,
-        },
-        VirtualKey {
-            key: IcKey::Super,
-            x: 7 + 69 * 2,
-            y: 9 + 69 * 5,
-            pressed: false,
-            hovered: false,
-            label: "§", // super
-            shlabel: "",
-            sulabel: "",
-            sticky: true,
-        },
-        VirtualKey {
-            key: IcKey::Func6,
-            x: 7 + 69 * 3,
-            y: 9 + 69 * 5,
-            pressed: false,
-            hovered: false,
-            label: "=",
-            shlabel: "^",
-            sulabel: "F6", // reserved for brightness control
-            sticky: false,
-        },
+    // Keycap positions as (key, column, row); the legends come from core.
+    const KEYPAD: [(IcKey, u32, u32); 18] = [
+        (IcKey::Backspace, 3, 0),
+        (IcKey::Divide, 3, 1),
+        (IcKey::Num7, 0, 2),
+        (IcKey::Num8, 1, 2),
+        (IcKey::Num9, 2, 2),
+        (IcKey::Multiply, 3, 2),
+        (IcKey::Num4, 0, 3),
+        (IcKey::Num5, 1, 3),
+        (IcKey::Num6, 2, 3),
+        (IcKey::Minus, 3, 3),
+        (IcKey::Num1, 0, 4),
+        (IcKey::Num2, 1, 4),
+        (IcKey::Num3, 2, 4),
+        (IcKey::Plus, 3, 4),
+        (IcKey::Num0, 0, 5),
+        (IcKey::Shift, 1, 5),
+        (IcKey::Super, 2, 5),
+        (IcKey::Equals, 3, 5),
     ];
+    let mut virtual_keys = KEYPAD.map(|(key, col, row)| VirtualKey {
+        key,
+        x: 7 + 69 * col,
+        y: 9 + 69 * row,
+        pressed: false,
+        hovered: false,
+        sticky: matches!(key, IcKey::Shift | IcKey::Super),
+    });
 
     // -----------------------------------------------------------------------
     // Raylib window
@@ -917,6 +743,7 @@ fn main() {
         d.draw_rectangle(0, 0, 286, 430, Color::GRAY);
 
         for vk in virtual_keys.iter() {
+            let legends = vk.key.legends();
             let c = if vk.pressed {
                 Color::BLUE
             } else if vk.hovered {
@@ -932,21 +759,21 @@ fn main() {
                 c,
             );
             d.draw_text(
-                vk.label,
+                legends.primary.plain,
                 vk.x as i32 + 16,
                 vk.y as i32 + 16,
                 20,
                 Color::BLACK,
             );
             d.draw_text(
-                vk.shlabel,
+                legends.shift.plain,
                 vk.x as i32 + 46,
                 vk.y as i32 + 46,
                 20,
                 Color::BLUE,
             );
             d.draw_text(
-                vk.sulabel,
+                legends.super_.plain,
                 vk.x as i32 + 6,
                 vk.y as i32 + 46,
                 20,

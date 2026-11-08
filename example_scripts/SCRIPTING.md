@@ -47,31 +47,31 @@ end
 
 `on_key(key, action)` runs once per press. There is no auto-repeat; use `is_down(key)` with `realtime = true` for held keys.
 
-- **`key`** is the physical key: `"0"`–`"9"`, `"shift"`, `"super"`, or `"f1"`–`"f6"` for the right-hand column from top to bottom (⌫ / * − + =).
-  - These names are **not** the F1–F4 printed on the keys, which are Super + ⌫ / * −.
+- **`key`** is the physical key, named by its main legend: `"0"`–`"9"`, `"backspace"`, `"/"`, `"*"`, `"-"`, `"+"`, `"="`, `"shift"` or `"super"`.
 - **`action`** is what the key's printed legend means with the modifier held. Prefer it, so your app uses the same keys as the built-in ones.
   - It is `nil` for Shift and Super themselves.
+  - F1–F4 are the Super legends of * − + =, so `action == "F1"` means Super + *.
 
-| Key | alone | Shift | Super |
+| `key` | alone | Shift | Super |
 |---|---|---|---|
-| 0 | `"0"` | `"A"` | `"."` |
-| 1 | `"1"` | `"B"` | `"end"` |
-| 2 | `"2"` | `"C"` | `"down"` |
-| 3 | `"3"` | `"D"` | `"undo"` |
-| 4 | `"4"` | `"E"` | `"left"` |
-| 5 | `"5"` | `"F"` | `"ok"` |
-| 6 | `"6"` | `"~"` | `"right"` |
-| 7 | `"7"` | `"("` | `"home"` |
-| 8 | `"8"` | `")"` | `"up"` |
-| 9 | `"9"` | `"0x"` | `"clear"` |
-| f1 ⌫ | `"backspace"` | `"&"` | `"F1"` |
-| f2 / | `"/"` | `"\|"` | `"F2"` |
-| f3 * | `"*"` | `"%"` | `"F3"` |
-| f4 − | `"-"` | `"<<"` | `"F4"` |
-| f5 + | `"+"` | `">>"` | *(volume)* |
-| f6 = | `"enter"` | `"^"` | *(brightness)* |
+| `"0"` | `"0"` | `"A"` | `"."` |
+| `"1"` | `"1"` | `"B"` | `"end"` |
+| `"2"` | `"2"` | `"C"` | `"down"` |
+| `"3"` | `"3"` | `"D"` | *(brightness)* |
+| `"4"` | `"4"` | `"E"` | `"left"` |
+| `"5"` | `"5"` | `"F"` | `"ok"` |
+| `"6"` | `"6"` | `"~"` | `"right"` |
+| `"7"` | `"7"` | `"("` | `"home"` |
+| `"8"` | `"8"` | `")"` | `"up"` |
+| `"9"` | `"9"` | `"0x"` | *(volume)* |
+| `"backspace"` | `"backspace"` | `"&"` | `"clear"` |
+| `"/"` | `"/"` | `"\|"` | `"undo"` |
+| `"*"` | `"*"` | `"%"` | `"F1"` |
+| `"-"` | `"-"` | `"<<"` | `"F2"` |
+| `"+"` | `"+"` | `">>"` | `"F3"` |
+| `"="` | `"enter"` | `"^"` | `"F4"` |
 
-- **Reserved:** your app never sees Super + Shift, which returns to the menu, or Super with + or =, which adjust volume and brightness.
+- **Reserved:** your app never sees Super + Shift, which returns to the menu, or Super with 9 or 3, which adjust volume and brightness. `is_down` also reports those keys as up until they are released.
 - **Modifier modes:** Shift and Super follow the user's key mode (Normal, Sticky or Toggle). `action` and `is_down("shift")` already account for it.
 
 ## Number and expression entry: `math_input`
@@ -114,7 +114,7 @@ end
 
 **Keys in expression mode:**
 - **Typing:** digits; `/ * - +` from the right column; `.` with Super+0 or Shift+6; parentheses with Shift+7 and Shift+8; `^` with Shift+=.
-- **Editing:** ⌫ deletes; Super+9 clears; Super+3 undoes.
+- **Editing:** ⌫ deletes; Super+⌫ clears; Super+/ undoes.
 - **Moving:** Super+4 and Super+6 move the cursor; Super+7 and Super+1 jump to the start and end.
 
 **Limits:**

@@ -13,10 +13,10 @@ const KEYS: [IcKey; 8] = [
     IcKey::Num5,
     IcKey::Shift,
     IcKey::Num0,
-    IcKey::Func1,
-    IcKey::Func2,
-    IcKey::Func3,
-    IcKey::Func4,
+    IcKey::Backspace,
+    IcKey::Divide,
+    IcKey::Multiply,
+    IcKey::Minus,
 ];
 
 #[test]

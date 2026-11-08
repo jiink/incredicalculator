@@ -11,12 +11,12 @@ pub enum IcKey {
     Num7,
     Num8,
     Num9,
-    Func1,
-    Func2,
-    Func3,
-    Func4,
-    Func5,
-    Func6,
+    Backspace,
+    Divide,
+    Multiply,
+    Minus,
+    Plus,
+    Equals,
     Shift,
     Super,
     _Max,
@@ -24,7 +24,134 @@ pub enum IcKey {
 
 impl IcKey {
     pub const COUNT: usize = IcKey::_Max as usize;
+
+    /// Every key, in enum order.
+    pub fn all() -> impl Iterator<Item = IcKey> {
+        use num_traits::FromPrimitive;
+        (0..Self::COUNT).filter_map(IcKey::from_usize)
+    }
+
+    /// The name scripts use for the key: its primary legend ("0"-"9", "/",
+    /// "*", "-", "+", "="), or "backspace", "shift" or "super".
+    pub fn name(self) -> &'static str {
+        KEYS.get(self as usize).map_or("", |key| key.name)
+    }
+
+    /// The key a script refers to by `name`, as returned by [`IcKey::name`].
+    pub fn from_name(name: &str) -> Option<IcKey> {
+        Self::all().find(|key| key.name() == name)
+    }
+
+    /// What is printed on the key, and what each legend means.
+    pub fn legends(self) -> &'static KeyLegends {
+        KEYS.get(self as usize)
+            .map_or(&BLANK_KEY.legends, |key| &key.legends)
+    }
 }
+
+/// One legend on a keycap.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Legend {
+    /// What the press means to apps (a script's `on_key` `action`), or `None`
+    /// when no app receives it: the shell keeps it, or the legend is blank.
+    pub action: Option<&'static str>,
+    /// Keycap text. May use symbols and emoji.
+    pub label: &'static str,
+    /// Keycap text for fonts with only Latin-1 characters.
+    pub plain: &'static str,
+}
+
+/// The legends of one key: pressed alone, with Shift and with Super.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct KeyLegends {
+    pub primary: Legend,
+    pub shift: Legend,
+    pub super_: Legend,
+}
+
+impl KeyLegends {
+    /// The legend that applies with these modifiers held. Super + Shift
+    /// toggles the menu, so they never reach an app together.
+    pub fn with(&self, shift: bool, super_held: bool) -> &Legend {
+        if super_held {
+            &self.super_
+        } else if shift {
+            &self.shift
+        } else {
+            &self.primary
+        }
+    }
+}
+
+struct KeyInfo {
+    name: &'static str,
+    legends: KeyLegends,
+}
+
+const fn legend(action: &'static str, label: &'static str, plain: &'static str) -> Legend {
+    Legend {
+        action: Some(action),
+        label,
+        plain,
+    }
+}
+
+/// A legend whose action is the text printed on the key.
+const fn same(text: &'static str) -> Legend {
+    legend(text, text, text)
+}
+
+/// A legend whose press the shell keeps for itself.
+const fn shell(label: &'static str, plain: &'static str) -> Legend {
+    Legend {
+        action: None,
+        label,
+        plain,
+    }
+}
+
+const BLANK: Legend = shell("", "");
+
+const fn key(name: &'static str, primary: Legend, shift: Legend, super_: Legend) -> KeyInfo {
+    KeyInfo {
+        name,
+        legends: KeyLegends {
+            primary,
+            shift,
+            super_,
+        },
+    }
+}
+
+const BLANK_KEY: KeyInfo = key("", BLANK, BLANK, BLANK);
+
+/// The keypad's legends, in `IcKey` order. Every platform's keycaps and the
+/// script API follow this table.
+const KEYS: [KeyInfo; IcKey::COUNT] = [
+    key("0", same("0"), same("A"), same(".")),
+    key("1", same("1"), same("B"), legend("end", "End", "End")),
+    key("2", same("2"), same("C"), legend("down", "v", "v")),
+    key("3", same("3"), same("D"), shell("🔆", "Brt")),
+    key("4", same("4"), same("E"), legend("left", "<", "<")),
+    key("5", same("5"), same("F"), legend("ok", "✔️", "Sel")),
+    key("6", same("6"), same("~"), legend("right", ">", ">")),
+    key("7", same("7"), same("("), legend("home", "Hm", "Hm")),
+    key("8", same("8"), same(")"), legend("up", "^", "^")),
+    key("9", same("9"), same("0x"), shell("🔊", "Vol")),
+    key(
+        "backspace",
+        legend("backspace", "⌫", "Bk"),
+        same("&"),
+        legend("clear", "Clr", "Clr"),
+    ),
+    key("/", same("/"), same("|"), legend("undo", "↩", "Und")),
+    key("*", same("*"), same("%"), same("F1")),
+    key("-", same("-"), same("<<"), same("F2")),
+    key("+", same("+"), same(">>"), same("F3")),
+    key("=", legend("enter", "=", "="), same("^"), same("F4")),
+    key("shift", shell("⇪", "Shft"), BLANK, BLANK),
+    key("super", shell("Ⓢ", "§"), BLANK, BLANK),
+];
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum KeyMode {

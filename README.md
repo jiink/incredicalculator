@@ -7,7 +7,7 @@ To build the project:
     - To build the browser version, run `rustup target add wasm32-unknown-unknown` once, then `cargo build --target wasm32-unknown-unknown --manifest-path incredicalculator_web/Cargo.toml`
     - Or just cd into the respective subdirectory and run cargo build
 
-In Settings, select **Keys** and press Enter (Func6) to cycle through **Normal**, **Sticky**, and **Toggle**. The mode is shared by all apps and remains selected until changed or the calculator restarts.
+In Settings, select **Keys** and press Enter (=) to cycle through **Normal**, **Sticky**, and **Toggle**. The mode is shared by all apps and remains selected until changed or the calculator restarts.
 
 - **Normal:** hold Shift or Super while pressing another key.
 - **Sticky:** tap Shift or Super to arm it for the next non-modifier keystroke. It clears when that keystroke and the modifier are released. Tapping an armed modifier again cancels it; holding modifiers for ordinary chords also works.
@@ -15,7 +15,9 @@ In Settings, select **Keys** and press Enter (Func6) to cycle through **Normal**
 
 In Sticky and Toggle modes, a blue border around the screen indicates active Shift, and a green border indicates active Super. Changing modes clears latched modifiers.
 
-Press Super and Shift together (in either order) to open or close the apps menu. In Sticky and Toggle modes, a latched modifier counts toward the chord, so tapping Super then Shift (or Shift then Super) also toggles the menu; both modifiers are cleared afterward. Super on its own no longer opens or closes the menu. Because Super + Shift is reserved for the menu, the two modifiers cannot be latched together. **Super + Backspace (Func1)** also toggles the menu in every mode. In the apps menu, Backspace returns to the previous app; in settings, it returns to the apps menu. Unmodified Backspace inside an app is handled only by that app.
+Press Super and Shift together (in either order) to open or close the apps menu. In Sticky and Toggle modes, a latched modifier counts toward the chord, so tapping Super then Shift (or Shift then Super) also toggles the menu; both modifiers are cleared afterward. Super on its own no longer opens or closes the menu. Because Super + Shift is reserved for the menu, the two modifiers cannot be latched together. In the apps menu, Backspace returns to the previous app; in settings, it returns to the apps menu. Backspace inside an app is handled only by that app.
+
+Keys are named after their main legend (`IcKey::Backspace`, `Divide`, `Multiply`, `Minus`, `Plus`, `Equals`). Each key's legends alone, with Shift and with Super live in one table, `KEYS` in `crates/incredicalculator_core/src/input.rs`; the PC and browser keycaps and the script API's key names and actions come from it. With Super: Backspace clears, / undoes, 9 adjusts volume, 3 adjusts brightness (then − and + change the level), and * − + = are F1–F4 for apps.
 
 In the scientific calculator's Normal mode, press and release Shift alone to insert a decimal point (`.`). Pressing another key during the tap cancels this shortcut. In Sticky and Toggle modes, the tap controls the modifier instead; use Shift + Num6 or Super + Num0 to enter a decimal point. The programmer calculator is unaffected by the decimal-point shortcut.
 
