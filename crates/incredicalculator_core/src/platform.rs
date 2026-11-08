@@ -84,9 +84,11 @@ pub trait IcPlatform {
         None
     }
     /// Shares the script drive with a computer over USB (`true`), or takes it
-    /// back (`false`). While shared, the platform doesn't read the drive
-    /// itself. Taking it back changes `scripts_version`, once the drive is
-    /// safe to read again.
+    /// back (`false`). While shared, the platform still reads scripts from
+    /// the drive but never writes to it, and changes `scripts_version` each
+    /// time the computer has finished writing, so an open scripted app
+    /// reloads when its file is saved. Taking the drive back changes
+    /// `scripts_version` too.
     fn set_usb_drive_mode(&mut self, _shared: bool) {}
     /// RAM usage, for platforms with a fixed memory budget. Shown by the
     /// shell when the "Show memory" setting is on.

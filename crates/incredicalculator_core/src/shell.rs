@@ -807,9 +807,10 @@ impl IcShell {
             });
             self.draw_app_selector(platform, hint_opacity);
         }
-        let share_drive = self
-            .active_app_idx
-            .is_some_and(|idx| self.apps[idx].shares_usb_drive());
+        let share_drive = platform.usb_drive_status().is_some()
+            && self
+                .active_app_idx
+                .is_some_and(|idx| self.apps[idx].shares_usb_drive());
         if share_drive != self.usb_drive_shared {
             self.usb_drive_shared = share_drive;
             platform.set_usb_drive_mode(share_drive);
@@ -1037,6 +1038,43 @@ mod tests {
         assert!(!platform.usb_drive.unwrap().shared);
         shell.update(&mut platform);
         assert_eq!(script_names(&shell), ["a", "b"]);
+    }
+
+    #[test]
+    fn scripted_apps_share_the_drive_and_reload_when_saved() {
+        let mut platform = FakePlatform::with_scripts(&[("a.lua", "app = { name = 'One' }")]);
+        platform.usb_drive = Some(UsbDriveStatus::default());
+        let mut shell = IcShell::new();
+        shell.update(&mut platform);
+        let idx = app_index(&shell, "One").unwrap();
+        shell.active_app_idx = Some(idx);
+        shell.apps[idx].on_enter();
+        shell.update(&mut platform);
+        assert!(platform.usb_drive.unwrap().shared);
+
+        // The computer saves a new version while the app is open.
+        platform.set_script("a.lua", Some("app = { name = 'Two' }"));
+        shell.update(&mut platform);
+        let idx = shell.active_app_idx.expect("still open");
+        assert_eq!(shell.apps[idx].name(), "Two");
+        assert!(platform.usb_drive.unwrap().shared);
+
+        shell.key_down(IcKey::Shift);
+        shell.update(&mut platform);
+        shell.key_down(IcKey::Super);
+        shell.update(&mut platform);
+        assert_eq!(shell.active_app_idx, None);
+        assert!(!platform.usb_drive.unwrap().shared);
+    }
+
+    #[test]
+    fn scripted_apps_run_without_a_drive() {
+        let mut platform = FakePlatform::with_scripts(&[("a.lua", "")]);
+        let mut shell = IcShell::new();
+        shell.update(&mut platform);
+        shell.active_app_idx = app_index(&shell, "a");
+        // FakePlatform panics if asked to share a drive it doesn't have.
+        shell.update(&mut platform);
     }
 
     #[test]

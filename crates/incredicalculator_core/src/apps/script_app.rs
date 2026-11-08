@@ -125,9 +125,17 @@ impl ScriptApp {
             Vec2::new(ERROR_MARGIN, 50.0),
             TextStyle::new(ERROR_TEXT_SIZE, rgb8_hex(0xFFFFFF)),
         );
+        let shared = platform
+            .usb_drive_status()
+            .is_some_and(|drive| drive.shared && drive.connected);
+        let hint = if shared {
+            "Fix it on the INCREDICALC drive; saving reloads it."
+        } else {
+            "Reopen the app to retry."
+        };
         draw_text(
             platform,
-            "Reopen the app to retry.",
+            hint,
             Vec2::new(ERROR_MARGIN, 225.0),
             TextStyle::new(ERROR_TEXT_SIZE, rgb8_hex(0xC0A0A0)),
         );
@@ -156,6 +164,12 @@ impl IcApp for ScriptApp {
         self.run(|engine, host| engine.init(host));
         // Drawing is only honored during `update`.
         self.host.commands.clear();
+    }
+
+    /// So the script can be edited from a computer while it runs: saving it
+    /// there restarts the app with the new code (see `IcShell::sync_scripts`).
+    fn shares_usb_drive(&self) -> bool {
+        true
     }
 
     fn on_exit(&mut self) {

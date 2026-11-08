@@ -290,9 +290,8 @@ pub struct IcRpPlatform<'d> {
     // Starting or stopping USB sharing is async too, so the main loop does it
     // after the update that asked for it.
     pending_usb_drive_mode: Option<bool>,
-    usb_drive_shared: bool,
-    /// Bumped whenever the script drive may have changed: when USB sharing
-    /// ends.
+    /// Bumped whenever the script drive may have changed: when the computer
+    /// pauses after writing to it, and when USB sharing ends.
     scripts_version: u32,
     backlight: Pwm<'d>,
     backlight2: Pwm<'d>,
@@ -320,7 +319,6 @@ impl<'d> IcRpPlatform<'d> {
             loaded_settings: None,
             pending_settings_save: None,
             pending_usb_drive_mode: None,
-            usb_drive_shared: false,
             scripts_version: 0,
             backlight,
             backlight2,
@@ -585,19 +583,13 @@ impl<'d> IcPlatform for IcRpPlatform<'d> {
         self.scripts_version
     }
 
+    // These also work while the drive is shared: reads run between the
+    // computer's writes, and the calculator never writes then.
     fn list_scripts(&mut self) -> Option<alloc::vec::Vec<alloc::string::String>> {
-        if self.usb_drive_shared {
-            // The computer owns the drive; this isn't reached because the
-            // version only changes once sharing ends.
-            return Some(alloc::vec::Vec::new());
-        }
         script_drive::list_scripts()
     }
 
     fn read_script(&mut self, file_name: &str) -> Option<alloc::string::String> {
-        if self.usb_drive_shared {
-            return None;
-        }
         script_drive::read_script(file_name)
     }
 
@@ -606,7 +598,6 @@ impl<'d> IcPlatform for IcRpPlatform<'d> {
     }
 
     fn set_usb_drive_mode(&mut self, shared: bool) {
-        self.usb_drive_shared = shared;
         self.pending_usb_drive_mode = Some(shared);
     }
 
@@ -1598,9 +1589,21 @@ async fn main(spawner: Spawner) {
         let (first_input, mut audio_buffer, realtime_tick) = if screen_dirty {
             (None, None, false)
         } else {
-            match select(wait_for_work, wait_for_backlight).await {
-                Either::First(work) => work,
-                Either::Second(()) => (None, None, false),
+            match select3(
+                wait_for_work,
+                wait_for_backlight,
+                usb_drive::wait_for_change(),
+            )
+            .await
+            {
+                Either3::First(work) => work,
+                Either3::Second(()) => (None, None, false),
+                Either3::Third(()) => {
+                    // The computer saved to the shared drive: reload scripts.
+                    ic_rp_platform.scripts_version = ic_rp_platform.scripts_version.wrapping_add(1);
+                    screen_dirty = true;
+                    (None, None, false)
+                }
             }
         };
         let _clock_guard = power::keep_awake();

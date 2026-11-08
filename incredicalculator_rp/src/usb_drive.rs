@@ -6,6 +6,10 @@
 //! from the computer are cached one 4 KiB flash block at a time and flushed
 //! when the computer asks (sync or eject), after a short pause in writing,
 //! and when the session ends.
+//!
+//! The calculator keeps reading the drive while it is shared, so a scripted
+//! app can be edited from the computer: after each pause in writing,
+//! [`wait_for_change`] wakes the main loop to reload the scripts.
 use core::cell::Cell;
 
 use defmt::*;
@@ -44,6 +48,8 @@ const USB_PID: u16 = 0x0001;
 static REQUEST: Signal<CriticalSectionRawMutex, bool> = Signal::new();
 /// Signaled once a request has taken effect.
 static DONE: Signal<CriticalSectionRawMutex, ()> = Signal::new();
+/// The computer wrote to the drive and has since paused.
+static CHANGED: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 /// The computer sent a Bulk-Only Mass Storage Reset.
 static BOT_RESET: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 static STATUS: critical_section::Mutex<Cell<UsbDriveStatus>> =
@@ -67,6 +73,12 @@ fn update_status(update: impl FnOnce(&mut UsbDriveStatus)) {
     });
 }
 
+/// Returns once the computer has written to the shared drive and then
+/// paused for a moment, so the scripts on it are worth reading again.
+pub async fn wait_for_change() {
+    CHANGED.wait().await
+}
+
 /// Starts or ends sharing, returning once that is done. After sharing ends,
 /// every write from the computer is in flash.
 pub async fn set_shared(shared: bool) {
@@ -84,8 +96,7 @@ pub async fn usb_drive_task(mut usb: Peri<'static, USB>) {
         }
         info!("usb drive: sharing");
         let clock_guard = power::keep_awake();
-        script_drive::unmount();
-        let unformatted = !script_drive::has_filesystem();
+        let unformatted = !script_drive::refresh();
         start_usb_clocks();
         update_status(|status| {
             *status = UsbDriveStatus {
@@ -103,6 +114,8 @@ pub async fn usb_drive_task(mut usb: Peri<'static, USB>) {
             error!("usb drive: flushing to flash failed");
         }
         update_status(|status| *status = UsbDriveStatus::default());
+        // Already reread when sharing ends.
+        CHANGED.reset();
         drop(clock_guard);
         info!("usb drive: stopped");
         DONE.signal(());
@@ -159,6 +172,8 @@ async fn run_session(usb: Peri<'_, USB>) {
     let mut device = builder.build();
 
     let last_write = Cell::new(Instant::now());
+    // Writes since the scripts were last reloaded.
+    let unread_writes = Cell::new(false);
     BOT_RESET.reset();
     let bulk_only = async {
         loop {
@@ -166,7 +181,13 @@ async fn run_session(usb: Peri<'_, USB>) {
             // A new connection or a reset starts from a fresh state.
             let mut scsi = Scsi::new(with_disk(|disk| disk.sector_count()));
             match select(
-                serve(&mut ep_in, &mut ep_out, &mut scsi, &last_write),
+                serve(
+                    &mut ep_in,
+                    &mut ep_out,
+                    &mut scsi,
+                    &last_write,
+                    &unread_writes,
+                ),
                 BOT_RESET.wait(),
             )
             .await
@@ -184,6 +205,13 @@ async fn run_session(usb: Peri<'_, USB>) {
             Timer::after(IDLE_FLUSH_DELAY / 2).await;
             if last_write.get().elapsed() >= IDLE_FLUSH_DELAY {
                 flush();
+                if unread_writes.replace(false) {
+                    // The computer may have just formatted (or damaged) the
+                    // drive, and probably saved a script.
+                    let unformatted = !script_drive::refresh();
+                    update_status(|status| status.unformatted = unformatted);
+                    CHANGED.signal(());
+                }
             }
         }
     };
@@ -196,23 +224,17 @@ async fn run_session(usb: Peri<'_, USB>) {
     select4(device.run(), bulk_only, idle_flush, stop).await;
 }
 
-/// Writes cached sectors to flash. Then, since the computer may have just
-/// formatted the drive (or damaged it), checks for a filesystem again.
+/// Writes cached sectors to flash.
 fn flush() {
     let result = with_disk(|disk| {
         if disk.is_dirty() {
-            disk.flush().map(|()| true)
+            disk.flush()
         } else {
-            Ok(false)
+            Ok(())
         }
     });
-    match result {
-        Ok(true) => {
-            let unformatted = !script_drive::has_filesystem();
-            update_status(|status| status.unformatted = unformatted);
-        }
-        Ok(false) => {}
-        Err(_) => error!("usb drive: flushing to flash failed"),
+    if result.is_err() {
+        error!("usb drive: flushing to flash failed");
     }
 }
 
@@ -222,6 +244,7 @@ async fn serve(
     ep_out: &mut impl EndpointOut,
     scsi: &mut Scsi,
     last_write: &Cell<Instant>,
+    unread_writes: &Cell<bool>,
 ) -> Result<core::convert::Infallible, EndpointError> {
     let mut packet = [0u8; PACKET_SIZE];
     let mut sector = [0u8; SECTOR_SIZE];
@@ -265,6 +288,7 @@ async fn serve(
                     }
                     last_write.set(Instant::now());
                 }
+                unread_writes.set(true);
             }
         }
         if transfer.pad_in && sent % PACKET_SIZE == 0 {

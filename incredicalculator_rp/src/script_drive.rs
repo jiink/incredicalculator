@@ -109,8 +109,9 @@ pub type Disk = FlashDisk<DriveFlash>;
 static DISK: Mutex<ThreadModeRawMutex, RefCell<Disk>> =
     Mutex::new(RefCell::new(FlashDisk::new(DriveFlash)));
 
-/// Whether the drive holds a filesystem the calculator may read: false while
-/// it is shared over USB, or if it can't be read.
+/// Whether the drive holds a filesystem the calculator can read. While the
+/// drive is shared over USB the calculator still reads it (between the
+/// computer's writes), but never writes to it.
 static MOUNTED: Mutex<ThreadModeRawMutex, Cell<bool>> = Mutex::new(Cell::new(false));
 
 /// Runs `f` on the drive. Never hold this across an `.await`.
@@ -145,9 +146,13 @@ pub fn mount_or_format() {
     MOUNTED.lock(|cell| cell.set(result.is_ok()));
 }
 
-/// Stops reading the drive, before a computer gets to change it.
-pub fn unmount() {
-    MOUNTED.lock(|cell| cell.set(false));
+/// Checks for a filesystem again, without ever formatting: for while the
+/// drive is shared, after the computer has written to it. Returns whether
+/// there is one.
+pub fn refresh() -> bool {
+    let mounted = has_filesystem();
+    MOUNTED.lock(|cell| cell.set(mounted));
+    mounted
 }
 
 fn is_mounted() -> bool {
