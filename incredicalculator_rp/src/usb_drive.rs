@@ -1,19 +1,23 @@
 //! Shares the script drive with a computer as a USB mass storage device
-//! while the "USB Drive" app is open.
+//! whenever the calculator is plugged in, which it can tell from VBUS.
 //!
-//! USB is otherwise off: its PLL and clock are only running during a
-//! session, which also holds the system clock at full speed. Sector writes
-//! from the computer are cached one 4 KiB flash block at a time and flushed
-//! when the computer asks (sync or eject), after a short pause in writing,
-//! and when the session ends.
+//! Unplugged, USB is completely off: its PLL and clock only run during a
+//! session, which also holds the system clock at full speed (that's fine on
+//! USB power, and lets the drive keep working while the screen sleeps).
+//! Sector writes from the computer are cached one 4 KiB flash block at a
+//! time and flushed when the computer asks (sync or eject), after a short
+//! pause in writing, and when the cable is pulled.
 //!
 //! The calculator keeps reading the drive while it is shared, so a scripted
-//! app can be edited from the computer: after each pause in writing,
-//! [`wait_for_change`] wakes the main loop to reload the scripts.
+//! app can be edited from the computer: after each pause in writing, and when
+//! the cable goes in or out, [`wait_for_change`] wakes the main loop to
+//! reload the scripts.
 use core::cell::Cell;
+use core::sync::atomic::{AtomicBool, Ordering};
 
 use defmt::*;
-use embassy_futures::select::{Either, select, select4};
+use embassy_futures::select::{Either, select, select3};
+use embassy_rp::gpio::Input;
 use embassy_rp::interrupt::InterruptExt;
 use embassy_rp::peripherals::USB;
 use embassy_rp::usb::{Driver, InterruptHandler};
@@ -26,7 +30,6 @@ use embassy_usb::driver::{Endpoint, EndpointError, EndpointIn, EndpointOut};
 use embassy_usb::{Builder, Handler};
 use flash_disk::scsi::{self, Cbw, CswStatus, Data, Scsi};
 use flash_disk::{BlockDevice, SECTOR_SIZE};
-use incredicalculator_core::platform::UsbDriveStatus;
 
 use crate::power;
 use crate::script_drive::{self, with_disk};
@@ -37,6 +40,9 @@ bind_interrupts!(struct Irqs {
 
 /// Full-speed bulk packets.
 const PACKET_SIZE: usize = 64;
+/// VBUS must stay present (or absent) this long to count as plugged in (or
+/// unplugged), so contact bounce doesn't restart USB.
+const VBUS_DEBOUNCE: Duration = Duration::from_millis(100);
 /// Cached writes are flushed once the computer has paused writing this long.
 const IDLE_FLUSH_DELAY: Duration = Duration::from_millis(500);
 // pid.codes test IDs: fine for a hobby device, but get a real VID/PID before
@@ -44,85 +50,78 @@ const IDLE_FLUSH_DELAY: Duration = Duration::from_millis(500);
 const USB_VID: u16 = 0x1209;
 const USB_PID: u16 = 0x0001;
 
-/// `true` to share the drive, `false` to take it back.
-static REQUEST: Signal<CriticalSectionRawMutex, bool> = Signal::new();
-/// Signaled once a request has taken effect.
-static DONE: Signal<CriticalSectionRawMutex, ()> = Signal::new();
-/// The computer wrote to the drive and has since paused.
+/// The drive changed, or the cable went in or out.
 static CHANGED: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 /// The computer sent a Bulk-Only Mass Storage Reset.
 static BOT_RESET: Signal<CriticalSectionRawMutex, ()> = Signal::new();
-static STATUS: critical_section::Mutex<Cell<UsbDriveStatus>> =
-    critical_section::Mutex::new(Cell::new(UsbDriveStatus {
-        shared: false,
-        connected: false,
-        ejected: false,
-        unformatted: false,
-    }));
+// Each has one writer, so plain loads and stores are enough (no
+// read-modify-write atomics, which livelocked on the RP2350 before).
+static PLUGGED_IN: AtomicBool = AtomicBool::new(false);
+static CONNECTED: AtomicBool = AtomicBool::new(false);
 
-pub fn status() -> UsbDriveStatus {
-    critical_section::with(|cs| STATUS.borrow(cs).get())
+/// Whether VBUS is present: the calculator is on a USB cable (and charging).
+pub fn plugged_in() -> bool {
+    PLUGGED_IN.load(Ordering::Relaxed)
 }
 
-fn update_status(update: impl FnOnce(&mut UsbDriveStatus)) {
-    critical_section::with(|cs| {
-        let cell = STATUS.borrow(cs);
-        let mut status = cell.get();
-        update(&mut status);
-        cell.set(status);
-    });
+/// Whether a computer has set up the USB connection, so it can see the drive.
+pub fn connected() -> bool {
+    CONNECTED.load(Ordering::Relaxed)
 }
 
-/// Returns once the computer has written to the shared drive and then
-/// paused for a moment, so the scripts on it are worth reading again.
+/// Returns once the scripts on the drive are worth reading again: the
+/// computer wrote to it and then paused for a moment, or the cable went in
+/// or out.
 pub async fn wait_for_change() {
     CHANGED.wait().await
 }
 
-/// Starts or ends sharing, returning once that is done. After sharing ends,
-/// every write from the computer is in flash.
-pub async fn set_shared(shared: bool) {
-    DONE.reset();
-    REQUEST.signal(shared);
-    DONE.wait().await;
-}
-
+/// Shares the drive for as long as VBUS is present. `vbus` is the charger's
+/// status pin, which VBUS pulls low.
 #[embassy_executor::task]
-pub async fn usb_drive_task(mut usb: Peri<'static, USB>) {
+pub async fn usb_drive_task(mut usb: Peri<'static, USB>, mut vbus: Input<'static>) {
     loop {
-        if !REQUEST.wait().await {
-            DONE.signal(());
-            continue;
-        }
-        info!("usb drive: sharing");
+        wait_for_vbus(&mut vbus, true).await;
+        info!("usb drive: plugged in, sharing");
+        PLUGGED_IN.store(true, Ordering::Relaxed);
         let clock_guard = power::keep_awake();
-        let unformatted = !script_drive::refresh();
+        script_drive::refresh();
         start_usb_clocks();
-        update_status(|status| {
-            *status = UsbDriveStatus {
-                shared: true,
-                unformatted,
-                ..UsbDriveStatus::default()
-            }
-        });
-        DONE.signal(());
+        CHANGED.signal(());
 
-        run_session(usb.reborrow()).await;
+        select(run_session(usb.reborrow()), wait_for_vbus(&mut vbus, false)).await;
 
         stop_usb();
-        if let Err(_) = with_disk(|disk| disk.release_cache()) {
+        CONNECTED.store(false, Ordering::Relaxed);
+        PLUGGED_IN.store(false, Ordering::Relaxed);
+        if with_disk(|disk| disk.release_cache()).is_err() {
             error!("usb drive: flushing to flash failed");
         }
-        update_status(|status| *status = UsbDriveStatus::default());
-        // Already reread when sharing ends.
-        CHANGED.reset();
+        // Formats the drive if the computer left it unreadable.
+        script_drive::mount_or_format();
         drop(clock_guard);
-        info!("usb drive: stopped");
-        DONE.signal(());
+        info!("usb drive: unplugged, stopped");
+        CHANGED.signal(());
     }
 }
 
-/// Runs the USB device until sharing is turned off.
+/// Returns once VBUS has been present (`true`) or absent (`false`) for
+/// [`VBUS_DEBOUNCE`].
+async fn wait_for_vbus(vbus: &mut Input<'static>, present: bool) {
+    loop {
+        if present {
+            vbus.wait_for_low().await;
+        } else {
+            vbus.wait_for_high().await;
+        }
+        Timer::after(VBUS_DEBOUNCE).await;
+        if vbus.is_low() == present {
+            return;
+        }
+    }
+}
+
+/// Runs the USB device. Never returns; the caller drops it on unplugging.
 async fn run_session(usb: Peri<'_, USB>) {
     let driver = Driver::new(usb, Irqs);
     let mut config = embassy_usb::Config::new(USB_VID, USB_PID);
@@ -206,22 +205,15 @@ async fn run_session(usb: Peri<'_, USB>) {
             if last_write.get().elapsed() >= IDLE_FLUSH_DELAY {
                 flush();
                 if unread_writes.replace(false) {
-                    // The computer may have just formatted (or damaged) the
-                    // drive, and probably saved a script.
-                    let unformatted = !script_drive::refresh();
-                    update_status(|status| status.unformatted = unformatted);
+                    // The computer probably saved a script, and may have
+                    // just formatted (or damaged) the drive.
+                    script_drive::refresh();
                     CHANGED.signal(());
                 }
             }
         }
     };
-    let stop = async {
-        while REQUEST.wait().await {
-            // Already sharing.
-            DONE.signal(());
-        }
-    };
-    select4(device.run(), bulk_only, idle_flush, stop).await;
+    select3(device.run(), bulk_only, idle_flush).await;
 }
 
 /// Writes cached sectors to flash.
@@ -306,8 +298,6 @@ async fn serve(
             scsi.flush_requested = false;
             flush();
         }
-        let ejected = scsi.ejected;
-        update_status(|status| status.ejected = ejected);
         ep_in
             .write(&cbw.status(transfer.residue, transfer.status))
             .await?;
@@ -355,21 +345,17 @@ impl Control {
 impl Handler for Control {
     fn reset(&mut self) {
         self.configured = false;
-        update_status(|status| status.connected = false);
+        CONNECTED.store(false, Ordering::Relaxed);
     }
 
     fn configured(&mut self, configured: bool) {
         self.configured = configured;
-        update_status(|status| {
-            status.connected = configured;
-            status.ejected = false;
-        });
+        CONNECTED.store(configured, Ordering::Relaxed);
     }
 
     fn suspended(&mut self, suspended: bool) {
-        // Unplugging looks like a suspend: the device can't sense VBUS.
-        let connected = !suspended && self.configured;
-        update_status(|status| status.connected = connected);
+        // A computer going to sleep suspends the bus.
+        CONNECTED.store(!suspended && self.configured, Ordering::Relaxed);
     }
 
     fn control_out(&mut self, req: Request, _data: &[u8]) -> Option<OutResponse> {

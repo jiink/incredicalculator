@@ -6,12 +6,12 @@ Lua scripts that run as apps on the Incredicalculator.
 
 - **Web app:** drop a `.lua` file onto the page, or use **Add script…** in the
   ⋯ menu, then find it in the apps menu.
-- **Device:** open the **USB Drive** app and connect the calculator to a
-  computer. Copy `.lua` files onto the `INCREDICALC` drive, eject it, then
-  leave the app; the scripts show up in the apps menu.
-- **Editing on the device:** the drive also appears while any scripted app is
-  open. Edit its file on the `INCREDICALC` drive and save: about half a second
-  later the app restarts with the new code, or shows the error.
+- **Device:** plug the calculator into a computer with a USB cable; the
+  `INCREDICALC` drive appears whatever the calculator is doing. Copy `.lua`
+  files onto it and they show up in the apps menu about half a second later.
+- **Editing on the device:** with a scripted app open, edit its file on the
+  drive and save: about half a second later the app restarts with the new
+  code, or shows the error.
 
 `bouncer.lua` is also bundled into the firmware as the default example (it is
 put on the drive when the calculator first formats it), and its header comment

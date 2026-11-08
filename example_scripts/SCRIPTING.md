@@ -9,8 +9,8 @@ entry with `math_input`).
 
 | Where | How |
 |---|---|
-| **Calculator** | Open the **USB Drive** app, or any scripted app, and connect a USB cable. The `INCREDICALC` drive appears on the computer. Copy `.lua` files to the root of the drive. Subfolders, hidden files and dot files such as macOS `._name` files are ignored. |
-| **Live editing** | While a scripted app is open, its file can be edited on the drive. About half a second after you save, the app restarts with the new code or shows the error. New files show up in the menu at the same moment. |
+| **Calculator** | Plug it into a computer with a USB cable. The `INCREDICALC` drive appears whatever the calculator is doing, even with the screen asleep. Copy `.lua` files to the root of the drive. Subfolders, hidden files and dot files such as macOS `._name` files are ignored. Unplugged, USB is off entirely. |
+| **Live editing** | About half a second after the computer saves, the scripts reload: new files show up in the menu, and an open scripted app restarts with the new code or shows the error. |
 | **Web app** | Drop `.lua` files onto the page, or use **Add script…** in the ⋯ menu. |
 | **PC app** | Only runs the bundled `bouncer.lua`. |
 

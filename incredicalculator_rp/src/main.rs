@@ -43,9 +43,7 @@ use embedded_graphics::primitives::PrimitiveStyleBuilder;
 use embedded_graphics::text::Text;
 use glam::{IVec2, Vec2};
 use incredicalculator_core::input::IcKey;
-use incredicalculator_core::platform::{
-    IcPlatform, SETTINGS_STORAGE_LEN, UsbDriveStatus, rgb8_hex,
-};
+use incredicalculator_core::platform::{IcPlatform, SETTINGS_STORAGE_LEN, rgb8_hex};
 use incredicalculator_core::shell::IcShell;
 use lcd_async::interface::SpiInterface;
 use lcd_async::models::ST7789;
@@ -287,15 +285,11 @@ pub struct IcRpPlatform<'d> {
     // update and writes `pending_settings_save` after each update.
     loaded_settings: Option<[u8; SETTINGS_STORAGE_LEN]>,
     pending_settings_save: Option<[u8; SETTINGS_STORAGE_LEN]>,
-    // Starting or stopping USB sharing is async too, so the main loop does it
-    // after the update that asked for it.
-    pending_usb_drive_mode: Option<bool>,
     /// Bumped whenever the script drive may have changed: when the computer
-    /// pauses after writing to it, and when USB sharing ends.
+    /// pauses after writing to it, and when the USB cable goes in or out.
     scripts_version: u32,
     backlight: Pwm<'d>,
     backlight2: Pwm<'d>,
-    charging_status: Input<'d>,
     brightness: u8,
     applied_brightness: Option<u8>,
     display_sleep_requested: Option<bool>,
@@ -308,21 +302,14 @@ pub struct IcRpPlatform<'d> {
 }
 
 impl<'d> IcRpPlatform<'d> {
-    fn new(
-        backlight: Pwm<'d>,
-        backlight2: Pwm<'d>,
-        charging_status: Input<'d>,
-        canvas: FrameBuffer,
-    ) -> Self {
+    fn new(backlight: Pwm<'d>, backlight2: Pwm<'d>, canvas: FrameBuffer) -> Self {
         let mut platform = Self {
             canvas: Some(canvas),
             loaded_settings: None,
             pending_settings_save: None,
-            pending_usb_drive_mode: None,
             scripts_version: 0,
             backlight,
             backlight2,
-            charging_status,
             brightness: 128,
             applied_brightness: None,
             display_sleep_requested: None,
@@ -542,7 +529,8 @@ impl<'d> IcPlatform for IcRpPlatform<'d> {
     }
 
     fn is_charging(&self) -> bool {
-        self.charging_status.is_low()
+        // VBUS both charges the battery and powers USB.
+        usb_drive::plugged_in()
     }
 
     fn get_brightness(&self) -> u8 {
@@ -593,12 +581,8 @@ impl<'d> IcPlatform for IcRpPlatform<'d> {
         script_drive::read_script(file_name)
     }
 
-    fn usb_drive_status(&self) -> Option<UsbDriveStatus> {
-        Some(usb_drive::status())
-    }
-
-    fn set_usb_drive_mode(&mut self, shared: bool) {
-        self.pending_usb_drive_mode = Some(shared);
+    fn usb_drive_connected(&self) -> bool {
+        usb_drive::connected()
     }
 
     fn memory_stats(&self) -> Option<memory::MemoryStats> {
@@ -1360,8 +1344,8 @@ async fn main(spawner: Spawner) {
     let bare_display_bl = p.PIN_41;
     let lcd_spi_bus = p.SPI1;
     let audio_shutdown_n = Output::new(p.PIN_27, Level::Low);
-    // low = charging, floating = not charging
-    let charging_status = Input::new(p.PIN_1, Pull::Up);
+    // The charger's status pin: VBUS (a USB cable) pulls it low.
+    let vbus_present_n = Input::new(p.PIN_1, Pull::Up);
 
     // ST7789 datasheet: "If not used, please fix this pin at VDDI or DGND."
     let _tft_unused_d0 = Output::new(p.PIN_33, Level::Low);
@@ -1453,8 +1437,7 @@ async fn main(spawner: Spawner) {
 
     // The UI starts with one canvas; the other is immediately available for a
     // future frame once the display task has finished with it.
-    let mut ic_rp_platform =
-        IcRpPlatform::new(backlight, backlight2, charging_status, initial_canvas);
+    let mut ic_rp_platform = IcRpPlatform::new(backlight, backlight2, initial_canvas);
     if enter_bootsel {
         show_message(
             &mut ic_rp_platform,
@@ -1509,7 +1492,7 @@ async fn main(spawner: Spawner) {
     let audio_spawner = AUDIO_EXECUTOR.start(interrupt::SWI_IRQ_0);
     unwrap!(audio_spawner.spawn(audio_task(i2s, audio_shutdown_n)));
     unwrap!(spawner.spawn(display_task(display)));
-    unwrap!(spawner.spawn(usb_drive::usb_drive_task(p.USB)));
+    unwrap!(spawner.spawn(usb_drive::usb_drive_task(p.USB, vbus_present_n)));
 
     let core1_stack = unsafe {
         // consider changing to new syntax: `&mut *&raw mut CORE1_STACK`
@@ -1599,7 +1582,8 @@ async fn main(spawner: Spawner) {
                 Either3::First(work) => work,
                 Either3::Second(()) => (None, None, false),
                 Either3::Third(()) => {
-                    // The computer saved to the shared drive: reload scripts.
+                    // The computer saved to the drive, or the cable went in
+                    // or out: reload scripts and redraw (charging indicator).
                     ic_rp_platform.scripts_version = ic_rp_platform.scripts_version.wrapping_add(1);
                     screen_dirty = true;
                     (None, None, false)
@@ -1669,17 +1653,6 @@ async fn main(spawner: Spawner) {
 
         if let Some(data) = ic_rp_platform.pending_settings_save.take() {
             settings_storage.save(&data).await;
-        }
-
-        if let Some(shared) = ic_rp_platform.pending_usb_drive_mode.take() {
-            usb_drive::set_shared(shared).await;
-            if !shared {
-                // The computer may have changed anything; rescan the scripts
-                // right away instead of on the next key press.
-                script_drive::mount_or_format();
-                ic_rp_platform.scripts_version = ic_rp_platform.scripts_version.wrapping_add(1);
-                screen_dirty = true;
-            }
         }
 
         if icalc.has_active_audio() && !audio_is_running {

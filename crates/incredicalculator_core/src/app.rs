@@ -43,11 +43,6 @@ pub trait IcApp {
         ctx: &InputContext,
         audio: &mut AudioEngine,
     );
-    /// Whether the platform should share its script drive over USB while
-    /// this app is open (see `IcPlatform::set_usb_drive_mode`).
-    fn shares_usb_drive(&self) -> bool {
-        false
-    }
     /// Whether the app is generating its own samples through `render_audio`.
     /// While true, the platform keeps audio output running.
     fn produces_audio(&self) -> bool {
