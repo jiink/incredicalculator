@@ -4,6 +4,8 @@ use core::fmt;
 use glam::{IVec2, Vec2};
 use rgb::*;
 
+pub use crate::hid::HidReport;
+
 pub const CANVAS_WIDTH: u32 = 320;
 pub const CANVAS_HEIGHT: u32 = 240;
 /// Size of the opaque settings blob a platform persists between sessions.
@@ -84,6 +86,16 @@ pub trait IcPlatform {
     /// open scripted app reloads when its file is saved.
     fn usb_drive_connected(&self) -> bool {
         false
+    }
+    /// Sends one keyboard or media-key report to the computer, as a USB HID
+    /// device. Reports arrive in the order sent; each is the whole state of
+    /// its kind of key. Platforms without USB log it instead.
+    fn send_hid_report(&mut self, report: HidReport) {
+        self.log(format_args!("hid: {report}"));
+    }
+    /// Whether the computer can receive [`Self::send_hid_report`]'s keys.
+    fn hid_connected(&self) -> bool {
+        self.usb_drive_connected()
     }
     /// RAM usage, for platforms with a fixed memory budget. Shown by the
     /// shell when the "Show memory" setting is on.

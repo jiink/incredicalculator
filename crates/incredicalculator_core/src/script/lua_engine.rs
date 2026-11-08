@@ -24,6 +24,7 @@ use super::{
     align_from_name, color_from_int, key_action,
 };
 use crate::app::InputContext;
+use crate::hid::{HidKey, MAX_MEDIA_USAGE};
 use crate::input::{IcKey, KeyMode, KeyState};
 use crate::platform::rgb8_hex;
 use crate::text::{HAlign, TextStyle, text_width};
@@ -80,25 +81,33 @@ pub struct LuaEngine {
     has_init: bool,
     has_update: bool,
     has_on_key: bool,
+    has_on_key_up: bool,
+}
+
+/// The arguments a hook is called with.
+#[derive(Clone, Copy)]
+enum HookArgs {
+    None,
+    /// `on_key(key, action)`: the key's name and its legend's meaning (or nil).
+    KeyDown(IcKey),
+    /// `on_key_up(key)`: the key's name.
+    KeyUp(IcKey),
 }
 
 impl LuaEngine {
     /// Calls the global function `name`, with the caller's host swapped into
     /// the state the native functions write to.
-    /// `on_key` gets the key's name and its legend's meaning (or nil).
-    fn call(
-        &mut self,
-        host: &mut ScriptHost,
-        name: &str,
-        key: Option<IcKey>,
-    ) -> Result<(), String> {
-        host.key = key;
+    fn call(&mut self, host: &mut ScriptHost, name: &str, args: HookArgs) -> Result<(), String> {
+        host.key = match args {
+            HookArgs::KeyDown(key) => Some(key),
+            _ => None,
+        };
         core::mem::swap(&mut *self.lua.associated_data().get(), host);
         self.lua.set_budget(Some(MAX_BUDGET));
         let thread = self.lua.registry::<HookThread>().expect("hook thread");
         let function = self.lua.global().get_str_key(name);
-        let result = match key {
-            Some(key) => {
+        let result = match args {
+            HookArgs::KeyDown(key) => {
                 let action = {
                     let data = self.lua.associated_data().get();
                     key_action(key, data.shifted(), data.super_held())
@@ -109,7 +118,8 @@ impl LuaEngine {
                     None => thread.call::<()>(function, (key, tsuki::Nil)),
                 }
             }
-            None => thread.call::<()>(function, ()),
+            HookArgs::KeyUp(key) => thread.call::<()>(function, self.lua.create_str(key.name())),
+            HookArgs::None => thread.call::<()>(function, ()),
         };
         self.lua.set_budget(None);
         core::mem::swap(&mut *self.lua.associated_data().get(), host);
@@ -165,12 +175,14 @@ impl ScriptEngine for LuaEngine {
 
         let is_fn = |name: &str| matches!(lua.global().get_str_key(name), Value::LuaFn(_));
         let (has_init, has_update, has_on_key) = (is_fn("init"), is_fn("update"), is_fn("on_key"));
+        let has_on_key_up = is_fn("on_key_up");
         Ok((
             Self {
                 lua,
                 has_init,
                 has_update,
                 has_on_key,
+                has_on_key_up,
             },
             meta,
         ))
@@ -180,21 +192,28 @@ impl ScriptEngine for LuaEngine {
         if !self.has_init {
             return Ok(());
         }
-        self.call(host, "init", None)
+        self.call(host, "init", HookArgs::None)
     }
 
     fn update(&mut self, host: &mut ScriptHost) -> Result<(), String> {
         if !self.has_update {
             return Ok(());
         }
-        self.call(host, "update", None)
+        self.call(host, "update", HookArgs::None)
     }
 
     fn on_key(&mut self, key: IcKey, host: &mut ScriptHost) -> Result<(), String> {
         if !self.has_on_key {
             return Ok(());
         }
-        self.call(host, "on_key", Some(key))
+        self.call(host, "on_key", HookArgs::KeyDown(key))
+    }
+
+    fn on_key_up(&mut self, key: IcKey, host: &mut ScriptHost) -> Result<(), String> {
+        if !self.has_on_key_up {
+            return Ok(());
+        }
+        self.call(host, "on_key_up", HookArgs::KeyUp(key))
     }
 }
 
@@ -244,6 +263,10 @@ fn register_api(lua: &Lua<Host>) {
     g.set_str_key("polygon", fp!(polygon));
     g.set_str_key("text", fp!(text));
     g.set_str_key("math_input", fp!(math_input));
+    g.set_str_key("hid_press", fp!(hid_press));
+    g.set_str_key("hid_release", fp!(hid_release));
+    g.set_str_key("hid_release_all", fp!(hid_release_all));
+    g.set_str_key("hid_connected", fp!(hid_connected));
 
     // Standard functions tsuki doesn't implement yet.
     if let Value::Table(table) = g.get_str_key("table") {
@@ -367,6 +390,75 @@ fn is_down(cx: Cx) -> FnResult {
     let key = IcKey::from_name(name).ok_or_else(|| arg.error(format!("unknown key \"{name}\"")))?;
     let down = cx.associated_data().get().keys_down[key as usize];
     cx.push(down)?;
+    Ok(cx.into())
+}
+
+// ---- Keys on the computer (USB HID) ----
+
+/// The computer-side key named by arguments 1 and 2: a name like `"a"`,
+/// `"left_ctrl"` or `"volume_up"`, a keyboard usage number, or a media
+/// (consumer) usage number followed by `"media"`.
+fn hid_key(cx: &Cx) -> Result<HidKey, Box<dyn Error>> {
+    let arg = cx.arg(1);
+    if let Some(code) = arg.as_int(false) {
+        let media = cx.arg(2).is_exists() && cx.arg(2).to_utf8()? == "media";
+        let key = if media {
+            u16::try_from(code)
+                .ok()
+                .filter(|&code| code <= MAX_MEDIA_USAGE)
+                .map(HidKey::Media)
+        } else {
+            u8::try_from(code).ok().map(HidKey::Keyboard)
+        };
+        return key.ok_or_else(|| arg.error(format!("no HID key has code {code}")));
+    }
+    let name = arg.to_utf8()?;
+    HidKey::from_name(name).ok_or_else(|| arg.error(format!("unknown HID key \"{name}\"")))
+}
+
+/// `hid_press(key)`: holds a key down on the computer until `hid_release`.
+/// Returns false when six keys (besides modifiers) are already held.
+fn hid_press(cx: Cx) -> FnResult {
+    let key = hid_key(&cx)?;
+    let pressed = {
+        let mut host = cx.associated_data().get();
+        match host.hid.press(key) {
+            Ok(Some(report)) => host.push_hid_report(report).map(|()| true),
+            Ok(None) => Ok(true),
+            Err(_) => Ok(false),
+        }
+    };
+    cx.push(pressed?)?;
+    Ok(cx.into())
+}
+
+/// `hid_release(key)`: lets a key up on the computer.
+fn hid_release(cx: Cx) -> FnResult {
+    let key = hid_key(&cx)?;
+    let mut host = cx.associated_data().get();
+    if let Some(report) = host.hid.release(key) {
+        host.push_hid_report(report)?;
+    }
+    drop(host);
+    Ok(cx.into())
+}
+
+/// `hid_release_all()`: lets every key the script holds up.
+fn hid_release_all(cx: Cx) -> FnResult {
+    let mut host = cx.associated_data().get();
+    let mut hid = host.hid;
+    for report in hid.release_all() {
+        host.push_hid_report(report)?;
+    }
+    host.hid = hid;
+    drop(host);
+    Ok(cx.into())
+}
+
+/// `hid_connected()`: whether a computer is there to receive key presses.
+fn hid_connected(cx: Cx) -> FnResult {
+    let connected = cx.associated_data().get().hid_connected;
+    cx.push(connected)?;
     Ok(cx.into())
 }
 

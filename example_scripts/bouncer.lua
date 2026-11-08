@@ -8,6 +8,7 @@ app = { name = "Bouncer", color = 0x2a6f97, realtime = true }
 --   init()               runs each time the app is opened
 --   update()             draws the screen; drawing only works here
 --   on_key(key, action)  a key was pressed; see Keys below
+--   on_key_up(key)       that key was released
 --
 -- Keep state in variables declared at the top of the file. It lasts while the
 -- app is open and starts over each time the app is opened.
@@ -49,6 +50,8 @@ app = { name = "Bouncer", color = 0x2a6f97, realtime = true }
 --   text(string, x, y, size, color [, "left" | "center" | "right"])
 --   text_width(string, size)
 -- Input and time: is_down(key), millis().  print(...) writes to the log.
+-- Typing on the computer over USB: hid_press(key), hid_release(key),
+--   hid_release_all(), hid_connected(); see macropad.lua.
 -- Also available: Lua's math, string and table libraries, including
 -- string.format("%.3g", x) and friends.
 

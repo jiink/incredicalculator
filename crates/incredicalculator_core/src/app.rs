@@ -37,6 +37,13 @@ pub trait IcApp {
     /// memory they only need while open.
     fn on_exit(&mut self) {}
     fn on_key(&mut self, key: IcKey, ctx: &InputContext);
+    /// Called when a key is released. Releases of keys the shell kept for
+    /// itself are not passed on.
+    fn on_key_up(&mut self, _key: IcKey, _ctx: &InputContext) {}
+    /// Sends the keyboard and media-key reports the app has queued for the
+    /// computer (see [`crate::hid`]). The shell calls it after `update` and
+    /// after `on_exit`, so keys an app held are let up when it closes.
+    fn send_hid(&mut self, _platform: &mut dyn IcPlatform) {}
     fn update(
         &mut self,
         platform: &mut dyn IcPlatform,

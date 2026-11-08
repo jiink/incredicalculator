@@ -585,6 +585,10 @@ impl<'d> IcPlatform for IcRpPlatform<'d> {
         usb_drive::connected()
     }
 
+    fn send_hid_report(&mut self, report: incredicalculator_core::hid::HidReport) {
+        usb_drive::send_hid_report(report);
+    }
+
     fn memory_stats(&self) -> Option<memory::MemoryStats> {
         const REFRESH: embassy_time::Duration = embassy_time::Duration::from_millis(250);
         if let Some((taken_at, stats)) = self.memory_stats_cache.get() {

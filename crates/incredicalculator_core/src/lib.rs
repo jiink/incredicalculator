@@ -7,6 +7,7 @@ extern crate alloc;
 pub mod app;
 pub mod apps;
 pub mod audio_engine;
+pub mod hid;
 pub mod input;
 pub mod platform;
 #[cfg(feature = "scripting")]

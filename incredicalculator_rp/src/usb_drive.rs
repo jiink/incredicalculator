@@ -1,5 +1,7 @@
 //! Shares the script drive with a computer as a USB mass storage device
-//! whenever the calculator is plugged in, which it can tell from VBUS.
+//! whenever the calculator is plugged in, which it can tell from VBUS. The
+//! same USB device is also a keyboard with media keys, which scripted apps
+//! type on through [`send_hid_report`]; it stays silent until they do.
 //!
 //! Unplugged, USB is completely off: its PLL and clock only run during a
 //! session, which also holds the system clock at full speed (that's fine on
@@ -16,20 +18,24 @@ use core::cell::Cell;
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use defmt::*;
-use embassy_futures::select::{Either, select, select3};
+use embassy_futures::select::{Either, select, select4};
 use embassy_rp::gpio::Input;
 use embassy_rp::interrupt::InterruptExt;
 use embassy_rp::peripherals::USB;
 use embassy_rp::usb::{Driver, InterruptHandler};
 use embassy_rp::{Peri, bind_interrupts, pac};
+use embassy_sync::blocking_mutex::Mutex;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+use embassy_sync::channel::Channel;
 use embassy_sync::signal::Signal;
 use embassy_time::{Duration, Instant, Timer};
+use embassy_usb::class::hid::{self, HidWriter};
 use embassy_usb::control::{InResponse, OutResponse, Recipient, Request, RequestType};
 use embassy_usb::driver::{Endpoint, EndpointError, EndpointIn, EndpointOut};
 use embassy_usb::{Builder, Handler};
 use flash_disk::scsi::{self, Cbw, CswStatus, Data, Scsi};
 use flash_disk::{BlockDevice, SECTOR_SIZE};
+use incredicalculator_core::hid::{self as ic_hid, HidReport, MAX_HELD_KEYS};
 
 use crate::power;
 use crate::script_drive::{self, with_disk};
@@ -49,6 +55,13 @@ const IDLE_FLUSH_DELAY: Duration = Duration::from_millis(500);
 // distributing these widely.
 const USB_VID: u16 = 0x1209;
 const USB_PID: u16 = 0x0001;
+/// Raised when the device's interfaces change (the keyboard was added in
+/// 0x0020), so computers don't reuse descriptors cached for the old ones.
+const USB_DEVICE_RELEASE: u16 = 0x0020;
+/// How often the computer collects key reports.
+const HID_POLL_MS: u8 = 1;
+/// Key reports waiting to go out. A script sends at most 32 per frame.
+const HID_QUEUE_LEN: usize = 32;
 
 /// The drive changed, or the cable went in or out.
 static CHANGED: Signal<CriticalSectionRawMutex, ()> = Signal::new();
@@ -58,6 +71,39 @@ static BOT_RESET: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 // read-modify-write atomics, which livelocked on the RP2350 before).
 static PLUGGED_IN: AtomicBool = AtomicBool::new(false);
 static CONNECTED: AtomicBool = AtomicBool::new(false);
+/// Key reports for the computer, oldest first.
+static HID_REPORTS: Channel<CriticalSectionRawMutex, HidReport, HID_QUEUE_LEN> = Channel::new();
+/// The newest keyboard and media reports queued, resent if the queue
+/// overflows so no key is left held down.
+static LATEST_HID: Mutex<CriticalSectionRawMutex, Cell<[HidReport; 2]>> = Mutex::new(Cell::new([
+    HidReport::Keyboard {
+        modifiers: 0,
+        keys: [0; MAX_HELD_KEYS],
+    },
+    HidReport::Media(0),
+]));
+
+/// Queues a keyboard or media-key report for the computer. Dropped when no
+/// computer is connected, since it would only see stale keys later.
+pub fn send_hid_report(report: HidReport) {
+    if !connected() {
+        return;
+    }
+    let latest = LATEST_HID.lock(|latest| {
+        let mut reports = latest.get();
+        reports[matches!(report, HidReport::Media(_)) as usize] = report;
+        latest.set(reports);
+        reports
+    });
+    if HID_REPORTS.try_send(report).is_err() {
+        // Too far behind: skip to the current state of every key.
+        warn!("usb keyboard: queue full, skipping ahead");
+        HID_REPORTS.clear();
+        for report in latest {
+            let _ = HID_REPORTS.try_send(report);
+        }
+    }
+}
 
 /// Whether VBUS is present: the calculator is on a USB cable (and charging).
 pub fn plugged_in() -> bool {
@@ -126,13 +172,15 @@ async fn run_session(usb: Peri<'_, USB>) {
     let driver = Driver::new(usb, Irqs);
     let mut config = embassy_usb::Config::new(USB_VID, USB_PID);
     config.manufacturer = Some("Incredicalculator");
-    config.product = Some("Incredicalculator script drive");
+    config.product = Some("Incredicalculator");
+    config.device_release = USB_DEVICE_RELEASE;
     // Mass storage devices need a serial number of at least 12 digits.
     config.serial_number = Some("000000000001");
     config.max_power = 100;
     config.max_packet_size_0 = 64;
 
-    let mut config_descriptor = [0; 64];
+    let mut hid_state = hid::State::new();
+    let mut config_descriptor = [0; 128];
     let mut bos_descriptor = [0; 32];
     let mut msos_descriptor = [0; 0];
     let mut control_buf = [0; 64];
@@ -168,6 +216,16 @@ async fn run_session(usb: Peri<'_, USB>) {
         )
     };
     builder.handler(&mut control);
+    let mut keyboard = HidWriter::<_, { ic_hid::MAX_REPORT_LEN }>::new(
+        &mut builder,
+        &mut hid_state,
+        hid::Config {
+            report_descriptor: ic_hid::REPORT_DESCRIPTOR,
+            request_handler: None,
+            poll_ms: HID_POLL_MS,
+            max_packet_size: PACKET_SIZE as u16,
+        },
+    );
     let mut device = builder.build();
 
     let last_write = Cell::new(Instant::now());
@@ -213,7 +271,20 @@ async fn run_session(usb: Peri<'_, USB>) {
             }
         }
     };
-    select3(device.run(), bulk_only, idle_flush).await;
+    HID_REPORTS.clear();
+    let send_keys = async {
+        loop {
+            let report = HID_REPORTS.receive().await;
+            let mut bytes = [0u8; ic_hid::MAX_REPORT_LEN];
+            let len = report.to_bytes(&mut bytes);
+            // Fails only while the computer isn't listening; the next
+            // report carries the whole state anyway.
+            if keyboard.write(&bytes[..len]).await.is_err() {
+                debug!("usb keyboard: report dropped");
+            }
+        }
+    };
+    select4(device.run(), bulk_only, idle_flush, send_keys).await;
 }
 
 /// Writes cached sectors to flash.
@@ -346,11 +417,15 @@ impl Handler for Control {
     fn reset(&mut self) {
         self.configured = false;
         CONNECTED.store(false, Ordering::Relaxed);
+        HID_REPORTS.clear();
     }
 
     fn configured(&mut self, configured: bool) {
         self.configured = configured;
         CONNECTED.store(configured, Ordering::Relaxed);
+        if !configured {
+            HID_REPORTS.clear();
+        }
     }
 
     fn suspended(&mut self, suspended: bool) {

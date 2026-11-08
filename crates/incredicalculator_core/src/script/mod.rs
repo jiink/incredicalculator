@@ -16,6 +16,7 @@ use alloc::vec::Vec;
 use glam::{IVec2, Vec2};
 use rgb::RGB8;
 
+use crate::hid::{HidReport, HidState};
 use crate::input::IcKey;
 use crate::text::HAlign;
 use crate::ui::MathInput;
@@ -49,6 +50,9 @@ pub const MAX_LOG_LINES: usize = 8;
 pub const MAX_INPUTS: usize = 12;
 /// Characters a `math_input` box holds.
 pub const INPUT_CAPACITY: usize = 40;
+/// Most HID key changes (`hid_press`/`hid_release`) a script may make in one
+/// frame, before they are sent.
+pub const MAX_HID_REPORTS: usize = 32;
 
 /// A `math_input` box: the number and expression entry the compiled apps
 /// use, with the same keys.
@@ -108,6 +112,12 @@ pub struct ScriptHost {
     pub logs: Vec<String>,
     /// The script's `math_input` boxes. They last while the app is open.
     pub inputs: Vec<ScriptInput>,
+    /// Keys the script holds down on the computer.
+    pub hid: HidState,
+    /// Reports for the changes to `hid`, in order, waiting to be sent.
+    pub hid_reports: Vec<HidReport>,
+    /// Whether the computer can receive the script's key presses.
+    pub hid_connected: bool,
 }
 
 impl ScriptHost {
@@ -119,7 +129,20 @@ impl ScriptHost {
             commands: Vec::new(),
             logs: Vec::new(),
             inputs: Vec::new(),
+            hid: HidState::new(),
+            hid_reports: Vec::new(),
+            hid_connected: false,
         }
+    }
+
+    /// Queues a report for the computer, or fails once the per-call cap is
+    /// reached.
+    pub fn push_hid_report(&mut self, report: HidReport) -> Result<(), &'static str> {
+        if self.hid_reports.len() >= MAX_HID_REPORTS {
+            return Err("too many hid_press/hid_release changes in one frame");
+        }
+        self.hid_reports.push(report);
+        Ok(())
     }
 
     pub fn shifted(&self) -> bool {
@@ -196,6 +219,8 @@ pub trait ScriptEngine: Sized {
     /// [`IcKey::name`]) and what its legend means with the modifiers in
     /// `host.keys_down` (see [`key_action`]).
     fn on_key(&mut self, key: IcKey, host: &mut ScriptHost) -> Result<(), String>;
+    /// Runs the script's `on_key_up` hook with the key's script name.
+    fn on_key_up(&mut self, key: IcKey, host: &mut ScriptHost) -> Result<(), String>;
 }
 
 /// What a key press means by the legends printed on the keypad, given the

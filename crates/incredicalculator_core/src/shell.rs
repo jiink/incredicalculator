@@ -206,6 +206,11 @@ impl IcShell {
             }
         }
         self.last_active_app_idx = self.last_active_app_idx.and_then(remap).map(|(idx, _)| idx);
+        // Scripts that were edited or removed: let up any keys they held.
+        for mut app in old_apps.into_iter().flatten() {
+            app.on_exit();
+            app.send_hid(platform);
+        }
         let pages = self.apps.len().div_ceil(APPS_PER_PAGE).max(1);
         self.selector_page = self.selector_page.min(pages - 1);
     }
@@ -768,9 +773,20 @@ impl IcShell {
                 }
             }
         }
+        if let Some(app_idx) = self.active_app_idx {
+            for i in 0..IcKey::COUNT {
+                if !self.key_states[i].just_released || self.held_by_shell[i] {
+                    continue;
+                }
+                if let Some(key) = IcKey::from_usize(i) {
+                    self.apps[app_idx].on_key_up(key, &ctx);
+                }
+            }
+        }
         if backspace_closes_menu || menu_chord {
             if let Some(idx) = self.active_app_idx {
                 self.apps[idx].on_exit();
+                self.apps[idx].send_hid(platform);
                 self.last_active_app_idx = self.active_app_idx;
                 self.active_app_idx = None;
                 self.selector_hints_started_at = Some(platform.millis());
@@ -798,6 +814,7 @@ impl IcShell {
         };
         if let Some(appidx) = self.active_app_idx {
             self.apps[appidx].update(platform, &app_ctx, &mut self.audio);
+            self.apps[appidx].send_hid(platform);
         } else if self.settings_open {
             self.settings_menu.draw(platform);
         } else {

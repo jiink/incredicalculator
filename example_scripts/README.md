@@ -21,6 +21,10 @@ documents the script API: hooks, keys, input boxes and drawing.
 use those rather than mapping raw keys yourself, so a script types numbers and
 moves around with the same keys as the built-in apps.
 
+`macropad.lua` turns the calculator into extra keys for the computer it is
+plugged into, with `hid_press`/`hid_release` and the `on_key_up` hook. Edit its
+`PAD` table to make your own.
+
 Scripts must be at most 16 KiB. Every script here is loaded and run for a few
 frames by `crates/incredicalculator_core/tests/example_scripts.rs`, so keep
 them working when the API changes.

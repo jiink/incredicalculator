@@ -2,8 +2,8 @@
 
 A scripted app is one Lua 5.4 file (`.lua`, at most **16 KiB**). Each file in
 the root of the script drive becomes an app in the apps menu. For working
-examples, see `bouncer.lua` (animation, raw keys) and `ohmslaw.lua` (number
-entry with `math_input`).
+examples, see `bouncer.lua` (animation, raw keys), `ohmslaw.lua` (number
+entry with `math_input`) and `macropad.lua` (typing on the computer).
 
 ## Getting scripts onto the calculator
 
@@ -31,6 +31,9 @@ function on_key(key, action)     -- a key was pressed
     if action == "enter" then count = count + 1 end
 end
 
+function on_key_up(key)          -- a key was released
+end
+
 function update()                -- draw the whole screen
     clear(0x101820)
     text("Count: " .. count, 160, 120, 8, 0xffffff, "center")
@@ -45,7 +48,7 @@ end
 
 ## Keys
 
-`on_key(key, action)` runs once per press. There is no auto-repeat; use `is_down(key)` with `realtime = true` for held keys.
+`on_key(key, action)` runs once per press, and `on_key_up(key)` once when that key is let go. There is no auto-repeat; use `is_down(key)` with `realtime = true` for held keys. `on_key_up` only runs for keys whose press your app received: not for one held down while the app opened, nor for the shell's own presses.
 
 - **`key`** is the physical key, named by its main legend: `"0"`–`"9"`, `"backspace"`, `"/"`, `"*"`, `"-"`, `"+"`, `"="`, `"shift"` or `"super"`.
 - **`action`** is what the key's printed legend means with the modifier held. Prefer it, so your app uses the same keys as the built-in ones.
@@ -154,6 +157,40 @@ The screen is **320 × 240** with (0, 0) at the top left. Colors are integers `0
 | `is_down(key)` | whether a key (named like `on_key`'s `key`) is held now |
 | `print(...)` | writes to the log: browser console on web, terminal on PC. Discarded on the calculator. At most 8 lines per hook call are kept. |
 
+## Typing on the computer (USB keyboard)
+
+Plugged into a computer, the calculator is a USB keyboard with media keys as well as a drive, so a script can press keys there: a macropad, a shortcut pad, a media remote. See `macropad.lua`. The keyboard stays silent until a script presses something.
+
+| Function | Does |
+|---|---|
+| `hid_press(key)` | Holds `key` down on the computer until `hid_release`. Returns `false`, and presses nothing, when 6 keys (not counting modifiers) are already held. |
+| `hid_release(key)` | Lets `key` up. Does nothing if it isn't held. |
+| `hid_release_all()` | Lets every key the script holds up. |
+| `hid_connected()` | Whether a computer is connected to receive keys. Presses made while it isn't are dropped. |
+
+- **Combos and taps:** press the modifier, then the key; release in reverse. A press and release in the same call is a tap: `hid_press("ctrl") hid_press("c") hid_release("c") hid_release("ctrl")`.
+- **Holding:** to mirror a calculator key, press in `on_key` and release in `on_key_up`. The computer then repeats the key while it is held, as a keyboard would.
+- **Let go for you:** every key the script holds is released when you leave the app, when the script stops with an error, and when it reloads.
+- **Limits:** 6 keys plus modifiers at once, one media key at a time (pressing another replaces it), and at most 32 presses and releases per frame (more stops the script with an error).
+- **Layout:** keys are positions on a US keyboard. The computer's keyboard layout decides what they type, so `"z"` types `y` on a German layout.
+- **PC and web:** nothing is typed; each change is written to the log, like `hid: keyboard: left_ctrl c`.
+
+**Key names** (or pass a [HID usage](https://usb.org/document-library/hid-usage-tables-15) number: `hid_press(0x68)` for F13, `hid_press(0xE9, "media")` for a media key):
+
+| Kind | Names |
+|---|---|
+| Letters, digits | `"a"`–`"z"`, `"0"`–`"9"` |
+| Function keys | `"f1"`–`"f24"` |
+| Modifiers | `"ctrl"`, `"shift"`, `"alt"`, `"gui"` (Windows/Command), or `"left_ctrl"`, `"right_ctrl"`, … `"right_gui"` |
+| Editing | `"enter"`, `"escape"`, `"backspace"`, `"tab"`, `"space"`, `"delete"`, `"insert"`, `"caps_lock"` |
+| Navigation | `"up"`, `"down"`, `"left"`, `"right"`, `"home"`, `"end"`, `"page_up"`, `"page_down"` |
+| Symbols | `"minus"`, `"equal"`, `"left_bracket"`, `"right_bracket"`, `"backslash"`, `"semicolon"`, `"quote"`, `"grave"`, `"comma"`, `"period"`, `"slash"` |
+| Number pad | `"kp_0"`–`"kp_9"`, `"kp_period"`, `"kp_plus"`, `"kp_minus"`, `"kp_multiply"`, `"kp_divide"`, `"kp_enter"`, `"num_lock"` |
+| Other | `"print_screen"`, `"scroll_lock"`, `"pause"`, `"menu"` |
+| Media | `"volume_up"`, `"volume_down"`, `"mute"`, `"play_pause"`, `"next_track"`, `"prev_track"`, `"stop"`, `"brightness_up"`, `"brightness_down"`, `"calculator"` |
+
+These names are for the computer's keys, so they differ from `on_key`'s calculator key names (the calculator's `"="` key is not `"equal"`).
+
 ## Lua environment
 
 - **base:** `assert error pcall type tostring tonumber pairs ipairs next select rawget rawset rawequal rawlen setmetatable getmetatable load`
@@ -175,6 +212,7 @@ The screen is **320 × 240** with (0, 0) at the top left. Colors are integers `0
 | Work per hook call | about 100,000 jumps, loop iterations and calls. An endless loop stops with an error instead of freezing. |
 | Recursion depth | about 2,000 stack slots |
 | Drawing calls per `update` | 512 |
+| Computer key presses and releases per frame | 32 |
 | `math_input` boxes | 8, of 40 characters each |
 | Log lines per hook call | 8 |
 

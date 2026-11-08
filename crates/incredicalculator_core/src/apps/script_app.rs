@@ -32,6 +32,9 @@ pub struct ScriptApp {
     /// Set when loading or a hook fails; the script is not run again until
     /// the app is reopened.
     error: Option<String>,
+    /// Keys whose press the script was told about, so it only hears about
+    /// releases of those.
+    pressed: [bool; IcKey::COUNT],
 }
 
 impl ScriptApp {
@@ -50,19 +53,33 @@ impl ScriptApp {
             engine: None,
             host: ScriptHost::new(),
             error: None,
+            pressed: [false; IcKey::COUNT],
         };
         // Load once for the menu's name and color, then free the engine.
         app.load();
         app.engine = None;
-        app.host = ScriptHost::new();
+        app.reset_host();
         app
+    }
+
+    /// Replaces the host with a fresh one. Keys the script held on the
+    /// computer are let up: the reports still to send, and the releases,
+    /// carry over to the new host for `send_hid`.
+    fn reset_host(&mut self) {
+        let old = core::mem::take(&mut self.host);
+        let mut outgoing = old.hid_reports;
+        let mut hid = old.hid;
+        outgoing.extend(hid.release_all());
+        self.host.hid_reports = outgoing;
+        self.host.hid_connected = old.hid_connected;
+        self.pressed = [false; IcKey::COUNT];
     }
 
     /// Starts the script from scratch, with a fresh host.
     fn load(&mut self) {
         self.engine = None;
         self.error = None;
-        self.host = ScriptHost::new();
+        self.reset_host();
         match ActiveEngine::load(&self.source, &mut self.host) {
             Ok((engine, meta)) => {
                 self.apply_meta(meta);
@@ -91,6 +108,9 @@ impl ScriptApp {
         if let Err(error) = hook(engine, &mut self.host) {
             self.error = Some(error);
             self.engine = None;
+            // A stopped script can't let its keys up itself.
+            let released: alloc::vec::Vec<_> = self.host.hid.release_all().collect();
+            self.host.hid_reports.extend(released);
         }
     }
 
@@ -165,13 +185,29 @@ impl IcApp for ScriptApp {
 
     fn on_exit(&mut self) {
         self.engine = None;
-        self.host = ScriptHost::new();
+        self.reset_host();
     }
 
     fn on_key(&mut self, key: IcKey, ctx: &InputContext) {
+        self.pressed[key as usize] = true;
         self.read_keys(ctx);
         self.run(|engine, host| engine.on_key(key, host));
         self.host.commands.clear();
+    }
+
+    fn on_key_up(&mut self, key: IcKey, ctx: &InputContext) {
+        if !core::mem::take(&mut self.pressed[key as usize]) {
+            return;
+        }
+        self.read_keys(ctx);
+        self.run(|engine, host| engine.on_key_up(key, host));
+        self.host.commands.clear();
+    }
+
+    fn send_hid(&mut self, platform: &mut dyn IcPlatform) {
+        for report in self.host.hid_reports.drain(..) {
+            platform.send_hid_report(report);
+        }
     }
 
     fn update(
@@ -181,6 +217,7 @@ impl IcApp for ScriptApp {
         _audio: &mut AudioEngine,
     ) {
         self.host.millis = platform.millis();
+        self.host.hid_connected = platform.hid_connected();
         self.read_keys(ctx);
         self.host.commands.clear();
         self.run(|engine, host| engine.update(host));
