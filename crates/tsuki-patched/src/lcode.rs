@@ -32,7 +32,7 @@ use core::fmt::Display;
 use core::ops::Deref;
 use core::ptr::null_mut;
 use crate::no_libc::abs;
-use libm::ldexp;
+use libm::ldexpf as ldexp;
 
 pub type BinOpr = c_uint;
 pub type UnOpr = c_uint;
@@ -818,8 +818,8 @@ unsafe fn luaK_numberK<D>(
 
     match luaV_flttointeger(r.into(), F2Ieq) {
         Some(ik) => {
-            let nbm: c_int = 53 as c_int;
-            let q: f64 = ldexp(1.0f64, -nbm + 1 as c_int);
+            let nbm: c_int = f32::MANTISSA_DIGITS as c_int; // PATCH (incredicalculator): lua_Number is f32
+            let q: f32 = ldexp(1.0f32, -nbm + 1 as c_int);
             let k = if ik == 0 as c_int as i64 {
                 q.into()
             } else {
@@ -1625,10 +1625,10 @@ unsafe fn validop<D>(op: Ops, v1: *mut UnsafeValue<D>, v2: *mut UnsafeValue<D>) 
         }
         Ops::NumDiv | Ops::IntDiv | Ops::Mod => {
             return ((if (*v2).tt_ as c_int == 3 as c_int | (0 as c_int) << 4 as c_int {
-                ((*v2).value_.i as f64).into()
+                ((*v2).value_.i as f32).into()
             } else {
                 (*v2).value_.n
-            }) != 0 as c_int as f64) as c_int;
+            }) != 0 as c_int as f32) as c_int;
         }
         _ => 1,
     }

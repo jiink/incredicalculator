@@ -473,9 +473,9 @@ pub fn format<A>(cx: Context<A, Args>) -> Result<Context<A, Ret>, Box<dyn core::
                         None => {
                             let Float(n) = arg.to_float()?;
 
-                            if n == f64::INFINITY {
+                            if n == f32::INFINITY {
                                 buf.extend_from_slice(b"1e9999");
-                            } else if n == -f64::INFINITY {
+                            } else if n == -f32::INFINITY {
                                 buf.extend_from_slice(b"-1e9999");
                             } else if n != n {
                                 buf.extend_from_slice(b"(0/0)");
@@ -734,7 +734,7 @@ pub fn pack<A>(cx: Context<A, Args>) -> Result<Context<A, Ret>, Box<dyn core::er
 
                 self::pack::extend_with_endian(&mut b, f.to_ne_bytes(), h.islittle);
 
-                size_of::<f64>()
+                size_of::<f32>()
             }
             Pack::Char(size) => {
                 let s = arg.to_str()?;
@@ -827,7 +827,7 @@ pub fn packsize<A>(cx: Context<A, Args>) -> Result<Context<A, Ret>, Box<dyn core
             Pack::Unsigned(v) => v,
             Pack::Float => size_of::<c_float>(),
             Pack::Double => size_of::<c_double>(),
-            Pack::Number => size_of::<f64>(),
+            Pack::Number => size_of::<f32>(),
             Pack::Char(v) => v,
             Pack::Str(_) => return Err(arg.error("variable-length format")),
             Pack::Padding(v) => v,
@@ -1024,8 +1024,8 @@ pub fn unpack<A>(cx: Context<A, Args>) -> Result<Context<A, Ret>, Box<dyn core::
                 size_of::<c_float>()
             }
             Pack::Number => {
-                let mut data: [u8; size_of::<f64>()] = data
-                    .get(pos..(pos + size_of::<f64>()))
+                let mut data: [u8; size_of::<f32>()] = data
+                    .get(pos..(pos + size_of::<f32>()))
                     .ok_or_else(|| arg.error("data string too short"))?
                     .try_into()
                     .unwrap();
@@ -1034,9 +1034,9 @@ pub fn unpack<A>(cx: Context<A, Args>) -> Result<Context<A, Ret>, Box<dyn core::
                     data.reverse();
                 }
 
-                cx.push(f64::from_ne_bytes(data))?;
+                cx.push(f32::from_ne_bytes(data))?;
 
-                size_of::<f64>()
+                size_of::<f32>()
             }
             Pack::Double => {
                 let mut data: [u8; size_of::<c_double>()] = data
@@ -1960,7 +1960,7 @@ enum Replacement<'a, A> {
 
 /// `%e`: one digit, `precision` decimals and an exponent of at least two
 /// digits, like `1.500000e+03`.
-fn format_exp(n: f64, precision: usize, upper: bool, alt: bool) -> String {
+fn format_exp(n: f32, precision: usize, upper: bool, alt: bool) -> String {
     let n = n.abs();
     if !n.is_finite() {
         return special_float(n, upper);
@@ -1978,7 +1978,7 @@ fn format_exp(n: f64, precision: usize, upper: bool, alt: bool) -> String {
 
 /// `%g`: `precision` significant digits, as `%f` or `%e` depending on the
 /// exponent, without trailing zeros unless `alt`.
-fn format_general(n: f64, precision: usize, upper: bool, alt: bool) -> String {
+fn format_general(n: f32, precision: usize, upper: bool, alt: bool) -> String {
     let n = n.abs();
     if !n.is_finite() {
         return special_float(n, upper);
@@ -2025,7 +2025,7 @@ fn push_exponent(out: &mut String, exp: i32, upper: bool) {
     write!(out, "{:02}", exp.unsigned_abs()).unwrap();
 }
 
-fn special_float(n: f64, upper: bool) -> String {
+fn special_float(n: f32, upper: bool) -> String {
     let s = if n.is_nan() { "nan" } else { "inf" };
     if upper { s.to_ascii_uppercase() } else { String::from(s) }
 }
@@ -2063,7 +2063,7 @@ impl Header {
             Pack::Unsigned(v) => v,
             Pack::Float => size_of::<c_float>(),
             Pack::Double => size_of::<c_double>(),
-            Pack::Number => size_of::<f64>(),
+            Pack::Number => size_of::<f32>(),
             Pack::Char(v) => v,
             Pack::Str(v) => v.unwrap_or(0),
             Pack::Padding(v) => v,
@@ -2078,7 +2078,7 @@ impl Header {
                 }
                 Some(Pack::Float) => size_of::<c_float>(),
                 Some(Pack::Double) => size_of::<c_double>(),
-                Some(Pack::Number) => size_of::<f64>(),
+                Some(Pack::Number) => size_of::<f32>(),
                 _ => return Err("invalid next option for option 'X'".into()),
             },
             Pack::Nop => 0,

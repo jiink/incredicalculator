@@ -18,14 +18,14 @@ use core::ffi::c_void;
 use core::hash::{Hash, Hasher};
 use core::marker::PhantomPinned;
 use core::ptr::{null, null_mut};
-use libm::frexp;
+use libm::frexpf as frexp;
 
 type c_int = i32;
 type c_uint = u32;
 type c_long = i64;
 type c_ulong = u64;
 type c_longlong = i64;
-type c_double = f64;
+type c_double = f32;
 
 unsafe fn hashint<D>(t: *const Table<D>, i: i64) -> *mut Node<D> {
     let ui: u64 = i as u64;
@@ -47,7 +47,7 @@ unsafe fn l_hashfloat(n: Float) -> c_int {
     let mut ni: i64 = 0;
     let (mut n, i) = frexp(n.into());
 
-    n = n * -((-(2147483647 as c_int) - 1 as c_int) as f64);
+    n = n * -((-(2147483647 as c_int) - 1 as c_int) as f32);
 
     if !(n >= (-(0x7fffffffffffffff as c_longlong) - 1 as c_int as c_longlong) as c_double
         && n < -((-(0x7fffffffffffffff as c_longlong) - 1 as c_int as c_longlong) as c_double)

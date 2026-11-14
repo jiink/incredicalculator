@@ -328,7 +328,7 @@ fn math_random(cx: Cx) -> FnResult {
     let random = cx.associated_data().next_random();
     let (low, high) = match cx.args() {
         0 => {
-            cx.push((random >> 8) as f64 / (1u32 << 24) as f64)?;
+            cx.push((random >> 8) as f32 / (1u32 << 24) as f32)?;
             return Ok(cx.into());
         }
         1 => (1, cx.arg(1).to_int()?),
@@ -345,7 +345,7 @@ fn math_random(cx: Cx) -> FnResult {
 // ---- Argument helpers (Lua arguments are 1-based) ----
 
 fn num(cx: &Cx, n: usize) -> Result<f32, Box<dyn Error>> {
-    Ok(f64::from(cx.arg(n).to_float()?) as f32)
+    Ok(cx.arg(n).to_float()?.0)
 }
 
 fn int(cx: &Cx, n: usize) -> Result<i32, Box<dyn Error>> {
@@ -472,7 +472,7 @@ fn rgb(cx: Cx) -> FnResult {
 fn text_width_fn(cx: Cx) -> FnResult {
     let style = TextStyle::new(num(&cx, 2)?, rgb::RGB8::default());
     let width = text_width(cx.arg(1).to_utf8()?, style.scale, style.font);
-    cx.push(width as f64)?;
+    cx.push(width as f32)?;
     Ok(cx.into())
 }
 
@@ -575,7 +575,7 @@ fn polygon(cx: Cx) -> FnResult {
     }
     let coord = |i: i64| match coords.get(i) {
         Value::Int(v) => Ok(v as f32),
-        Value::Float(v) => Ok(f64::from(v) as f32),
+        Value::Float(v) => Ok(v.0),
         _ => Err(arg.error("polygon coordinates must be numbers")),
     };
     let points = (0..len / 2)
@@ -618,7 +618,7 @@ fn field_num(table: &tsuki::Table<Host>, name: &str) -> Result<Option<f32>, Box<
     match table.get_str_key(name) {
         Value::Nil => Ok(None),
         Value::Int(v) => Ok(Some(v as f32)),
-        Value::Float(v) => Ok(Some(f64::from(v) as f32)),
+        Value::Float(v) => Ok(Some(v.0)),
         _ => Err(format!("math_input: {name} must be a number").into()),
     }
 }

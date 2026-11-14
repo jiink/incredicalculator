@@ -58,74 +58,74 @@ pub(crate) fn abs(x: c_int) -> c_int {
     x.wrapping_abs()
 }
 
-/// `f64` methods that only exist with `std`, backed by libm.
+/// `f32` methods that only exist with `std`, backed by libm.
 #[allow(dead_code)]
-pub(crate) trait F64Ext {
-    fn floor(self) -> f64;
-    fn ceil(self) -> f64;
-    fn fract(self) -> f64;
-    fn powf(self, n: f64) -> f64;
-    fn sqrt(self) -> f64;
-    fn sin(self) -> f64;
-    fn cos(self) -> f64;
-    fn tan(self) -> f64;
-    fn asin(self) -> f64;
-    fn acos(self) -> f64;
-    fn atan2(self, other: f64) -> f64;
-    fn exp(self) -> f64;
-    fn log(self, base: f64) -> f64;
-    fn ln(self) -> f64;
-    fn log2(self) -> f64;
-    fn log10(self) -> f64;
+pub(crate) trait F32Ext {
+    fn floor(self) -> f32;
+    fn ceil(self) -> f32;
+    fn fract(self) -> f32;
+    fn powf(self, n: f32) -> f32;
+    fn sqrt(self) -> f32;
+    fn sin(self) -> f32;
+    fn cos(self) -> f32;
+    fn tan(self) -> f32;
+    fn asin(self) -> f32;
+    fn acos(self) -> f32;
+    fn atan2(self, other: f32) -> f32;
+    fn exp(self) -> f32;
+    fn log(self, base: f32) -> f32;
+    fn ln(self) -> f32;
+    fn log2(self) -> f32;
+    fn log10(self) -> f32;
 }
 
-impl F64Ext for f64 {
-    fn floor(self) -> f64 {
-        libm::floor(self)
+impl F32Ext for f32 {
+    fn floor(self) -> f32 {
+        libm::floorf(self)
     }
-    fn ceil(self) -> f64 {
-        libm::ceil(self)
+    fn ceil(self) -> f32 {
+        libm::ceilf(self)
     }
-    fn fract(self) -> f64 {
-        self - libm::trunc(self)
+    fn fract(self) -> f32 {
+        self - libm::truncf(self)
     }
-    fn powf(self, n: f64) -> f64 {
-        libm::pow(self, n)
+    fn powf(self, n: f32) -> f32 {
+        libm::powf(self, n)
     }
-    fn sqrt(self) -> f64 {
-        libm::sqrt(self)
+    fn sqrt(self) -> f32 {
+        libm::sqrtf(self)
     }
-    fn sin(self) -> f64 {
-        libm::sin(self)
+    fn sin(self) -> f32 {
+        libm::sinf(self)
     }
-    fn cos(self) -> f64 {
-        libm::cos(self)
+    fn cos(self) -> f32 {
+        libm::cosf(self)
     }
-    fn tan(self) -> f64 {
-        libm::tan(self)
+    fn tan(self) -> f32 {
+        libm::tanf(self)
     }
-    fn asin(self) -> f64 {
-        libm::asin(self)
+    fn asin(self) -> f32 {
+        libm::asinf(self)
     }
-    fn acos(self) -> f64 {
-        libm::acos(self)
+    fn acos(self) -> f32 {
+        libm::acosf(self)
     }
-    fn atan2(self, other: f64) -> f64 {
-        libm::atan2(self, other)
+    fn atan2(self, other: f32) -> f32 {
+        libm::atan2f(self, other)
     }
-    fn exp(self) -> f64 {
-        libm::exp(self)
+    fn exp(self) -> f32 {
+        libm::expf(self)
     }
-    fn log(self, base: f64) -> f64 {
-        libm::log(self) / libm::log(base)
+    fn log(self, base: f32) -> f32 {
+        libm::logf(self) / libm::logf(base)
     }
-    fn ln(self) -> f64 {
-        libm::log(self)
+    fn ln(self) -> f32 {
+        libm::logf(self)
     }
-    fn log2(self) -> f64 {
-        libm::log2(self)
+    fn log2(self) -> f32 {
+        libm::log2f(self)
     }
-    fn log10(self) -> f64 {
-        libm::log10(self)
+    fn log10(self) -> f32 {
+        libm::log10f(self)
     }
 }

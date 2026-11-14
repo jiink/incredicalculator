@@ -18,6 +18,14 @@ impl From<i64> for Number {
     }
 }
 
+impl From<f32> for Number {
+    #[inline(always)]
+    fn from(value: f32) -> Self {
+        Self::Float(value.into())
+    }
+}
+
+// PATCH (incredicalculator): lua_Number is f32, so f64 values are narrowed.
 impl From<f64> for Number {
     #[inline(always)]
     fn from(value: f64) -> Self {

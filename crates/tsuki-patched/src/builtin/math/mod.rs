@@ -1,10 +1,10 @@
 //! Implementation of [mathematical library](https://www.lua.org/manual/5.4/manual.html#6.7).
 #[allow(unused_imports)]
-use crate::no_libc::F64Ext;
+use crate::no_libc::F32Ext;
 use crate::context::{ArgNotFound, Args, Context, Ret};
 use crate::{Float, Nil, Number, Type};
 use alloc::boxed::Box;
-use core::f64::consts::PI;
+use core::f32::consts::PI;
 
 /// Implementation of [math.abs](https://www.lua.org/manual/5.4/manual.html#pdf-math.abs).
 pub fn abs<A>(cx: Context<A, Args>) -> Result<Context<A, Ret>, Box<dyn core::error::Error>> {
@@ -132,7 +132,7 @@ pub fn fmod<A>(cx: Context<A, Args>) -> Result<Context<A, Ret>, Box<dyn core::er
             let Float(x) = x.to_float()?;
             let Float(y) = y.to_float()?;
 
-            cx.push(libm::fmod(x, y))?;
+            cx.push(libm::fmodf(x, y))?;
         }
     }
 
@@ -147,7 +147,7 @@ pub fn log<A>(cx: Context<A, Args>) -> Result<Context<A, Ret>, Box<dyn core::err
         Some(Float(2.0)) => cx.push(v.log2())?,
         Some(Float(10.0)) => cx.push(v.log10())?,
         Some(Float(b)) => cx.push(v.log(b))?,
-        None => cx.push(libm::log(v.into()))?,
+        None => cx.push(libm::logf(v.into()))?,
     }
 
     Ok(cx.into())
@@ -285,11 +285,11 @@ pub fn ult<A>(cx: Context<A, Args>) -> Result<Context<A, Ret>, Box<dyn core::err
 }
 
 #[inline(always)]
-fn pushnumint(d: f64) -> Number {
+fn pushnumint(d: f32) -> Number {
     // TODO: This does not seems right even on Lua implementation. Lua said MININTEGER always has an
     // exact representation as a float but it does not.
-    if d >= i64::MIN as f64 && d < -(i64::MIN as f64) {
-        Number::Int(f64::from(d) as i64)
+    if d >= i64::MIN as f32 && d < -(i64::MIN as f32) {
+        Number::Int(f32::from(d) as i64)
     } else {
         Number::Float(d.into())
     }

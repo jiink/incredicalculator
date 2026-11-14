@@ -1,5 +1,5 @@
 #[allow(unused_imports)]
-use crate::no_libc::F64Ext;
+use crate::no_libc::F32Ext;
 use core::cmp::Ordering;
 use core::fmt::{Display, Formatter};
 use core::ops::{Add, AddAssign, Div, Mul, Neg, Sub};
@@ -7,23 +7,25 @@ use core::ops::{Add, AddAssign, Div, Mul, Neg, Sub};
 /// Lua floating-point number.
 ///
 /// This type provides [Display] implementation to match with Lua behavior when converting float to
-/// string without fractional part. [Display] implementation on [f64] will omit fractional part if
+/// string without fractional part. [Display] implementation on [f32] will omit fractional part if
 /// it is zero but Lua requires this. Note that Tsuki **do not** truncate the precision while Lua
 /// limit this to 14 digits by default.
+// PATCH (incredicalculator): f32 instead of f64, since the RP2350's FPU is
+// single-precision only and f64 math there is done in software.
 #[repr(transparent)]
 #[derive(Default, Clone, Copy, PartialEq, PartialOrd)]
-pub struct Float(pub f64);
+pub struct Float(pub f32);
 
-impl PartialEq<f64> for Float {
+impl PartialEq<f32> for Float {
     #[inline(always)]
-    fn eq(&self, other: &f64) -> bool {
+    fn eq(&self, other: &f32) -> bool {
         self.0 == *other
     }
 }
 
-impl PartialOrd<f64> for Float {
+impl PartialOrd<f32> for Float {
     #[inline(always)]
-    fn partial_cmp(&self, other: &f64) -> Option<Ordering> {
+    fn partial_cmp(&self, other: &f32) -> Option<Ordering> {
         self.0.partial_cmp(other)
     }
 }
@@ -37,18 +39,18 @@ impl Add for Float {
     }
 }
 
-impl Add<f64> for Float {
+impl Add<f32> for Float {
     type Output = Self;
 
     #[inline(always)]
-    fn add(self, rhs: f64) -> Self::Output {
+    fn add(self, rhs: f32) -> Self::Output {
         Self(self.0 + rhs)
     }
 }
 
-impl AddAssign<f64> for Float {
+impl AddAssign<f32> for Float {
     #[inline(always)]
-    fn add_assign(&mut self, rhs: f64) {
+    fn add_assign(&mut self, rhs: f32) {
         self.0 += rhs;
     }
 }
@@ -71,11 +73,11 @@ impl Mul for Float {
     }
 }
 
-impl Mul<f64> for Float {
+impl Mul<f32> for Float {
     type Output = Self;
 
     #[inline(always)]
-    fn mul(self, rhs: f64) -> Self::Output {
+    fn mul(self, rhs: f32) -> Self::Output {
         Self(self.0 * rhs)
     }
 }
@@ -101,21 +103,22 @@ impl Neg for Float {
 impl From<i32> for Float {
     #[inline(always)]
     fn from(value: i32) -> Self {
-        Self(value.into())
+        Self(value as f32)
     }
 }
 
 impl From<f32> for Float {
     #[inline(always)]
     fn from(value: f32) -> Self {
-        Self(value.into())
+        Self(value)
     }
 }
 
+// PATCH (incredicalculator): lua_Number is f32, so f64 values are narrowed.
 impl From<f64> for Float {
     #[inline(always)]
     fn from(value: f64) -> Self {
-        Self(value)
+        Self(value as f32)
     }
 }
 
@@ -131,9 +134,16 @@ impl Display for Float {
     }
 }
 
-impl From<Float> for f64 {
+impl From<Float> for f32 {
     #[inline(always)]
     fn from(value: Float) -> Self {
         value.0
+    }
+}
+
+impl From<Float> for f64 {
+    #[inline(always)]
+    fn from(value: Float) -> Self {
+        value.0.into()
     }
 }

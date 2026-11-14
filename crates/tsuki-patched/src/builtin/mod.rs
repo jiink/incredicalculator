@@ -128,14 +128,14 @@ impl<A> Module<A> for MathLib {
         m.set_str_key("exp", fp!(self::math::exp));
         m.set_str_key("floor", fp!(self::math::floor));
         m.set_str_key("fmod", fp!(self::math::fmod));
-        m.set_str_key("huge", f64::INFINITY);
+        m.set_str_key("huge", f32::INFINITY);
         m.set_str_key("log", fp!(self::math::log));
         m.set_str_key("max", fp!(self::math::max));
         m.set_str_key("maxinteger", i64::MAX);
         m.set_str_key("min", fp!(self::math::min));
         m.set_str_key("mininteger", i64::MIN);
         m.set_str_key("modf", fp!(self::math::modf));
-        m.set_str_key("pi", core::f64::consts::PI);
+        m.set_str_key("pi", core::f32::consts::PI);
         m.set_str_key("rad", fp!(self::math::rad));
         m.set_str_key("sin", fp!(self::math::sin));
         m.set_str_key("sqrt", fp!(self::math::sqrt));

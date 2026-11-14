@@ -1,7 +1,7 @@
 #![allow(non_camel_case_types, non_snake_case, non_upper_case_globals)]
 #![allow(unsafe_op_in_unsafe_fn)]
 #[allow(unused_imports)]
-use crate::no_libc::F64Ext;
+use crate::no_libc::F32Ext;
 
 use crate::context::{Args, Context, Ret};
 use crate::gc::Object;
@@ -466,7 +466,7 @@ fn intarith(op: Ops, v1: i64, v2: i64) -> Result<i64, ArithError> {
     Ok(r)
 }
 
-fn numarith(op: Ops, v1: f64, v2: f64) -> f64 {
+fn numarith(op: Ops, v1: f32, v2: f32) -> f32 {
     match op {
         Ops::Add => v1 + v2,
         Ops::Sub => v1 - v2,
@@ -529,7 +529,7 @@ pub unsafe fn luaO_rawarith<D>(
                 1 as c_int
             } else {
                 if (*p1).tt_ as c_int == 3 as c_int | (0 as c_int) << 4 as c_int {
-                    n1 = ((*p1).value_.i as f64).into();
+                    n1 = ((*p1).value_.i as f32).into();
                     1 as c_int
                 } else {
                     0 as c_int
@@ -540,7 +540,7 @@ pub unsafe fn luaO_rawarith<D>(
                     1 as c_int
                 } else {
                     if (*p2).tt_ as c_int == 3 as c_int | (0 as c_int) << 4 as c_int {
-                        n2 = ((*p2).value_.i as f64).into();
+                        n2 = ((*p2).value_.i as f32).into();
                         1 as c_int
                     } else {
                         0 as c_int
@@ -563,7 +563,7 @@ pub unsafe fn luaO_rawarith<D>(
                 1 as c_int
             } else {
                 if (*p1).tt_ as c_int == 3 as c_int | (0 as c_int) << 4 as c_int {
-                    n1_0 = ((*p1).value_.i as f64).into();
+                    n1_0 = ((*p1).value_.i as f32).into();
                     1 as c_int
                 } else {
                     0 as c_int
@@ -574,7 +574,7 @@ pub unsafe fn luaO_rawarith<D>(
                     1 as c_int
                 } else {
                     if (*p2).tt_ as c_int == 3 as c_int | (0 as c_int) << 4 as c_int {
-                        n2_0 = ((*p2).value_.i as f64).into();
+                        n2_0 = ((*p2).value_.i as f32).into();
                         1 as c_int
                     } else {
                         0 as c_int
@@ -609,12 +609,12 @@ pub fn luaO_hexavalue(c: c_int) -> c_int {
     };
 }
 
-fn l_str2d(s: &[u8]) -> Option<f64> {
+fn l_str2d(s: &[u8]) -> Option<f32> {
     let s = s.trim_ascii();
 
     core::str::from_utf8(s)
         .ok()?
-        .parse::<f64>()
+        .parse::<f32>()
         .ok()
         .filter(|v| v.is_finite())
 }

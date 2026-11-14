@@ -19,7 +19,7 @@ pub trait RegKey<A>: 'static {
     /// - [u16].
     /// - [u32].
     /// - [f32].
-    /// - [f64].
+    /// - [f32].
     /// - [Str](crate::Str).
     /// - [Table](crate::Table).
     /// - [LuaFn](crate::LuaFn).

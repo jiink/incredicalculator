@@ -52,3 +52,15 @@ no memory cap: a script that allocates without bound panics on out-of-memory.
   (flags, width and precision included). Upstream rejects them, which left
   scripts without a way to print a float with a set number of significant
   digits.
+
+## `f32` floats
+
+Lua floats (`lua_Number`) are `f32` instead of `f64`, since the RP2350's FPU
+only does single precision and `f64` math there runs a lot slower. `Float` wraps
+an `f32`, the VM, constant folding (`src/lcode.rs`), float hashing
+(`src/table/legacy.rs`), `math` and `string` use `f32` throughout, and
+`src/no_libc.rs` backs the `f32` math methods with libm's `*f` functions.
+`From<f64>` impls are kept for convenience and narrow to `f32`. Integers are
+still `i64`. As in C Lua built with `LUA_FLOAT_FLOAT`, `string.pack("n")` is 4
+bytes, and float-to-integer and integer-to-float conversions are exact only up
+to 2^24.

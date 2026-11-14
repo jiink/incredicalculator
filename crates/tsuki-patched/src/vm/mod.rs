@@ -6,7 +6,7 @@
 )]
 #![allow(unsafe_op_in_unsafe_fn)]
 #[allow(unused_imports)]
-use crate::no_libc::F64Ext;
+use crate::no_libc::F32Ext;
 
 pub use self::opcode::*;
 
@@ -42,7 +42,7 @@ use core::hint::unreachable_unchecked;
 use core::pin::pin;
 use core::ptr::{null, null_mut};
 use core::task::{Context, Poll, Waker};
-use libm::fmod;
+use libm::fmodf as fmod;
 
 pub type F2Imod = c_uint;
 
@@ -71,10 +71,10 @@ unsafe fn l_strton<D>(obj: *const UnsafeValue<D>) -> Option<UnsafeValue<D>> {
 #[inline(never)]
 pub unsafe fn luaV_tonumber_<A>(obj: *const UnsafeValue<A>) -> Option<Float> {
     if (*obj).tt_ as c_int == 3 as c_int | (0 as c_int) << 4 as c_int {
-        Some(((*obj).value_.i as f64).into())
+        Some(((*obj).value_.i as f32).into())
     } else if let Some(v) = l_strton(obj) {
         Some(if v.tt_ == 3 | 0 << 4 {
-            (v.value_.i as f64).into()
+            (v.value_.i as f32).into()
         } else {
             v.value_.n
         })
@@ -84,19 +84,19 @@ pub unsafe fn luaV_tonumber_<A>(obj: *const UnsafeValue<A>) -> Option<Float> {
 }
 
 #[inline(always)]
-pub fn luaV_flttointeger(n: f64, mode: F2Imod) -> Option<i64> {
+pub fn luaV_flttointeger(n: f32, mode: F2Imod) -> Option<i64> {
     let mut f = n.floor();
 
     if n != f {
         if mode as c_uint == F2Ieq as c_int as c_uint {
             return None;
         } else if mode as c_uint == F2Iceil as c_int as c_uint {
-            f += 1f64;
+            f += 1f32;
         }
     }
 
-    match f >= i64::MIN as f64 && f < -(i64::MIN as f64) {
-        true => Some(f64::from(f) as i64),
+    match f >= i64::MIN as f32 && f < -(i64::MIN as f32) {
+        true => Some(f32::from(f) as i64),
         false => None,
     }
 }
@@ -145,7 +145,7 @@ unsafe fn forlimit<D>(
                 luaG_forerror(L, lim, "limit")?;
             }
 
-            if flim > 0f64 {
+            if flim > 0f32 {
                 if step < 0 as c_int as i64 {
                     return Ok(1 as c_int);
                 }
@@ -251,11 +251,11 @@ unsafe fn forprep<D>(
             luaG_forerror(L, pinit.cast(), "initial value")?;
         }
 
-        if step_0 == 0 as c_int as f64 {
+        if step_0 == 0 as c_int as f32 {
             return Err("'for' step is zero".into());
         }
 
-        if if step_0 > 0f64 {
+        if if step_0 > 0f32 {
             (limit_0 < init_0) as c_int
         } else {
             (init_0 < limit_0) as c_int
@@ -288,7 +288,7 @@ unsafe fn floatforloop<D>(ra: *mut StackValue<D>) -> c_int {
 
     idx = idx + step;
 
-    if if step > 0f64 {
+    if if step > 0f32 {
         idx <= limit
     } else {
         limit <= idx
@@ -508,57 +508,57 @@ unsafe fn l_strcmp<D>(ts1: *const Str<D>, ts2: *const Str<D>) -> c_int {
 }
 
 #[inline(always)]
-unsafe fn LTintfloat(i: i64, f: f64) -> c_int {
+unsafe fn LTintfloat(i: i64, f: f32) -> c_int {
     if ((1 as c_int as u64) << 53 as c_int).wrapping_add(i as u64)
         <= 2 as c_int as u64 * ((1 as c_int as u64) << 53 as c_int)
     {
-        (f > (i as f64)) as c_int
+        (f > (i as f32)) as c_int
     } else {
         match luaV_flttointeger(f, F2Iceil) {
             Some(fi) => (i < fi) as c_int,
-            None => (f > 0 as c_int as f64) as c_int,
+            None => (f > 0 as c_int as f32) as c_int,
         }
     }
 }
 
 #[inline(always)]
-unsafe fn LEintfloat(i: i64, f: f64) -> c_int {
+unsafe fn LEintfloat(i: i64, f: f32) -> c_int {
     if ((1 as c_int as u64) << 53 as c_int).wrapping_add(i as u64)
         <= 2 as c_int as u64 * ((1 as c_int as u64) << 53 as c_int)
     {
-        (f >= (i as f64)) as c_int
+        (f >= (i as f32)) as c_int
     } else {
         match luaV_flttointeger(f, F2Ifloor) {
             Some(fi) => (i <= fi) as c_int,
-            None => (f > 0 as c_int as f64) as c_int,
+            None => (f > 0 as c_int as f32) as c_int,
         }
     }
 }
 
 #[inline(always)]
-unsafe fn LTfloatint(f: f64, i: i64) -> c_int {
+unsafe fn LTfloatint(f: f32, i: i64) -> c_int {
     if ((1 as c_int as u64) << 53 as c_int).wrapping_add(i as u64)
         <= 2 as c_int as u64 * ((1 as c_int as u64) << 53 as c_int)
     {
-        return (f < i as f64) as c_int;
+        return (f < i as f32) as c_int;
     } else {
         match luaV_flttointeger(f, F2Ifloor) {
             Some(fi) => (fi < i) as c_int,
-            None => (f < 0 as c_int as f64) as c_int,
+            None => (f < 0 as c_int as f32) as c_int,
         }
     }
 }
 
 #[inline(always)]
-unsafe fn LEfloatint(f: f64, i: i64) -> c_int {
+unsafe fn LEfloatint(f: f32, i: i64) -> c_int {
     if ((1 as c_int as u64) << 53 as c_int).wrapping_add(i as u64)
         <= 2 as c_int as u64 * ((1 as c_int as u64) << 53 as c_int)
     {
-        return (f <= i as f64) as c_int;
+        return (f <= i as f32) as c_int;
     } else {
         match luaV_flttointeger(f, F2Iceil) {
             Some(fi) => (fi <= i) as c_int,
-            None => (f < 0 as c_int as f64) as c_int,
+            None => (f < 0 as c_int as f32) as c_int,
         }
     }
 }
@@ -1066,13 +1066,13 @@ pub fn luaV_mod(m: i64, n: i64) -> Option<i64> {
 }
 
 #[inline(always)]
-pub fn luaV_modf(m: f64, n: f64) -> f64 {
+pub fn luaV_modf(m: f32, n: f32) -> f32 {
     let mut r = fmod(m, n);
 
-    if if r > 0f64 {
-        n < 0f64
+    if if r > 0f32 {
+        n < 0f32
     } else {
-        r < 0f64 && n > 0f64
+        r < 0f32 && n > 0f32
     } {
         r += n;
     }
@@ -1217,7 +1217,7 @@ pub async unsafe fn run<A>(
                             >> 1 as c_int);
 
                     (*ra).tt_ = 3 | 1 << 4;
-                    (*ra).value_.n = (b_0 as f64).into();
+                    (*ra).value_.n = (b_0 as f32).into();
 
                     next!();
                 }
@@ -1944,7 +1944,7 @@ pub async unsafe fn run<A>(
                         (*io_4).value_.i = (iv1 as u64).wrapping_add(imm as u64) as i64;
                     } else if tt as c_int == 3 as c_int | (1 as c_int) << 4 as c_int {
                         let nb = (*v1).value_.n;
-                        let fimm: f64 = imm as f64;
+                        let fimm: f32 = imm as f32;
                         let io_5 = ra_19;
 
                         (*io_5).value_.n = nb + fimm;
@@ -1990,7 +1990,7 @@ pub async unsafe fn run<A>(
                             1 as c_int
                         } else {
                             if (*v1_0).tt_ as c_int == 3 as c_int | (0 as c_int) << 4 as c_int {
-                                n1 = ((*v1_0).value_.i as f64).into();
+                                n1 = ((*v1_0).value_.i as f32).into();
                                 1 as c_int
                             } else {
                                 0 as c_int
@@ -2001,7 +2001,7 @@ pub async unsafe fn run<A>(
                                 1 as c_int
                             } else {
                                 if (*v2).tt_ as c_int == 3 as c_int | (0 as c_int) << 4 as c_int {
-                                    n2 = ((*v2).value_.i as f64).into();
+                                    n2 = ((*v2).value_.i as f32).into();
                                     1 as c_int
                                 } else {
                                     0 as c_int
@@ -2053,7 +2053,7 @@ pub async unsafe fn run<A>(
                             1 as c_int
                         } else {
                             if (*v1_1).tt_ as c_int == 3 as c_int | (0 as c_int) << 4 as c_int {
-                                n1_0 = ((*v1_1).value_.i as f64).into();
+                                n1_0 = ((*v1_1).value_.i as f32).into();
                                 1 as c_int
                             } else {
                                 0 as c_int
@@ -2064,7 +2064,7 @@ pub async unsafe fn run<A>(
                                 1 as c_int
                             } else {
                                 if (*v2_0).tt_ as c_int == 3 as c_int | (0 as c_int) << 4 as c_int {
-                                    n2_0 = ((*v2_0).value_.i as f64).into();
+                                    n2_0 = ((*v2_0).value_.i as f32).into();
                                     1 as c_int
                                 } else {
                                     0 as c_int
@@ -2116,7 +2116,7 @@ pub async unsafe fn run<A>(
                             1 as c_int
                         } else {
                             if (*v1_2).tt_ as c_int == 3 as c_int | (0 as c_int) << 4 as c_int {
-                                n1_1 = ((*v1_2).value_.i as f64).into();
+                                n1_1 = ((*v1_2).value_.i as f32).into();
                                 1 as c_int
                             } else {
                                 0 as c_int
@@ -2127,7 +2127,7 @@ pub async unsafe fn run<A>(
                                 1 as c_int
                             } else {
                                 if (*v2_1).tt_ as c_int == 3 as c_int | (0 as c_int) << 4 as c_int {
-                                    n2_1 = ((*v2_1).value_.i as f64).into();
+                                    n2_1 = ((*v2_1).value_.i as f32).into();
                                     1 as c_int
                                 } else {
                                     0 as c_int
@@ -2187,7 +2187,7 @@ pub async unsafe fn run<A>(
                             1 as c_int
                         } else {
                             if (*v1_3).tt_ as c_int == 3 as c_int | (0 as c_int) << 4 as c_int {
-                                n1_2 = ((*v1_3).value_.i as f64).into();
+                                n1_2 = ((*v1_3).value_.i as f32).into();
                                 1 as c_int
                             } else {
                                 0 as c_int
@@ -2198,7 +2198,7 @@ pub async unsafe fn run<A>(
                                 1 as c_int
                             } else {
                                 if (*v2_2).tt_ as c_int == 3 as c_int | (0 as c_int) << 4 as c_int {
-                                    n2_2 = ((*v2_2).value_.i as f64).into();
+                                    n2_2 = ((*v2_2).value_.i as f32).into();
                                     1 as c_int
                                 } else {
                                     0 as c_int
@@ -2239,7 +2239,7 @@ pub async unsafe fn run<A>(
                         1 as c_int
                     } else {
                         if (*v1_4).tt_ as c_int == 3 as c_int | (0 as c_int) << 4 as c_int {
-                            n1_3 = ((*v1_4).value_.i as f64).into();
+                            n1_3 = ((*v1_4).value_.i as f32).into();
                             1 as c_int
                         } else {
                             0 as c_int
@@ -2250,7 +2250,7 @@ pub async unsafe fn run<A>(
                             1 as c_int
                         } else {
                             if (*v2_3).tt_ as c_int == 3 as c_int | (0 as c_int) << 4 as c_int {
-                                n2_3 = ((*v2_3).value_.i as f64).into();
+                                n2_3 = ((*v2_3).value_.i as f32).into();
                                 1 as c_int
                             } else {
                                 0 as c_int
@@ -2259,7 +2259,7 @@ pub async unsafe fn run<A>(
                     {
                         pc += 1;
                         let io_14 = ra_24;
-                        (*io_14).value_.n = if n2_3 == 2 as c_int as f64 {
+                        (*io_14).value_.n = if n2_3 == 2 as c_int as f32 {
                             n1_3 * n1_3
                         } else {
                             n1_3.0.powf(n2_3.0).into()
@@ -2293,7 +2293,7 @@ pub async unsafe fn run<A>(
                         1 as c_int
                     } else {
                         if (*v1_5).tt_ as c_int == 3 as c_int | (0 as c_int) << 4 as c_int {
-                            n1_4 = ((*v1_5).value_.i as f64).into();
+                            n1_4 = ((*v1_5).value_.i as f32).into();
                             1 as c_int
                         } else {
                             0 as c_int
@@ -2304,7 +2304,7 @@ pub async unsafe fn run<A>(
                             1 as c_int
                         } else {
                             if (*v2_4).tt_ as c_int == 3 as c_int | (0 as c_int) << 4 as c_int {
-                                n2_4 = ((*v2_4).value_.i as f64).into();
+                                n2_4 = ((*v2_4).value_.i as f32).into();
                                 1 as c_int
                             } else {
                                 0 as c_int
@@ -2362,7 +2362,7 @@ pub async unsafe fn run<A>(
                             1 as c_int
                         } else {
                             if (*v1_6).tt_ as c_int == 3 as c_int | (0 as c_int) << 4 as c_int {
-                                n1_5 = ((*v1_6).value_.i as f64).into();
+                                n1_5 = ((*v1_6).value_.i as f32).into();
                                 1 as c_int
                             } else {
                                 0 as c_int
@@ -2373,7 +2373,7 @@ pub async unsafe fn run<A>(
                                 1 as c_int
                             } else {
                                 if (*v2_5).tt_ as c_int == 3 as c_int | (0 as c_int) << 4 as c_int {
-                                    n2_5 = ((*v2_5).value_.i as f64).into();
+                                    n2_5 = ((*v2_5).value_.i as f32).into();
                                     1 as c_int
                                 } else {
                                     0 as c_int
@@ -2607,7 +2607,7 @@ pub async unsafe fn run<A>(
                             1 as c_int
                         } else {
                             if (*v1_10).tt_ as c_int == 3 as c_int | (0 as c_int) << 4 as c_int {
-                                n1_6 = ((*v1_10).value_.i as f64).into();
+                                n1_6 = ((*v1_10).value_.i as f32).into();
                                 1 as c_int
                             } else {
                                 0 as c_int
@@ -2618,7 +2618,7 @@ pub async unsafe fn run<A>(
                                 1 as c_int
                             } else {
                                 if (*v2_9).tt_ as c_int == 3 as c_int | (0 as c_int) << 4 as c_int {
-                                    n2_6 = ((*v2_9).value_.i as f64).into();
+                                    n2_6 = ((*v2_9).value_.i as f32).into();
                                     1 as c_int
                                 } else {
                                     0 as c_int
@@ -2668,7 +2668,7 @@ pub async unsafe fn run<A>(
                             1 as c_int
                         } else {
                             if (*v1_11).tt_ as c_int == 3 as c_int | (0 as c_int) << 4 as c_int {
-                                n1_7 = ((*v1_11).value_.i as f64).into();
+                                n1_7 = ((*v1_11).value_.i as f32).into();
                                 1 as c_int
                             } else {
                                 0 as c_int
@@ -2681,7 +2681,7 @@ pub async unsafe fn run<A>(
                             } else {
                                 if (*v2_10).tt_ as c_int == 3 as c_int | (0 as c_int) << 4 as c_int
                                 {
-                                    n2_7 = ((*v2_10).value_.i as f64).into();
+                                    n2_7 = ((*v2_10).value_.i as f32).into();
                                     1 as c_int
                                 } else {
                                     0 as c_int
@@ -2732,7 +2732,7 @@ pub async unsafe fn run<A>(
                             1 as c_int
                         } else {
                             if (*v1_12).tt_ as c_int == 3 as c_int | (0 as c_int) << 4 as c_int {
-                                n1_8 = ((*v1_12).value_.i as f64).into();
+                                n1_8 = ((*v1_12).value_.i as f32).into();
                                 1 as c_int
                             } else {
                                 0 as c_int
@@ -2745,7 +2745,7 @@ pub async unsafe fn run<A>(
                             } else {
                                 if (*v2_11).tt_ as c_int == 3 as c_int | (0 as c_int) << 4 as c_int
                                 {
-                                    n2_8 = ((*v2_11).value_.i as f64).into();
+                                    n2_8 = ((*v2_11).value_.i as f32).into();
                                     1 as c_int
                                 } else {
                                     0 as c_int
@@ -2804,7 +2804,7 @@ pub async unsafe fn run<A>(
                             1 as c_int
                         } else {
                             if (*v1_13).tt_ as c_int == 3 as c_int | (0 as c_int) << 4 as c_int {
-                                n1_9 = ((*v1_13).value_.i as f64).into();
+                                n1_9 = ((*v1_13).value_.i as f32).into();
                                 1 as c_int
                             } else {
                                 0 as c_int
@@ -2817,7 +2817,7 @@ pub async unsafe fn run<A>(
                             } else {
                                 if (*v2_12).tt_ as c_int == 3 as c_int | (0 as c_int) << 4 as c_int
                                 {
-                                    n2_9 = ((*v2_12).value_.i as f64).into();
+                                    n2_9 = ((*v2_12).value_.i as f32).into();
                                     1 as c_int
                                 } else {
                                     0 as c_int
@@ -2857,7 +2857,7 @@ pub async unsafe fn run<A>(
                         1 as c_int
                     } else {
                         if (*v1_14).tt_ as c_int == 3 as c_int | (0 as c_int) << 4 as c_int {
-                            n1_10 = ((*v1_14).value_.i as f64).into();
+                            n1_10 = ((*v1_14).value_.i as f32).into();
                             1 as c_int
                         } else {
                             0 as c_int
@@ -2868,7 +2868,7 @@ pub async unsafe fn run<A>(
                             1 as c_int
                         } else {
                             if (*v2_13).tt_ as c_int == 3 as c_int | (0 as c_int) << 4 as c_int {
-                                n2_10 = ((*v2_13).value_.i as f64).into();
+                                n2_10 = ((*v2_13).value_.i as f32).into();
                                 1 as c_int
                             } else {
                                 0 as c_int
@@ -2877,7 +2877,7 @@ pub async unsafe fn run<A>(
                     {
                         pc += 1;
                         let io_31 = ra_36;
-                        (*io_31).value_.n = if n2_10 == 2 as c_int as f64 {
+                        (*io_31).value_.n = if n2_10 == 2 as c_int as f32 {
                             n1_10 * n1_10
                         } else {
                             n1_10.0.powf(n2_10.0).into()
@@ -2911,7 +2911,7 @@ pub async unsafe fn run<A>(
                         1 as c_int
                     } else {
                         if (*v1_15).tt_ as c_int == 3 as c_int | (0 as c_int) << 4 as c_int {
-                            n1_11 = ((*v1_15).value_.i as f64).into();
+                            n1_11 = ((*v1_15).value_.i as f32).into();
                             1 as c_int
                         } else {
                             0 as c_int
@@ -2922,7 +2922,7 @@ pub async unsafe fn run<A>(
                             1 as c_int
                         } else {
                             if (*v2_14).tt_ as c_int == 3 as c_int | (0 as c_int) << 4 as c_int {
-                                n2_11 = ((*v2_14).value_.i as f64).into();
+                                n2_11 = ((*v2_14).value_.i as f32).into();
                                 1 as c_int
                             } else {
                                 0 as c_int
@@ -2980,7 +2980,7 @@ pub async unsafe fn run<A>(
                             1 as c_int
                         } else {
                             if (*v1_16).tt_ as c_int == 3 as c_int | (0 as c_int) << 4 as c_int {
-                                n1_12 = ((*v1_16).value_.i as f64).into();
+                                n1_12 = ((*v1_16).value_.i as f32).into();
                                 1 as c_int
                             } else {
                                 0 as c_int
@@ -2993,7 +2993,7 @@ pub async unsafe fn run<A>(
                             } else {
                                 if (*v2_15).tt_ as c_int == 3 as c_int | (0 as c_int) << 4 as c_int
                                 {
-                                    n2_12 = ((*v2_15).value_.i as f64).into();
+                                    n2_12 = ((*v2_15).value_.i as f32).into();
                                     1 as c_int
                                 } else {
                                     0 as c_int
@@ -3374,7 +3374,7 @@ pub async unsafe fn run<A>(
                         nb_0 = (*rb_11).value_.n;
                         1 as c_int
                     } else if (*rb_11).tt_ as c_int == 3 as c_int | (0 as c_int) << 4 as c_int {
-                        nb_0 = ((*rb_11).value_.i as f64).into();
+                        nb_0 = ((*rb_11).value_.i as f32).into();
                         1 as c_int
                     } else {
                         0 as c_int
@@ -3757,7 +3757,7 @@ pub async unsafe fn run<A>(
                     if (*ra_58).tt_ as c_int == 3 as c_int | (0 as c_int) << 4 as c_int {
                         cond_3 = ((*ra_58).value_.i == im as i64) as c_int;
                     } else if (*ra_58).tt_ as c_int == 3 as c_int | (1 as c_int) << 4 as c_int {
-                        cond_3 = ((*ra_58).value_.n == im as f64) as c_int;
+                        cond_3 = ((*ra_58).value_.n == im as f32) as c_int;
                     } else {
                         cond_3 = 0 as c_int;
                     }
@@ -3800,7 +3800,7 @@ pub async unsafe fn run<A>(
                         cond_4 = ((*ra_59).value_.i < im_0 as i64) as c_int;
                     } else if (*ra_59).tt_ as c_int == 3 as c_int | (1 as c_int) << 4 as c_int {
                         let fa = (*ra_59).value_.n;
-                        let fim: f64 = im_0 as f64;
+                        let fim: f32 = im_0 as f32;
                         cond_4 = (fa < fim) as c_int;
                     } else {
                         let isf: c_int = (i
@@ -3855,7 +3855,7 @@ pub async unsafe fn run<A>(
                         cond_5 = ((*ra_60).value_.i <= im_1 as i64) as c_int;
                     } else if (*ra_60).tt_ as c_int == 3 as c_int | (1 as c_int) << 4 as c_int {
                         let fa_0 = (*ra_60).value_.n;
-                        let fim_0: f64 = im_1 as f64;
+                        let fim_0: f32 = im_1 as f32;
                         cond_5 = (fa_0 <= fim_0) as c_int;
                     } else {
                         let isf_0: c_int = (i
@@ -3910,7 +3910,7 @@ pub async unsafe fn run<A>(
                         cond_6 = ((*ra_61).value_.i > im_2 as i64) as c_int;
                     } else if (*ra_61).tt_ as c_int == 3 as c_int | (1 as c_int) << 4 as c_int {
                         let fa_1 = (*ra_61).value_.n;
-                        let fim_1: f64 = im_2 as f64;
+                        let fim_1: f32 = im_2 as f32;
                         cond_6 = (fa_1 > fim_1) as c_int;
                     } else {
                         let isf_1: c_int = (i
@@ -3965,7 +3965,7 @@ pub async unsafe fn run<A>(
                         cond_7 = ((*ra_62).value_.i >= im_3 as i64) as c_int;
                     } else if (*ra_62).tt_ as c_int == 3 as c_int | (1 as c_int) << 4 as c_int {
                         let fa_2 = (*ra_62).value_.n;
-                        let fim_2: f64 = im_3 as f64;
+                        let fim_2: f32 = im_3 as f32;
                         cond_7 = (fa_2 >= fim_2) as c_int;
                     } else {
                         let isf_2: c_int = (i

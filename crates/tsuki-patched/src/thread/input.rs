@@ -45,7 +45,7 @@ impl<'a, D> DynamicInputs<'a, D> {
 
     /// Push a `float` value.
     #[inline]
-    pub fn push_float(&mut self, v: f64) {
+    pub fn push_float(&mut self, v: f32) {
         self.list.push(UnsafeValue::from(v));
     }
 
