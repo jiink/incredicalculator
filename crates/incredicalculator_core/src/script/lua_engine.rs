@@ -9,7 +9,6 @@ use alloc::boxed::Box;
 use alloc::format;
 use alloc::rc::Rc;
 use alloc::string::{String, ToString};
-use alloc::vec::Vec;
 use core::cell::{Cell, RefCell};
 use core::error::Error;
 use core::pin::Pin;
@@ -20,14 +19,14 @@ use tsuki::context::{Args, Context, Ret};
 use tsuki::{CallError, Lua, RegKey, Thread, Value, fp};
 
 use super::{
-    DrawCmd, INPUT_CAPACITY, MAX_INPUTS, ScriptEngine, ScriptHost, ScriptInput, ScriptMeta,
-    align_from_name, color_from_int, key_action,
+    INPUT_CAPACITY, MAX_INPUTS, ScriptEngine, ScriptHost, ScriptInput, ScriptMeta, align_from_name,
+    color_from_int, key_action,
 };
 use crate::app::InputContext;
 use crate::hid::{HidKey, MAX_MEDIA_USAGE};
 use crate::input::{IcKey, KeyMode, KeyState};
-use crate::platform::rgb8_hex;
-use crate::text::{HAlign, TextStyle, text_width};
+use crate::platform::{IcPlatform, rgb8_hex};
+use crate::text::{HAlign, TextStyle, draw_text, text_width};
 use crate::ui::{MathInputDirection, MathInputEvent, MathInputMode};
 
 /// Jumps, loop iterations and calls allowed per hook call before it is
@@ -36,16 +35,70 @@ const MAX_BUDGET: u32 = 100_000;
 /// Fixed so string hashing doesn't depend on a random source.
 const HASH_SEED: u32 = 0x1C_A1C0;
 
+/// The platform lent to the native functions during `update`, with its
+/// lifetime erased. See [`PlatformLoan`].
+type PlatformPtr = *mut (dyn IcPlatform + 'static);
+
 /// The Lua state's associated data, reachable from native functions.
 struct Host {
     host: RefCell<ScriptHost>,
+    /// The caller's platform while `update` runs, so drawing functions draw
+    /// immediately; `None` the rest of the time.
+    platform: Cell<Option<PlatformPtr>>,
     /// xorshift32 state for `math.random`; 0 until first seeded.
     rng: Cell<u32>,
+}
+
+/// Lends a platform to [`Host::platform`] and takes it back when dropped, so
+/// the pointer can't outlive the borrow it came from, even when the hook
+/// errors or returns early.
+struct PlatformLoan<'a> {
+    slot: &'a Cell<Option<PlatformPtr>>,
+}
+
+impl<'a> PlatformLoan<'a> {
+    /// The caller must not use `platform` while the loan is alive (the
+    /// `&'a mut` borrow, tied to the loan's lifetime, ensures that).
+    fn new(slot: &'a Cell<Option<PlatformPtr>>, platform: &'a mut dyn IcPlatform) -> Self {
+        let ptr: *mut (dyn IcPlatform + 'a) = platform;
+        // SAFETY: only the trait object's lifetime bound changes, so the
+        // pointer's layout and metadata are the same. The pointer is cleared
+        // when the loan drops, before `'a` ends, and is only dereferenced
+        // through `Host::with_platform` until then.
+        let ptr: PlatformPtr = unsafe { core::mem::transmute(ptr) };
+        slot.set(Some(ptr));
+        Self { slot }
+    }
+}
+
+impl Drop for PlatformLoan<'_> {
+    fn drop(&mut self) {
+        self.slot.set(None);
+    }
 }
 
 impl Host {
     fn get(&self) -> core::cell::RefMut<'_, ScriptHost> {
         self.host.borrow_mut()
+    }
+
+    /// Runs `f` with the platform. Fails outside `update`.
+    ///
+    /// `f` must not call back into Lua: that could reach `with_platform`
+    /// again and make a second `&mut` to the platform.
+    fn with_platform<R>(
+        &self,
+        f: impl FnOnce(&mut dyn IcPlatform) -> R,
+    ) -> Result<R, Box<dyn Error>> {
+        let ptr = self
+            .platform
+            .get()
+            .ok_or("drawing only works inside update()")?;
+        // SAFETY: the pointer is only set by a live `PlatformLoan`, whose
+        // caller holds the platform's `&mut` without using it while the hook
+        // runs, so it is valid and unaliased. `f` doesn't re-enter Lua, so
+        // no other `&mut` made here is alive at the same time.
+        Ok(f(unsafe { &mut *ptr }))
     }
 
     fn next_random(&self) -> u32 {
@@ -96,13 +149,21 @@ enum HookArgs {
 
 impl LuaEngine {
     /// Calls the global function `name`, with the caller's host swapped into
-    /// the state the native functions write to.
-    fn call(&mut self, host: &mut ScriptHost, name: &str, args: HookArgs) -> Result<(), String> {
+    /// the state the native functions write to, and `platform`, if given,
+    /// lent to the drawing functions.
+    fn call(
+        &mut self,
+        host: &mut ScriptHost,
+        platform: Option<&mut dyn IcPlatform>,
+        name: &str,
+        args: HookArgs,
+    ) -> Result<(), String> {
         host.key = match args {
             HookArgs::KeyDown(key) => Some(key),
             _ => None,
         };
         core::mem::swap(&mut *self.lua.associated_data().get(), host);
+        let loan = platform.map(|p| PlatformLoan::new(&self.lua.associated_data().platform, p));
         self.lua.set_budget(Some(MAX_BUDGET));
         let thread = self.lua.registry::<HookThread>().expect("hook thread");
         let function = self.lua.global().get_str_key(name);
@@ -121,6 +182,7 @@ impl LuaEngine {
             HookArgs::KeyUp(key) => thread.call::<()>(function, self.lua.create_str(key.name())),
             HookArgs::None => thread.call::<()>(function, ()),
         };
+        drop(loan);
         self.lua.set_budget(None);
         core::mem::swap(&mut *self.lua.associated_data().get(), host);
         host.key = None;
@@ -146,6 +208,7 @@ impl ScriptEngine for LuaEngine {
         let lua = Lua::with_seed(
             Host {
                 host: RefCell::new(ScriptHost::new()),
+                platform: Cell::new(None),
                 rng: Cell::new(0),
             },
             HASH_SEED,
@@ -192,28 +255,32 @@ impl ScriptEngine for LuaEngine {
         if !self.has_init {
             return Ok(());
         }
-        self.call(host, "init", HookArgs::None)
+        self.call(host, None, "init", HookArgs::None)
     }
 
-    fn update(&mut self, host: &mut ScriptHost) -> Result<(), String> {
+    fn update(
+        &mut self,
+        host: &mut ScriptHost,
+        platform: &mut dyn IcPlatform,
+    ) -> Result<(), String> {
         if !self.has_update {
             return Ok(());
         }
-        self.call(host, "update", HookArgs::None)
+        self.call(host, Some(platform), "update", HookArgs::None)
     }
 
     fn on_key(&mut self, key: IcKey, host: &mut ScriptHost) -> Result<(), String> {
         if !self.has_on_key {
             return Ok(());
         }
-        self.call(host, "on_key", HookArgs::KeyDown(key))
+        self.call(host, None, "on_key", HookArgs::KeyDown(key))
     }
 
     fn on_key_up(&mut self, key: IcKey, host: &mut ScriptHost) -> Result<(), String> {
         if !self.has_on_key_up {
             return Ok(());
         }
-        self.call(host, "on_key_up", HookArgs::KeyUp(key))
+        self.call(host, None, "on_key_up", HookArgs::KeyUp(key))
     }
 }
 
@@ -356,11 +423,9 @@ fn color(cx: &Cx, n: usize) -> Result<rgb::RGB8, Box<dyn Error>> {
     Ok(color_from_int(cx.arg(n).to_int()?))
 }
 
-fn push(cx: &Cx, command: DrawCmd) -> Result<(), Box<dyn Error>> {
-    cx.associated_data()
-        .get()
-        .push(command)
-        .map_err(|e| e.into())
+/// Draws with the platform lent to `update`. See [`Host::with_platform`].
+fn draw(cx: &Cx, f: impl FnOnce(&mut dyn IcPlatform)) -> Result<(), Box<dyn Error>> {
+    cx.associated_data().with_platform(f)
 }
 
 // ---- Inputs and helpers ----
@@ -479,21 +544,17 @@ fn text_width_fn(cx: Cx) -> FnResult {
 // ---- Drawing ----
 
 fn clear(cx: Cx) -> FnResult {
-    push(&cx, DrawCmd::Clear(color(&cx, 1)?))?;
+    let color = color(&cx, 1)?;
+    draw(&cx, |p| p.clear(color))?;
     Ok(cx.into())
 }
 
 fn line(cx: Cx) -> FnResult {
     let width = cx.arg(6).to_nilable_int(false)?.unwrap_or(2).max(1) as u32;
-    push(
-        &cx,
-        DrawCmd::Line {
-            start: Vec2::new(num(&cx, 1)?, num(&cx, 2)?),
-            end: Vec2::new(num(&cx, 3)?, num(&cx, 4)?),
-            color: color(&cx, 5)?,
-            width,
-        },
-    )?;
+    let start = Vec2::new(num(&cx, 1)?, num(&cx, 2)?);
+    let end = Vec2::new(num(&cx, 3)?, num(&cx, 4)?);
+    let color = color(&cx, 5)?;
+    draw(&cx, |p| p.draw_line(start, end, color, width))?;
     Ok(cx.into())
 }
 
@@ -506,16 +567,7 @@ fn rect_bounds(cx: &Cx) -> Result<(IVec2, IVec2), Box<dyn Error>> {
 fn rect(cx: Cx) -> FnResult {
     let (start, end) = rect_bounds(&cx)?;
     let color = color(&cx, 5)?;
-    push(
-        &cx,
-        DrawCmd::Rect {
-            start,
-            end,
-            color,
-            outline: 0,
-            radius: 0,
-        },
-    )?;
+    draw(&cx, |p| p.draw_rectangle(start, end, color, 0, Some(color)))?;
     Ok(cx.into())
 }
 
@@ -523,16 +575,7 @@ fn rect_outline(cx: Cx) -> FnResult {
     let (start, end) = rect_bounds(&cx)?;
     let color = color(&cx, 5)?;
     let outline = int(&cx, 6)?.max(1) as u32;
-    push(
-        &cx,
-        DrawCmd::Rect {
-            start,
-            end,
-            color,
-            outline,
-            radius: 0,
-        },
-    )?;
+    draw(&cx, |p| p.draw_rectangle(start, end, color, outline, None))?;
     Ok(cx.into())
 }
 
@@ -540,31 +583,27 @@ fn round_rect(cx: Cx) -> FnResult {
     let (start, end) = rect_bounds(&cx)?;
     let radius = int(&cx, 5)?.max(0) as u32;
     let color = color(&cx, 6)?;
-    push(
-        &cx,
-        DrawCmd::Rect {
-            start,
-            end,
-            color,
-            outline: 0,
-            radius,
-        },
-    )?;
+    draw(&cx, |p| {
+        if radius > 0 {
+            p.draw_rectangle_rounded(start, end, color, 0, Some(color), radius);
+        } else {
+            p.draw_rectangle(start, end, color, 0, Some(color));
+        }
+    })?;
     Ok(cx.into())
 }
 
 fn triangle(cx: Cx) -> FnResult {
     let point = |n| Ok::<_, Box<dyn Error>>(IVec2::new(int(&cx, n)?, int(&cx, n + 1)?));
-    let points = [point(1)?, point(3)?, point(5)?];
-    push(
-        &cx,
-        DrawCmd::Triangle {
-            points,
-            color: color(&cx, 7)?,
-        },
-    )?;
+    let [a, b, c] = [point(1)?, point(3)?, point(5)?];
+    let color = color(&cx, 7)?;
+    draw(&cx, |p| p.draw_triangle(a, b, c, color, 0, Some(color)))?;
     Ok(cx.into())
 }
+
+/// Most points `polygon` takes, so its points fit on the stack instead of
+/// the heap.
+const MAX_POLYGON_POINTS: usize = 100;
 
 fn polygon(cx: Cx) -> FnResult {
     let arg = cx.arg(1);
@@ -573,21 +612,21 @@ fn polygon(cx: Cx) -> FnResult {
     if len < 6 || len % 2 != 0 {
         return Err(arg.error("polygon needs {x1, y1, x2, y2, x3, y3, ...}"));
     }
+    let count = (len / 2) as usize;
+    if count > MAX_POLYGON_POINTS {
+        return Err(arg.error(format!("polygon takes at most {MAX_POLYGON_POINTS} points")));
+    }
     let coord = |i: i64| match coords.get(i) {
         Value::Int(v) => Ok(v as f32),
         Value::Float(v) => Ok(v.0),
         _ => Err(arg.error("polygon coordinates must be numbers")),
     };
-    let points = (0..len / 2)
-        .map(|p| Ok(Vec2::new(coord(p * 2 + 1)?, coord(p * 2 + 2)?)))
-        .collect::<Result<Vec<_>, Box<dyn Error>>>()?;
-    push(
-        &cx,
-        DrawCmd::Polygon {
-            points,
-            color: color(&cx, 2)?,
-        },
-    )?;
+    let mut points = [Vec2::ZERO; MAX_POLYGON_POINTS];
+    for (p, point) in (0..).zip(&mut points[..count]) {
+        *point = Vec2::new(coord(p * 2 + 1)?, coord(p * 2 + 2)?);
+    }
+    let color = color(&cx, 2)?;
+    draw(&cx, |p| p.draw_polygon(&points[..count], color))?;
     Ok(cx.into())
 }
 
@@ -598,16 +637,11 @@ fn text(cx: Cx) -> FnResult {
         Some(name) => align_from_name(name)
             .ok_or_else(|| align_arg.error("align must be \"left\", \"center\" or \"right\""))?,
     };
-    push(
-        &cx,
-        DrawCmd::Text {
-            text: cx.arg(1).to_utf8()?.to_string(),
-            pos: Vec2::new(num(&cx, 2)?, num(&cx, 3)?),
-            size: num(&cx, 4)?,
-            color: color(&cx, 5)?,
-            align,
-        },
-    )?;
+    let text_arg = cx.arg(1);
+    let text = text_arg.to_utf8()?;
+    let pos = Vec2::new(num(&cx, 2)?, num(&cx, 3)?);
+    let style = TextStyle::new(num(&cx, 4)?, color(&cx, 5)?).align(align);
+    draw(&cx, |p| draw_text(p, text, pos, style))?;
     Ok(cx.into())
 }
 
@@ -803,18 +837,20 @@ fn input_value(cx: Cx) -> FnResult {
 fn input_draw(cx: Cx) -> FnResult {
     let index = input_index(&cx)?;
     let focused = cx.arg(2).to_bool().unwrap_or(false);
-    push(&cx, DrawCmd::Input { index, focused })?;
+    let data = cx.associated_data();
+    data.with_platform(|p| data.get().inputs[index].draw(p, focused))?;
     Ok(cx.into())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fake_platform::FakePlatform;
 
     fn run(source: &str) -> Result<ScriptHost, String> {
         let mut host = ScriptHost::new();
         let (mut engine, _) = LuaEngine::load(source, &mut host)?;
-        engine.update(&mut host)?;
+        engine.update(&mut host, &mut FakePlatform::default())?;
         Ok(host)
     }
 
@@ -875,7 +911,9 @@ mod tests {
             engine.on_key(key, &mut host).unwrap();
         }
         host.keys_down = [false; IcKey::COUNT];
-        engine.update(&mut host).unwrap();
+        engine
+            .update(&mut host, &mut FakePlatform::default())
+            .unwrap();
         host
     }
 
@@ -940,13 +978,6 @@ mod tests {
                 "1+2.5*4\t11.0\tchanged,changed,changed,changed,changed,changed,changed,changed,up,enter,nil"
             ]
         );
-        assert!(matches!(
-            host.commands[..],
-            [DrawCmd::Input {
-                index: 0,
-                focused: true
-            }]
-        ));
         assert_eq!(host.inputs.len(), 1);
     }
 

@@ -15,6 +15,9 @@ pub mod script;
 pub mod settings;
 pub mod shell;
 
+#[cfg(all(test, feature = "scripting"))]
+mod fake_platform;
+
 /// See build.rs.
 pub const FIRMWARE_VERSION: &str = env!("INCREDICALCULATOR_VERSION");
 pub mod graphics {

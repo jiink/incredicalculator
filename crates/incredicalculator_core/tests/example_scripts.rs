@@ -8,6 +8,9 @@ use incredicalculator_core::input::IcKey;
 use incredicalculator_core::platform::{MAX_SCRIPT_BYTES, SCRIPT_EXTENSION};
 use incredicalculator_core::script::{ActiveEngine, ScriptEngine, ScriptHost};
 
+mod common;
+use common::NullPlatform;
+
 const KEYS: [IcKey; 8] = [
     IcKey::Num1,
     IcKey::Num5,
@@ -42,9 +45,7 @@ fn every_example_script_runs() {
         for (frame, key) in (0u64..).zip(KEYS) {
             step(engine.on_key(key, &mut host));
             host.millis = frame * 16;
-            host.commands.clear();
-            step(engine.update(&mut host));
-            assert!(!host.commands.is_empty(), "{name} drew nothing");
+            step(engine.update(&mut host, &mut NullPlatform));
         }
         ran += 1;
     }

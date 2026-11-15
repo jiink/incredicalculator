@@ -501,15 +501,12 @@ impl IcShell {
         );
         platform.draw_rectangle(
             IVec2::splat(0),
-            IVec2::new(
-                CANVAS_WIDTH as i32 - 1,
-                CANVAS_HEIGHT as i32 - 1,
-            ),
+            IVec2::new(CANVAS_WIDTH as i32 - 1, CANVAS_HEIGHT as i32 - 1),
             color,
             4,
             None,
         );
-        
+
         let icon_position = Vec2::new((CANVAS_WIDTH - 18) as f32, (CANVAS_HEIGHT - 18) as f32);
         platform.draw_rectangle(
             icon_position.as_ivec2() - IVec2::splat(16),
@@ -519,13 +516,7 @@ impl IcShell {
             Some(color),
         );
 
-        draw_vitmap(
-            platform,
-            icon,
-            0,
-            icon_position,
-            Vec2::splat(1.5),
-        );
+        draw_vitmap(platform, icon, 0, icon_position, Vec2::splat(1.5));
     }
 
     fn selector_cards(&self) -> [SelectorCard<'_>; 9] {
@@ -886,93 +877,8 @@ fn fnv1a(bytes: &[u8]) -> u64 {
 #[cfg(all(test, feature = "scripting"))]
 mod tests {
     use super::*;
-    use alloc::collections::BTreeMap;
+    use crate::fake_platform::FakePlatform;
     use alloc::string::{String, ToString};
-    use glam::{IVec2, Vec2};
-
-    /// Platform that draws nothing and keeps scripts in memory.
-    #[derive(Default)]
-    struct FakePlatform {
-        scripts: Option<BTreeMap<String, String>>,
-        version: u32,
-    }
-
-    impl FakePlatform {
-        fn with_scripts(scripts: &[(&str, &str)]) -> Self {
-            let scripts = scripts
-                .iter()
-                .map(|(name, source)| (name.to_string(), source.to_string()))
-                .collect();
-            Self {
-                scripts: Some(scripts),
-                ..Self::default()
-            }
-        }
-
-        fn set_script(&mut self, name: &str, source: Option<&str>) {
-            let scripts = self.scripts.as_mut().unwrap();
-            match source {
-                Some(source) => scripts.insert(name.into(), source.into()),
-                None => scripts.remove(name),
-            };
-            self.version += 1;
-        }
-    }
-
-    impl IcPlatform for FakePlatform {
-        fn draw_line(&mut self, _: Vec2, _: Vec2, _: RGB8, _: u32) {}
-        fn draw_polygon(&mut self, _: &[Vec2], _: RGB8) {}
-        fn draw_rectangle(&mut self, _: IVec2, _: IVec2, _: RGB8, _: u32, _: Option<RGB8>) {}
-        fn draw_rectangle_rounded(
-            &mut self,
-            _: IVec2,
-            _: IVec2,
-            _: RGB8,
-            _: u32,
-            _: Option<RGB8>,
-            _: u32,
-        ) {
-        }
-        fn draw_triangle(
-            &mut self,
-            _: IVec2,
-            _: IVec2,
-            _: IVec2,
-            _: RGB8,
-            _: u32,
-            _: Option<RGB8>,
-        ) {
-        }
-        fn clear(&mut self, _: RGB8) {}
-        fn log(&mut self, _: core::fmt::Arguments) {}
-        fn millis(&self) -> u64 {
-            0
-        }
-        fn get_battery_soc(&self) -> Option<i32> {
-            None
-        }
-        fn get_brightness(&self) -> u8 {
-            255
-        }
-        fn set_brightness(&mut self, _: u8) {}
-        fn get_volume(&self) -> u8 {
-            0
-        }
-        fn set_volume(&mut self, _: u8) {}
-        fn get_screen_timeout_seconds(&self) -> u32 {
-            30
-        }
-        fn set_screen_timeout_seconds(&mut self, _: u32) {}
-        fn scripts_version(&self) -> u32 {
-            self.version
-        }
-        fn list_scripts(&mut self) -> Option<Vec<String>> {
-            Some(self.scripts.as_ref()?.keys().cloned().collect())
-        }
-        fn read_script(&mut self, file_name: &str) -> Option<String> {
-            self.scripts.as_ref()?.get(file_name).cloned()
-        }
-    }
 
     fn script_names(shell: &IcShell) -> Vec<String> {
         let compiled = shell.apps.len() - shell.script_keys.len();

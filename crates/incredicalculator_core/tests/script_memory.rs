@@ -8,6 +8,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use incredicalculator_core::script::{ActiveEngine, EXAMPLE_SCRIPT, ScriptEngine, ScriptHost};
 
+mod common;
+use common::NullPlatform;
+
 struct CountingAlloc;
 
 static USED: AtomicUsize = AtomicUsize::new(0);
@@ -48,8 +51,7 @@ fn example_script_fits_heap_budget() {
     engine.init(&mut host).unwrap();
     for frame in 0..120 {
         host.millis = frame * 16;
-        host.commands.clear();
-        engine.update(&mut host).unwrap();
+        engine.update(&mut host, &mut NullPlatform).unwrap();
     }
     let resident = USED.load(Ordering::Relaxed) - base;
     let peak = PEAK.load(Ordering::Relaxed) - base;

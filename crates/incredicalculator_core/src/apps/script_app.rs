@@ -9,7 +9,7 @@ use crate::audio_engine::AudioEngine;
 use crate::graphics::{self, Vitmap};
 use crate::input::IcKey;
 use crate::platform::{CANVAS_WIDTH, IcPlatform, rgb8_hex};
-use crate::script::{ActiveEngine, DrawCmd, ScriptEngine, ScriptHost, ScriptInput, ScriptMeta};
+use crate::script::{ActiveEngine, ScriptEngine, ScriptHost, ScriptMeta};
 use crate::text::{TextStyle, draw_text, wrap_text};
 
 /// Card colors for scripts that don't pick their own, chosen by name hash.
@@ -127,6 +127,7 @@ impl ScriptApp {
     }
 
     fn draw_error(&self, platform: &mut dyn IcPlatform, error: &str) {
+        // Covers whatever the script drew before it failed.
         platform.clear(rgb8_hex(0x3A0D0D));
         draw_text(
             platform,
@@ -179,8 +180,6 @@ impl IcApp for ScriptApp {
     fn on_enter(&mut self) {
         self.load();
         self.run(|engine, host| engine.init(host));
-        // Drawing is only honored during `update`.
-        self.host.commands.clear();
     }
 
     fn on_exit(&mut self) {
@@ -192,7 +191,6 @@ impl IcApp for ScriptApp {
         self.pressed[key as usize] = true;
         self.read_keys(ctx);
         self.run(|engine, host| engine.on_key(key, host));
-        self.host.commands.clear();
     }
 
     fn on_key_up(&mut self, key: IcKey, ctx: &InputContext) {
@@ -201,7 +199,6 @@ impl IcApp for ScriptApp {
         }
         self.read_keys(ctx);
         self.run(|engine, host| engine.on_key_up(key, host));
-        self.host.commands.clear();
     }
 
     fn send_hid(&mut self, platform: &mut dyn IcPlatform) {
@@ -219,67 +216,12 @@ impl IcApp for ScriptApp {
         self.host.millis = platform.millis();
         self.host.hid_connected = platform.hid_connected();
         self.read_keys(ctx);
-        self.host.commands.clear();
-        self.run(|engine, host| engine.update(host));
+        self.run(|engine, host| engine.update(host, platform));
         self.flush_logs(platform);
 
         if let Some(error) = &self.error {
             self.draw_error(platform, error);
-            return;
         }
-        let ScriptHost {
-            commands, inputs, ..
-        } = &mut self.host;
-        for command in commands.drain(..) {
-            replay(platform, command, inputs);
-        }
-    }
-}
-
-fn replay(platform: &mut dyn IcPlatform, command: DrawCmd, inputs: &[ScriptInput]) {
-    match command {
-        DrawCmd::Input { index, focused } => {
-            if let Some(input) = inputs.get(index) {
-                input.draw(platform, focused);
-            }
-        }
-        DrawCmd::Clear(color) => platform.clear(color),
-        DrawCmd::Line {
-            start,
-            end,
-            color,
-            width,
-        } => platform.draw_line(start, end, color, width),
-        DrawCmd::Rect {
-            start,
-            end,
-            color,
-            outline,
-            radius,
-        } => {
-            let fill = (outline == 0).then_some(color);
-            if radius > 0 {
-                platform.draw_rectangle_rounded(start, end, color, outline, fill, radius);
-            } else {
-                platform.draw_rectangle(start, end, color, outline, fill);
-            }
-        }
-        DrawCmd::Triangle { points, color } => {
-            platform.draw_triangle(points[0], points[1], points[2], color, 0, Some(color))
-        }
-        DrawCmd::Polygon { points, color } => platform.draw_polygon(&points, color),
-        DrawCmd::Text {
-            text,
-            pos,
-            size,
-            color,
-            align,
-        } => draw_text(
-            platform,
-            &text,
-            pos,
-            TextStyle::new(size, color).align(align),
-        ),
     }
 }
 
@@ -294,6 +236,7 @@ fn default_color(name: &str) -> RGB8 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fake_platform::FakePlatform;
     use crate::script::test_sources;
     use crate::text::text_width;
 
@@ -334,10 +277,9 @@ mod tests {
         }
         for frame in 0..60 {
             host.millis = frame * 16;
-            host.commands.clear();
-            engine.update(&mut host).unwrap();
-            assert!(!host.commands.is_empty(), "{name} drew nothing");
-            assert!(matches!(host.commands[0], DrawCmd::Clear(_)));
+            engine
+                .update(&mut host, &mut FakePlatform::default())
+                .unwrap_or_else(|e| panic!("{name}: {e}"));
         }
     }
 
@@ -357,7 +299,8 @@ mod tests {
         let mut app = ScriptApp::new("broken", test_sources::RUNTIME_ERROR);
         assert!(app.error.is_none());
         app.on_enter();
-        app.run(|engine, host| engine.update(host));
+        let mut platform = FakePlatform::default();
+        app.run(|engine, host| engine.update(host, &mut platform));
         assert!(app.error.as_deref().unwrap().contains("undefined_fn"));
         assert!(app.engine.is_none());
         // Reopening retries from a clean slate.
@@ -373,16 +316,9 @@ mod tests {
     fn endless_loops_are_stopped() {
         let mut host = ScriptHost::new();
         let (mut engine, _) = ActiveEngine::load(test_sources::ENDLESS_LOOP, &mut host).unwrap();
-        let error = engine.update(&mut host).unwrap_err();
+        let error = engine
+            .update(&mut host, &mut FakePlatform::default())
+            .unwrap_err();
         assert!(!error.is_empty());
-    }
-
-    #[test]
-    fn drawing_is_capped() {
-        let mut host = ScriptHost::new();
-        let (mut engine, _) = ActiveEngine::load(test_sources::DRAW_FLOOD, &mut host).unwrap();
-        let error = engine.update(&mut host).unwrap_err();
-        assert!(error.contains("too many drawing calls"), "{error}");
-        assert_eq!(host.commands.len(), crate::script::MAX_DRAW_COMMANDS);
     }
 }

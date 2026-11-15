@@ -43,7 +43,7 @@ end
 - **`app` table:** `name` defaults to the file name without `.lua`. `color` is the menu card color; without it, a color is picked from the name. `realtime = true` runs `update` every frame (about 60 per second). Otherwise `update` runs only after input.
 - **Hooks:** all are optional global functions. Missing hooks do nothing.
 - **Lifetime:** the file runs from the top every time the app is opened, then `init()` runs. Nothing is kept after you leave the app, and nothing persists across power cycles.
-- **Drawing:** only works inside `update()`. Draw the whole screen every time, starting with `clear()`.
+- **Drawing:** only works inside `update()`; drawing in another hook stops the script with an error. Draw the whole screen every time, starting with `clear()`.
 - **Errors:** an error stops the script and shows the message with its line number. Reopen the app, or save the file again while editing live, to retry.
 
 ## Keys
@@ -136,7 +136,7 @@ The screen is **320 × 240** with (0, 0) at the top left. Colors are integers `0
 | `rect_outline(x, y, w, h, color, width)` | |
 | `round_rect(x, y, w, h, radius, color)` | filled |
 | `triangle(x1, y1, x2, y2, x3, y3, color)` | filled |
-| `polygon({x1, y1, x2, y2, x3, y3, ...}, color)` | filled; needs at least 3 points |
+| `polygon({x1, y1, x2, y2, x3, y3, ...}, color)` | filled; 3 to 100 points |
 | `text(s, x, y, size, color [, align])` | align: `"left"` (default), `"center"` or `"right"` |
 | `text_width(s, size)` | width in pixels |
 
@@ -146,8 +146,6 @@ The screen is **320 × 240** with (0, 0) at the top left. Colors are integers `0
 - **Position:** capitals span from `y - 1.2*size` to `y + 0.9*size`. Use `y + 0.9*size` as the baseline.
 - **Typical sizes:** 4–5 for small print, 6 for normal text, 8–10 for headings.
 - **Line breaks:** `"\n"` starts a new line `2.5 × size` pixels lower.
-
-**Per-frame limit:** at most **512** drawing calls per `update`. Going over stops the script with an error.
 
 ## Other functions
 
@@ -211,7 +209,6 @@ These names are for the computer's keys, so they differ from `on_key`'s calculat
 | Script file size | 16 KiB |
 | Work per hook call | about 100,000 jumps, loop iterations and calls. An endless loop stops with an error instead of freezing. |
 | Recursion depth | about 2,000 stack slots |
-| Drawing calls per `update` | 512 |
 | Computer key presses and releases per frame | 32 |
 | `math_input` boxes | 8, of 40 characters each |
 | Log lines per hook call | 8 |
