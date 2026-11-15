@@ -13,16 +13,18 @@ use core::cell::{Cell, RefCell};
 use core::error::Error;
 use core::pin::Pin;
 
-use glam::{IVec2, Vec2};
+use glam::{Affine2, IVec2, Vec2};
 use tsuki::builtin::{BaseLib, MathLib, StrLib, TableLib};
 use tsuki::context::{Args, Context, Ret};
-use tsuki::{CallError, Lua, RegKey, Thread, Value, fp};
+use tsuki::{CallError, Class, Lua, Ref, RegKey, Table, Thread, Value, fp};
 
 use super::{
     INPUT_CAPACITY, MAX_INPUTS, ScriptEngine, ScriptHost, ScriptInput, ScriptMeta, align_from_name,
     color_from_int, key_action,
 };
 use crate::app::InputContext;
+use crate::graphics::draw_shapes;
+use crate::graphics::vm1::PackedVitmap;
 use crate::hid::{HidKey, MAX_MEDIA_USAGE};
 use crate::input::{IcKey, KeyMode, KeyState};
 use crate::platform::{IcPlatform, rgb8_hex};
@@ -330,6 +332,8 @@ fn register_api(lua: &Lua<Host>) {
     g.set_str_key("polygon", fp!(polygon));
     g.set_str_key("text", fp!(text));
     g.set_str_key("math_input", fp!(math_input));
+    g.set_str_key("vitmap", fp!(vitmap));
+    lua.register_class::<PackedVitmap>();
     g.set_str_key("hid_press", fp!(hid_press));
     g.set_str_key("hid_release", fp!(hid_release));
     g.set_str_key("hid_release_all", fp!(hid_release_all));
@@ -647,13 +651,17 @@ fn text(cx: Cx) -> FnResult {
 
 // ---- Input boxes ----
 
-/// Number of an optional field of an options table.
-fn field_num(table: &tsuki::Table<Host>, name: &str) -> Result<Option<f32>, Box<dyn Error>> {
+/// Number of an optional field of `function`'s options table.
+fn field_num(
+    table: &tsuki::Table<Host>,
+    function: &str,
+    name: &str,
+) -> Result<Option<f32>, Box<dyn Error>> {
     match table.get_str_key(name) {
         Value::Nil => Ok(None),
         Value::Int(v) => Ok(Some(v as f32)),
         Value::Float(v) => Ok(Some(v.0)),
-        _ => Err(format!("math_input: {name} must be a number").into()),
+        _ => Err(format!("{function}: {name} must be a number").into()),
     }
 }
 
@@ -683,7 +691,7 @@ fn math_input(cx: Cx) -> FnResult {
         0 => None,
         _ => Some(cx.arg(1).get_table()?),
     };
-    let get = |name| opts.map_or(Ok(None), |t| field_num(t, name));
+    let get = |name| opts.map_or(Ok(None), |t| field_num(t, "math_input", name));
     let x = get("x")?.unwrap_or(10.0);
     let y = get("y")?.unwrap_or(40.0);
     let w = get("w")?.unwrap_or(300.0);
@@ -839,6 +847,150 @@ fn input_draw(cx: Cx) -> FnResult {
     let focused = cx.arg(2).to_bool().unwrap_or(false);
     let data = cx.associated_data();
     data.with_platform(|p| data.get().inputs[index].draw(p, focused))?;
+    Ok(cx.into())
+}
+
+// ---- Vitmaps ----
+
+impl Class<Host> for PackedVitmap {
+    fn create_metatable(lua: &Lua<Host>) -> Ref<'_, Table<Host>> {
+        let mt = lua.create_table();
+        mt.set_str_key("draw", fp!(vitmap_draw));
+        mt.set_str_key("frames", fp!(vitmap_frames));
+        mt.set_str_key("frame_at", fp!(vitmap_frame_at));
+        mt.set_str_key("actions", fp!(vitmap_actions));
+        mt.set_str_key("fps", fp!(vitmap_fps));
+        mt.set_str_key("__index", &*mt);
+        mt
+    }
+}
+
+/// `vitmap[[VM1:...]]`: decodes a vitmap exported from the vitmap editor.
+fn vitmap(cx: Cx) -> FnResult {
+    let arg = cx.arg(1);
+    let vitmap = PackedVitmap::decode(arg.to_utf8()?)
+        .map_err(|e| arg.error(format!("not a valid vitmap: {e}")))?;
+    cx.push(cx.create_ud(vitmap))?;
+    Ok(cx.into())
+}
+
+/// The vitmap `ship` in `ship:method(...)`.
+fn this_vitmap<'a>(cx: &'a Cx) -> Result<&'a PackedVitmap, Box<dyn Error>> {
+    let arg = cx.arg(1);
+    match arg.get_ud::<PackedVitmap>() {
+        Ok(ud) => Ok(ud.value()),
+        Err(_) => {
+            Err(arg
+                .error("expected a vitmap (call its methods with a colon, like ship:draw(x, y))"))
+        }
+    }
+}
+
+/// The action a script named, by name or 1-based number; nothing or nil
+/// means the first one.
+fn vitmap_action(
+    vitmap: &PackedVitmap,
+    value: Option<Value<'_, Host>>,
+) -> Result<usize, Box<dyn Error>> {
+    let count = vitmap.actions().len();
+    let number = match value {
+        None | Some(Value::Nil) => 1,
+        Some(Value::Int(n)) => n,
+        Some(Value::Float(n)) if n.0 as i64 as f32 == n.0 => n.0 as i64,
+        Some(Value::Str(name)) => {
+            let name = name.as_utf8().unwrap_or("");
+            return vitmap
+                .action_index(name)
+                .ok_or_else(|| format!("vitmap: no action called \"{name}\"").into());
+        }
+        Some(_) => return Err("vitmap: action must be a name or a number".into()),
+    };
+    match usize::try_from(number - 1) {
+        Ok(index) if index < count => Ok(index),
+        _ if count == 0 => Err("vitmap: this vitmap has no actions".into()),
+        _ => Err(format!("vitmap: no action {number} (this vitmap has {count})").into()),
+    }
+}
+
+/// `ship:draw(x, y, [{ action =, frame =, scale =, sx =, sy =, rot = }])`:
+/// draws a frame centered on its origin at `x, y`. `action` is a name or
+/// number (default 1), `frame` is 1-based (default 1), `scale` scales both
+/// axes and `sx`/`sy` override it per axis, `rot` is in radians.
+fn vitmap_draw(cx: Cx) -> FnResult {
+    let vitmap = this_vitmap(&cx)?;
+    let position = Vec2::new(num(&cx, 2)?, num(&cx, 3)?);
+    let opts = cx.arg(4).get_nilable_table(false)?;
+    let get = |name| opts.map_or(Ok(None), |t| field_num(t, "vitmap", name));
+    let scale = get("scale")?.unwrap_or(1.0);
+    let scale = Vec2::new(get("sx")?.unwrap_or(scale), get("sy")?.unwrap_or(scale));
+    let rotation = get("rot")?.unwrap_or(0.0);
+    // Fractions are dropped, which only differs from flooring below 1, where
+    // every frame number is out of range anyway.
+    let frame = get("frame")?.unwrap_or(1.0) as i64;
+    let action = vitmap_action(vitmap, opts.map(|t| t.get_str_key("action")))?;
+
+    let action_data = &vitmap.actions()[action];
+    let count = action_data.frame_count();
+    let shapes = usize::try_from(frame - 1)
+        .ok()
+        .and_then(|index| vitmap.shapes(action, index))
+        .ok_or_else(|| {
+            let name = action_data.name();
+            format!("vitmap: no frame {frame} (\"{name}\" has {count})")
+        })?;
+    let transform = Affine2::from_scale_angle_translation(scale, rotation, position);
+    draw(&cx, |p| draw_shapes(p, shapes, transform))?;
+    Ok(cx.into())
+}
+
+/// `ship:frames([action])`: how many frames an action has.
+fn vitmap_frames(cx: Cx) -> FnResult {
+    let vitmap = this_vitmap(&cx)?;
+    let action = vitmap_action(vitmap, cx.arg(2).get())?;
+    cx.push(vitmap.actions()[action].frame_count() as i64)?;
+    Ok(cx.into())
+}
+
+/// `ship:frame_at([action], [ms])`: the 1-based frame to show `ms`
+/// milliseconds (default `millis()`) into an action, at the vitmap's fps.
+/// Looping actions wrap around; others stay on their last frame.
+fn vitmap_frame_at(cx: Cx) -> FnResult {
+    let vitmap = this_vitmap(&cx)?;
+    let action = &vitmap.actions()[vitmap_action(vitmap, cx.arg(2).get())?];
+    let ms_arg = cx.arg(3);
+    let ms = match ms_arg.get() {
+        None | Some(Value::Nil) => cx.associated_data().get().millis,
+        _ => match ms_arg.as_int(false) {
+            Some(ms) => ms.max(0) as u64,
+            None => ms_arg.to_float()?.0.max(0.0) as u64,
+        },
+    };
+    let count = action.frame_count().max(1) as u64;
+    let step = ms * vitmap.fps() as u64 / 1000;
+    let index = if action.looping() {
+        step % count
+    } else {
+        step.min(count - 1)
+    };
+    cx.push(index as i64 + 1)?;
+    Ok(cx.into())
+}
+
+/// `ship:actions()`: a list of the action names, in order.
+fn vitmap_actions(cx: Cx) -> FnResult {
+    let vitmap = this_vitmap(&cx)?;
+    let list = cx.create_table();
+    for (index, action) in (1i64..).zip(vitmap.actions()) {
+        list.set(index, cx.create_str(action.name()))?;
+    }
+    cx.push(list)?;
+    Ok(cx.into())
+}
+
+/// `ship:fps()`: the frames per second the vitmap was made to play at.
+fn vitmap_fps(cx: Cx) -> FnResult {
+    let fps = this_vitmap(&cx)?.fps() as i64;
+    cx.push(fps)?;
     Ok(cx.into())
 }
 

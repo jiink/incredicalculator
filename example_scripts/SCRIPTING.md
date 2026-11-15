@@ -147,6 +147,41 @@ The screen is **320 × 240** with (0, 0) at the top left. Colors are integers `0
 - **Typical sizes:** 4–5 for small print, 6 for normal text, 8–10 for headings.
 - **Line breaks:** `"\n"` starts a new line `2.5 × size` pixels lower.
 
+## Vector graphics: `vitmap`
+
+Paste a vitmap exported from the vitmap editor (a `VM1:...` string) to draw shapes and animations without listing their points yourself.
+
+```lua
+local ship = vitmap[[VM1:AAEIAgRJZGxl...]]   -- top level or init(); a bad string is an error
+
+function update()
+    clear(0)
+    ship:draw(160, 120)                                      -- first action, frame 1, actual size
+    ship:draw(80, 60, { action = "Thrust", frame = ship:frame_at("Thrust"), scale = 2, rot = angle })
+end
+```
+
+**`ship:draw(x, y [, options])`** draws one frame with the vitmap's origin at `x, y`. It only works inside `update`. The options are all optional:
+
+| Option | Default | Meaning |
+|---|---|---|
+| `action` | 1 | the action's name, or its number in the editor's list |
+| `frame` | 1 | frame number, from 1. A frame that doesn't exist is an error. |
+| `scale` | 1 | size multiplier for both axes |
+| `sx`, `sy` | `scale` | size multiplier per axis. A negative value mirrors the drawing. |
+| `rot` | 0 | rotation in radians, clockwise on screen |
+
+**Other methods** (call them with a colon). Wherever a method takes `action`, you can leave it out to use the first one.
+
+| Method | Returns |
+|---|---|
+| `ship:frame_at([action] [, ms])` | The frame to show `ms` milliseconds into the action, at the vitmap's frame rate. `ms` defaults to `millis()`. Looping actions wrap around; the others stop on their last frame. To play a one-shot from the start, pass `millis() - started`. |
+| `ship:frames([action])` | the number of frames |
+| `ship:actions()` | a list of the action names, in order |
+| `ship:fps()` | the frame rate the vitmap was made for |
+
+**Colors:** a shape's alpha isn't blended. A fill with alpha 0 isn't drawn, and any other alpha is drawn opaque. Each shape's border is drawn first, then its fill.
+
 ## Other functions
 
 | Function | Returns |

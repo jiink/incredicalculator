@@ -101,49 +101,97 @@ pub mod graphics {
         let Some(frame) = action.frames.get(frame) else {
             return false;
         };
-        let transform_point =
-            |point: Point| transform.transform_point2(Vec2::new(point.x, point.y));
+        let shapes = frame.shapes.iter().map(|polygon| ShapeView {
+            points: polygon.points.iter().copied(),
+            color: polygon.color,
+            border_width: polygon.border_width,
+            border_color: polygon.border_color,
+            open: polygon.open,
+        });
+        draw_shapes(platform, shapes, transform);
+        true
+    }
 
-        for polygon in frame.shapes {
-            let border_width = if polygon.border_width > 0.0 {
-                (polygon.border_width as u32).max(1)
+    /// One shape of a vitmap frame, borrowed from wherever the frame is
+    /// stored: the compiled-in [`Vitmap`]s or a script's
+    /// [`vm1::PackedVitmap`].
+    pub struct ShapeView<P> {
+        pub points: P,
+        pub color: Color,
+        /// 0 means no border.
+        pub border_width: f32,
+        pub border_color: Color,
+        /// Open shapes are a polyline: border only, no fill, no closing edge.
+        pub open: bool,
+    }
+
+    /// Points of one shape kept on the stack while drawing it; shapes with
+    /// more go on the heap.
+    const STACK_POINTS: usize = 64;
+
+    /// Draws `shapes` in order, each one's border first and then its fill.
+    /// A fill with zero alpha is skipped; other alpha is drawn opaque.
+    ///
+    /// `transform` maps coordinates from vitmap-local space to screen space.
+    pub fn draw_shapes<P: Iterator<Item = Point>>(
+        platform: &mut dyn IcPlatform,
+        shapes: impl IntoIterator<Item = ShapeView<P>>,
+        transform: Affine2,
+    ) {
+        let mut stack = [Vec2::ZERO; STACK_POINTS];
+        let mut heap = Vec::new();
+        for shape in shapes {
+            heap.clear();
+            let mut count = 0;
+            for point in shape.points {
+                let point = transform.transform_point2(Vec2::new(point.x, point.y));
+                if count < STACK_POINTS {
+                    stack[count] = point;
+                } else {
+                    if count == STACK_POINTS {
+                        heap.extend_from_slice(&stack);
+                    }
+                    heap.push(point);
+                }
+                count += 1;
+            }
+            let points = if count <= STACK_POINTS {
+                &stack[..count]
+            } else {
+                &heap[..]
+            };
+
+            let border_width = if shape.border_width > 0.0 {
+                (shape.border_width as u32).max(1)
             } else {
                 0
             };
-            if border_width > 0 && polygon.points.len() >= 2 {
+            if border_width > 0 && points.len() >= 2 {
                 let border_color = RGB8::new(
-                    polygon.border_color.r,
-                    polygon.border_color.g,
-                    polygon.border_color.b,
+                    shape.border_color.r,
+                    shape.border_color.g,
+                    shape.border_color.b,
                 );
-                let edge_count = if polygon.open {
-                    polygon.points.len() - 1
+                let edge_count = if shape.open {
+                    points.len() - 1
                 } else {
-                    polygon.points.len()
+                    points.len()
                 };
                 for index in 0..edge_count {
-                    let start = transform_point(polygon.points[index]);
-                    let end = transform_point(polygon.points[(index + 1) % polygon.points.len()]);
-                    platform.draw_line(start, end, border_color, border_width);
+                    let end = points[(index + 1) % points.len()];
+                    platform.draw_line(points[index], end, border_color, border_width);
                 }
             }
 
-            if !polygon.open && polygon.points.len() >= 3 {
-                let points: Vec<Vec2> = polygon
-                    .points
-                    .iter()
-                    .copied()
-                    .map(transform_point)
-                    .collect();
-                platform.draw_polygon(
-                    &points,
-                    RGB8::new(polygon.color.r, polygon.color.g, polygon.color.b),
-                );
+            if !shape.open && points.len() >= 3 && shape.color.a > 0 {
+                let color = RGB8::new(shape.color.r, shape.color.g, shape.color.b);
+                platform.draw_polygon(points, color);
             }
         }
-
-        true
     }
+
+    #[cfg(feature = "scripting")]
+    pub mod vm1;
 }
 mod fonts;
 mod text;

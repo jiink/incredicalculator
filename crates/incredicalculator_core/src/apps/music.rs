@@ -126,7 +126,7 @@ pub fn keypad_cell_origin(key_idx: usize) -> IVec2 {
     const LEFT: i32 = 8;
     const TOP: i32 = 56;
     let (col, row) = match key_idx {
-        0 => (0, 3),
+        0 => (1, 3),
         n => ((n - 1) % 3, 2 - (n - 1) / 3),
     };
     IVec2::new(

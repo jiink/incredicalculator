@@ -25,6 +25,9 @@ moves around with the same keys as the built-in apps.
 plugged into, with `hid_press`/`hid_release` and the `on_key_up` hook. Edit its
 `PAD` table to make your own.
 
+`vitmap.lua` is the smallest use of `vitmap`: it pastes in a picture exported
+from the vitmap editor and draws it twice.
+
 Scripts must be at most 16 KiB. Every script here is loaded and run for a few
 frames by `crates/incredicalculator_core/tests/example_scripts.rs`, so keep
 them working when the API changes.
