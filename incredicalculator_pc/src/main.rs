@@ -622,8 +622,8 @@ fn main() {
         (IcKey::Num2, 1, 4),
         (IcKey::Num3, 2, 4),
         (IcKey::Plus, 3, 4),
-        (IcKey::Num0, 0, 5),
-        (IcKey::Shift, 1, 5),
+        (IcKey::Shift, 0, 5),
+        (IcKey::Num0, 1, 5),
         (IcKey::Super, 2, 5),
         (IcKey::Equals, 3, 5),
     ];
