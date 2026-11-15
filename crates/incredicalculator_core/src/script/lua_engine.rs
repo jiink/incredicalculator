@@ -19,7 +19,7 @@ use tsuki::context::{Args, Context, Ret};
 use tsuki::{CallError, Class, Lua, Ref, RegKey, Table, Thread, Value, fp};
 
 use super::{
-    INPUT_CAPACITY, MAX_INPUTS, ScriptEngine, ScriptHost, ScriptInput, ScriptMeta, align_from_name,
+    INPUT_CAPACITY, MAX_INPUTS, ScriptEngine, ScriptHost, ScriptInput, align_from_name,
     color_from_int, key_action,
 };
 use crate::app::InputContext;
@@ -205,8 +205,9 @@ fn describe(error: &(dyn Error + 'static)) -> String {
 
 impl ScriptEngine for LuaEngine {
     const FILE_EXTENSION: &'static str = "lua";
+    const LINE_COMMENT: &'static str = "--";
 
-    fn load(source: &str, host: &mut ScriptHost) -> Result<(Self, ScriptMeta), String> {
+    fn load(source: &str, host: &mut ScriptHost) -> Result<Self, String> {
         let lua = Lua::with_seed(
             Host {
                 host: RefCell::new(ScriptHost::new()),
@@ -236,21 +237,17 @@ impl ScriptEngine for LuaEngine {
         core::mem::swap(&mut *lua.associated_data().get(), host);
         drop(chunk);
         ran.map_err(|e| describe(&*e))?;
-        let meta = read_meta(&lua)?;
 
         let is_fn = |name: &str| matches!(lua.global().get_str_key(name), Value::LuaFn(_));
         let (has_init, has_update, has_on_key) = (is_fn("init"), is_fn("update"), is_fn("on_key"));
         let has_on_key_up = is_fn("on_key_up");
-        Ok((
-            Self {
-                lua,
-                has_init,
-                has_update,
-                has_on_key,
-                has_on_key_up,
-            },
-            meta,
-        ))
+        Ok(Self {
+            lua,
+            has_init,
+            has_update,
+            has_on_key,
+            has_on_key_up,
+        })
     }
 
     fn init(&mut self, host: &mut ScriptHost) -> Result<(), String> {
@@ -284,36 +281,6 @@ impl ScriptEngine for LuaEngine {
         }
         self.call(host, None, "on_key_up", HookArgs::KeyUp(key))
     }
-}
-
-/// Reads the optional global `app` table, e.g.
-/// `app = { name = "Bouncer", color = 0x2a6f97, realtime = true }`
-fn read_meta(lua: &Lua<Host>) -> Result<ScriptMeta, String> {
-    let mut meta = ScriptMeta::default();
-    let app = match lua.global().get_str_key("app") {
-        Value::Nil => return Ok(meta),
-        Value::Table(app) => app,
-        _ => return Err("`app` must be a table, like { name = \"My App\" }".into()),
-    };
-    match app.get_str_key("name") {
-        Value::Nil => {}
-        Value::Str(name) => match name.as_utf8() {
-            Some(name) => meta.name = Some(String::from(name)),
-            None => return Err("app.name must be text".into()),
-        },
-        _ => return Err("app.name must be a string".into()),
-    }
-    match app.get_str_key("color") {
-        Value::Nil => {}
-        Value::Int(color) => meta.color = Some(color as u32),
-        _ => return Err("app.color must be an integer like 0xRRGGBB".into()),
-    }
-    match app.get_str_key("realtime") {
-        Value::Nil | Value::False => {}
-        Value::True => meta.realtime = true,
-        _ => return Err("app.realtime must be true or false".into()),
-    }
-    Ok(meta)
 }
 
 fn register_api(lua: &Lua<Host>) {
@@ -1001,7 +968,7 @@ mod tests {
 
     fn run(source: &str) -> Result<ScriptHost, String> {
         let mut host = ScriptHost::new();
-        let (mut engine, _) = LuaEngine::load(source, &mut host)?;
+        let mut engine = LuaEngine::load(source, &mut host)?;
         engine.update(&mut host, &mut FakePlatform::default())?;
         Ok(host)
     }
@@ -1055,7 +1022,7 @@ mod tests {
     /// Loads `source`, then presses each `(key, shift, super)` in turn.
     fn press_all(source: &str, keys: &[(IcKey, bool, bool)]) -> ScriptHost {
         let mut host = ScriptHost::new();
-        let (mut engine, _) = LuaEngine::load(source, &mut host).unwrap();
+        let mut engine = LuaEngine::load(source, &mut host).unwrap();
         engine.init(&mut host).unwrap();
         for &(key, shift, super_held) in keys {
             host.keys_down[IcKey::Shift as usize] = shift;

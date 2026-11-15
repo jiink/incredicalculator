@@ -5,7 +5,7 @@ use super::music::{
 };
 use crate::app::{IcApp, InputContext};
 use crate::audio_engine::{AudioEngine, NoteId};
-use crate::graphics::{self, Vitmap};
+use crate::graphics;
 use crate::input::IcKey;
 use crate::platform::{IcPlatform, rgb8_hex};
 use crate::text::{self, HAlign, TextStyle};
@@ -602,8 +602,8 @@ impl IcApp for ChordPad {
         "Chord pad"
     }
 
-    fn icon(&self) -> &'static Vitmap {
-        &graphics::MUSIC_ICON
+    fn icon(&self) -> crate::app::AppIcon<'_> {
+        crate::app::AppIcon::Static(&graphics::MUSIC_ICON)
     }
 
     fn color(&self) -> RGB8 {

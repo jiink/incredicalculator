@@ -1,5 +1,5 @@
-use crate::app::IcApp;
 use crate::app::InputContext;
+use crate::app::{AppIcon, IcApp};
 use crate::apps::AspectRatioCalculator;
 use crate::apps::Bytebeat;
 use crate::apps::ChordPad;
@@ -45,7 +45,7 @@ enum SelectorAction {
 struct SelectorCard<'a> {
     name: &'a str,
     button: IcKey,
-    vitmap: &'static Vitmap,
+    icon: AppIcon<'a>,
     color: RGB8,
     action: SelectorAction,
 }
@@ -524,63 +524,63 @@ impl IcShell {
             SelectorCard {
                 name: "",
                 button: IcKey::Num7,
-                vitmap: &graphics::SAMPLE_GRAPHIC,
+                icon: AppIcon::Static(&graphics::SAMPLE_GRAPHIC),
                 color: rgb8_hex(0x282820),
                 action: SelectorAction::None,
             },
             SelectorCard {
                 name: "",
                 button: IcKey::Num8,
-                vitmap: &graphics::SAMPLE_GRAPHIC,
+                icon: AppIcon::Static(&graphics::SAMPLE_GRAPHIC),
                 color: rgb8_hex(0x282820),
                 action: SelectorAction::None,
             },
             SelectorCard {
                 name: "",
                 button: IcKey::Num9,
-                vitmap: &graphics::SAMPLE_GRAPHIC,
+                icon: AppIcon::Static(&graphics::SAMPLE_GRAPHIC),
                 color: rgb8_hex(0x282820),
                 action: SelectorAction::None,
             },
             SelectorCard {
                 name: "",
                 button: IcKey::Num4,
-                vitmap: &graphics::SAMPLE_GRAPHIC,
+                icon: AppIcon::Static(&graphics::SAMPLE_GRAPHIC),
                 color: rgb8_hex(0x282820),
                 action: SelectorAction::None,
             },
             SelectorCard {
                 name: "",
                 button: IcKey::Num5,
-                vitmap: &graphics::SAMPLE_GRAPHIC,
+                icon: AppIcon::Static(&graphics::SAMPLE_GRAPHIC),
                 color: rgb8_hex(0x282820),
                 action: SelectorAction::None,
             },
             SelectorCard {
                 name: "",
                 button: IcKey::Num6,
-                vitmap: &graphics::SAMPLE_GRAPHIC,
+                icon: AppIcon::Static(&graphics::SAMPLE_GRAPHIC),
                 color: rgb8_hex(0x282820),
                 action: SelectorAction::None,
             },
             SelectorCard {
                 name: "Previous",
                 button: IcKey::Num1,
-                vitmap: &graphics::LEFT_ARROW,
+                icon: AppIcon::Static(&graphics::LEFT_ARROW),
                 color: rgb8_hex(0xffffff),
                 action: SelectorAction::PreviousPage,
             },
             SelectorCard {
                 name: "Settings",
                 button: IcKey::Num2,
-                vitmap: &graphics::SETTINGS_ICON,
+                icon: AppIcon::Static(&graphics::SETTINGS_ICON),
                 color: rgb8_hex(0xffffff),
                 action: SelectorAction::OpenSettings,
             },
             SelectorCard {
                 name: "Next",
                 button: IcKey::Num3,
-                vitmap: &graphics::RIGHT_ARROW,
+                icon: AppIcon::Static(&graphics::RIGHT_ARROW),
                 color: rgb8_hex(0xffffff),
                 action: SelectorAction::NextPage,
             },
@@ -591,7 +591,7 @@ impl IcShell {
             let app_idx = first_app_idx + slot;
             if let Some(app) = self.apps.get(app_idx) {
                 card.name = app.name();
-                card.vitmap = app.icon();
+                card.icon = app.icon();
                 card.color = app.color();
                 card.action = SelectorAction::Launch(app_idx);
             }
@@ -621,12 +621,10 @@ impl IcShell {
                 continue;
             }
             platform.draw_rectangle_rounded(start, end, rgb8_hex(0xffffff), 0, Some(card.color), 5);
-            draw_vitmap(
+            card.icon.draw(
                 platform,
-                card.vitmap,
-                0,
                 Vec2::new(start.x as f32 + 50.0, start.y as f32 + 32.0),
-                Vec2::splat(3.0),
+                3.0,
             );
             if let Some(opacity) = hint_opacity {
                 let hint_start = start;
@@ -901,7 +899,7 @@ mod tests {
 
     #[test]
     fn an_open_app_reloads_when_its_script_is_saved() {
-        let mut platform = FakePlatform::with_scripts(&[("a.lua", "app = { name = 'One' }")]);
+        let mut platform = FakePlatform::with_scripts(&[("a.lua", "-- title: One")]);
         let mut shell = IcShell::new();
         shell.update(&mut platform);
         let idx = app_index(&shell, "One").unwrap();
@@ -910,7 +908,7 @@ mod tests {
         shell.update(&mut platform);
 
         // A computer saves a new version to the drive while the app is open.
-        platform.set_script("a.lua", Some("app = { name = 'Two' }"));
+        platform.set_script("a.lua", Some("-- title: Two"));
         shell.update(&mut platform);
         let idx = shell.active_app_idx.expect("still open");
         assert_eq!(shell.apps[idx].name(), "Two");
@@ -950,12 +948,12 @@ mod tests {
 
     #[test]
     fn editing_the_open_script_restarts_it() {
-        let mut platform = FakePlatform::with_scripts(&[("app.lua", "app = { name = \"Old\" }")]);
+        let mut platform = FakePlatform::with_scripts(&[("app.lua", "-- title: Old")]);
         let mut shell = IcShell::new();
         shell.update(&mut platform);
         let idx = open_last_app(&mut shell);
 
-        platform.set_script("app.lua", Some("app = { name = \"New\" }"));
+        platform.set_script("app.lua", Some("-- title: New"));
         shell.update(&mut platform);
         assert_eq!(shell.active_app_idx, Some(idx));
         assert_eq!(shell.apps[idx].name(), "New");

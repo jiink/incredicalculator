@@ -1,8 +1,19 @@
+-- title:    Bouncer
+-- desc:     A square bounces around the screen; push it with 2 4 6 8.
+-- color:    0x2a6f97
+-- realtime: true
+
 -- Bouncer: an example scripted app.
 --
--- The optional global `app` table sets how the app appears in the menu.
--- `realtime = true` runs `update` every frame instead of only after a key press.
-app = { name = "Bouncer", color = 0x2a6f97, realtime = true }
+-- The header comment at the very top of the file sets how the app appears in
+-- the menu, and is read without running the script. Every field is optional:
+--   title     the name in the menu (defaults to the file name)
+--   author, desc
+--   color     the menu card color, like 0x2a6f97
+--   icon      a "VM1:..." string from the vitmap editor, about 16x16 around
+--             its origin (see vitmap.lua). Without one, the menu shows the
+--             title's first two letters.
+--   realtime  true runs update() every frame instead of only after a key press
 
 -- Hooks (all optional, defined as global functions):
 --   init()               runs each time the app is opened

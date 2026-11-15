@@ -10,9 +10,12 @@
 //! to [`ScriptEngine::update`] for the length of the call, just as compiled
 //! apps draw during their own `update`. Nothing is buffered.
 
+use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 use rgb::RGB8;
+
+use crate::graphics::vm1::PackedVitmap;
 
 use crate::hid::{HidReport, HidState};
 use crate::input::IcKey;
@@ -37,6 +40,10 @@ pub(crate) mod test_sources {
     pub const RUNTIME_ERROR: &str = "function update() x = undefined_fn() end";
     pub const SYNTAX_ERROR: &str = "function update( end";
     pub const ENDLESS_LOOP: &str = "function update() while true do end end";
+    /// The reference VM1 sample from the vitmap editor's tests: an "Idle"
+    /// action with a triangle and an open line, and a two-frame "Run" action.
+    pub const VM1_SAMPLE: &str =
+        "VM1:AAEIAgRJZGxlAQECAAoUHgMQAADw8AAH/wAAgDIAAQIDAgECBAQDUnVuAAIAAA==";
 }
 
 /// Most log lines kept from one script call.
@@ -130,15 +137,90 @@ impl Default for ScriptHost {
     }
 }
 
-/// Settings a script declares about itself. Anything left out falls back to
-/// a default chosen by [`ScriptApp`](crate::apps::ScriptApp).
-#[derive(Clone, Debug, Default)]
+/// Settings a script declares about itself in its header comment, read
+/// without running the script. Anything left out falls back to a default
+/// chosen by [`ScriptApp`](crate::apps::ScriptApp).
+///
+/// The header is the run of line comments at the very top of the file; the
+/// first line that isn't one ends it. Inside it, lines like
+/// `-- title: My App` set a field. Keys are lowercase, the first line with a
+/// key wins, and other comment lines (unknown keys, prose) are ignored.
+#[derive(Debug, Default)]
 pub struct ScriptMeta {
-    pub name: Option<String>,
-    /// 0xRRGGBB.
+    /// `title:` the name in the menu.
+    pub title: Option<String>,
+    /// `author:`
+    pub author: Option<String>,
+    /// `desc:` a one-line description.
+    pub desc: Option<String>,
+    /// `color:` the menu card color, written `0x2a6f97` or `#2a6f97`.
     pub color: Option<u32>,
-    /// Whether `update` should run every frame rather than only on input.
+    /// `realtime: true` runs `update` every frame rather than only on input.
     pub realtime: bool,
+    /// `icon:` a `VM1:` vitmap string, drawn on the menu card.
+    pub icon: Option<PackedVitmap>,
+}
+
+impl ScriptMeta {
+    /// Reads the header of `source`. A field with a bad value is left out,
+    /// and the first such problem is returned alongside, as a message for
+    /// the error view.
+    pub fn parse(source: &str) -> (Self, Option<String>) {
+        let mut meta = Self::default();
+        let mut problem = None;
+        let mut realtime_seen = false;
+        for line in source.lines() {
+            let Some(comment) = line.trim().strip_prefix(ActiveEngine::LINE_COMMENT) else {
+                break;
+            };
+            let Some((key, value)) = comment.split_once(':') else {
+                continue;
+            };
+            let (key, value) = (key.trim(), value.trim());
+            if value.is_empty() {
+                continue;
+            }
+            let mut fail = |message: String| {
+                problem.get_or_insert_with(|| format!("header: {key}: {message}"));
+            };
+            match key {
+                "title" if meta.title.is_none() => meta.title = Some(value.into()),
+                "author" if meta.author.is_none() => meta.author = Some(value.into()),
+                "desc" if meta.desc.is_none() => meta.desc = Some(value.into()),
+                "color" if meta.color.is_none() => match parse_color(value) {
+                    Some(color) => meta.color = Some(color),
+                    None => fail(format!("expected a color like 0x2a6f97, not \"{value}\"")),
+                },
+                "realtime" if !realtime_seen => {
+                    realtime_seen = true;
+                    match value {
+                        "true" => meta.realtime = true,
+                        "false" => {}
+                        _ => fail(format!("expected true or false, not \"{value}\"")),
+                    }
+                }
+                "icon" if meta.icon.is_none() => match PackedVitmap::decode(value) {
+                    Ok(icon) => meta.icon = Some(icon),
+                    Err(e) => fail(format!("not a valid vitmap: {e}")),
+                },
+                _ => {}
+            }
+        }
+        (meta, problem)
+    }
+}
+
+/// `0x2a6f97`, `#2a6f97` or `2a6f97`.
+fn parse_color(value: &str) -> Option<u32> {
+    let digits = value
+        .strip_prefix("0x")
+        .or_else(|| value.strip_prefix("0X"))
+        .or_else(|| value.strip_prefix('#'))
+        .unwrap_or(value);
+    if digits.is_empty() || digits.len() > 6 {
+        return None;
+    }
+    u32::from_str_radix(digits, 16).ok()
 }
 
 /// A loaded script, ready to have its hooks called. Errors are human-readable
@@ -149,10 +231,12 @@ pub struct ScriptMeta {
 pub trait ScriptEngine: Sized {
     /// File extension of scripts for this engine, without the dot.
     const FILE_EXTENSION: &'static str;
+    /// What starts a line comment, for reading the [`ScriptMeta`] header.
+    const LINE_COMMENT: &'static str;
 
-    /// Compiles `source` and runs its top level, which may declare metadata
-    /// and make `math_input` boxes in `host`.
-    fn load(source: &str, host: &mut ScriptHost) -> Result<(Self, ScriptMeta), String>;
+    /// Compiles `source` and runs its top level, which may make
+    /// `math_input` boxes in `host`.
+    fn load(source: &str, host: &mut ScriptHost) -> Result<Self, String>;
     /// Runs the script's `init` hook. Called once, the first time the app is
     /// opened.
     fn init(&mut self, host: &mut ScriptHost) -> Result<(), String>;
@@ -202,4 +286,108 @@ pub(crate) fn align_from_name(name: &str) -> Option<HAlign> {
 
 pub(crate) fn color_from_int(color: i64) -> RGB8 {
     crate::platform::rgb8_hex(color as u32 & 0xFF_FFFF)
+}
+
+#[cfg(test)]
+mod header_tests {
+    use super::*;
+
+    #[test]
+    fn reads_every_field() {
+        let source = format!(
+            "-- title:    My App\n\
+             -- author:   Someone\n\
+             -- desc:     Does: things\n\
+             -- color:    0x2a6f97\n\
+             -- realtime: true\n\
+             -- icon:     {}\n\
+             function update() end\n",
+            test_sources::VM1_SAMPLE
+        );
+        let (meta, problem) = ScriptMeta::parse(&source);
+        assert_eq!(problem, None);
+        assert_eq!(meta.title.as_deref(), Some("My App"));
+        assert_eq!(meta.author.as_deref(), Some("Someone"));
+        // Only the first colon separates the key.
+        assert_eq!(meta.desc.as_deref(), Some("Does: things"));
+        assert_eq!(meta.color, Some(0x2a6f97));
+        assert!(meta.realtime);
+        let icon = meta.icon.expect("icon");
+        assert_eq!(icon.actions()[0].name(), "Idle");
+    }
+
+    #[test]
+    fn missing_header_gives_defaults() {
+        let (meta, problem) = ScriptMeta::parse("function update() end");
+        assert_eq!(problem, None);
+        assert!(meta.title.is_none() && meta.color.is_none() && meta.icon.is_none());
+        assert!(!meta.realtime);
+        assert_eq!(ScriptMeta::parse("").1, None);
+    }
+
+    #[test]
+    fn header_ends_at_the_first_non_comment_line() {
+        let (meta, _) = ScriptMeta::parse("-- title: Top\n\n-- color: 0x123456\n");
+        assert_eq!(meta.title.as_deref(), Some("Top"));
+        assert_eq!(meta.color, None);
+
+        let (meta, _) = ScriptMeta::parse("x = 1\n-- title: Late\n");
+        assert_eq!(meta.title, None);
+    }
+
+    #[test]
+    fn first_key_wins_and_other_lines_are_ignored() {
+        let source = "-- My App: a description in prose\n\
+                      --\n\
+                      -- Title: not a field (keys are lowercase)\n\
+                      -- note: unknown keys are ignored\n\
+                      -- title:\n\
+                      -- title: First\n\
+                      -- title: Second\n\
+                      -- realtime: false\n\
+                      -- realtime: true\n";
+        let (meta, problem) = ScriptMeta::parse(source);
+        assert_eq!(problem, None);
+        // An empty value doesn't count as the first.
+        assert_eq!(meta.title.as_deref(), Some("First"));
+        assert!(!meta.realtime);
+    }
+
+    #[test]
+    fn colors_take_several_spellings() {
+        for value in ["0x2a6f97", "0X2A6F97", "#2a6f97", "2a6f97"] {
+            let (meta, problem) = ScriptMeta::parse(&format!("-- color: {value}"));
+            assert_eq!(problem, None, "{value}");
+            assert_eq!(meta.color, Some(0x2a6f97), "{value}");
+        }
+    }
+
+    #[test]
+    fn bad_values_are_left_out_and_reported() {
+        let bad = |source: &str| {
+            let (meta, problem) = ScriptMeta::parse(source);
+            (meta, problem.expect("a problem"))
+        };
+
+        let (meta, problem) = bad("-- color: blue");
+        assert!(meta.color.is_none());
+        assert!(problem.starts_with("header: color:"), "{problem}");
+
+        for color in ["#1234567", "0x"] {
+            assert!(ScriptMeta::parse(&format!("-- color: {color}")).1.is_some());
+        }
+
+        let (meta, problem) = bad("-- realtime: yes");
+        assert!(!meta.realtime);
+        assert!(problem.starts_with("header: realtime:"), "{problem}");
+
+        let (meta, problem) = bad("-- icon: VM1:AAAA!");
+        assert!(meta.icon.is_none());
+        assert!(problem.contains("not a valid vitmap"), "{problem}");
+
+        // The other fields are still read, and the first problem is kept.
+        let (meta, problem) = bad("-- color: red\n-- title: Still\n-- realtime: maybe");
+        assert_eq!(meta.title.as_deref(), Some("Still"));
+        assert!(problem.starts_with("header: color:"), "{problem}");
+    }
 }

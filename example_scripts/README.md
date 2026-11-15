@@ -26,7 +26,8 @@ plugged into, with `hid_press`/`hid_release` and the `on_key_up` hook. Edit its
 `PAD` table to make your own.
 
 `vitmap.lua` is the smallest use of `vitmap`: it pastes in a picture exported
-from the vitmap editor and draws it twice.
+from the vitmap editor and draws it twice. The same picture is its menu icon,
+through the `icon:` field of its header comment.
 
 Scripts must be at most 16 KiB. Every script here is loaded and run for a few
 frames by `crates/incredicalculator_core/tests/example_scripts.rs`, so keep

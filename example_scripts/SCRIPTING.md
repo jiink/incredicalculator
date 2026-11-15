@@ -19,7 +19,11 @@ If the computer says the drive needs formatting, the default FAT format works.
 ## Skeleton
 
 ```lua
-app = { name = "My App", color = 0x2a6f97, realtime = false }  -- all optional
+-- title:    My App
+-- author:   You
+-- desc:     Counts presses of the = key.
+-- color:    0x2a6f97
+-- realtime: false
 
 local count                      -- state lives in top-level variables
 
@@ -40,11 +44,28 @@ function update()                -- draw the whole screen
 end
 ```
 
-- **`app` table:** `name` defaults to the file name without `.lua`. `color` is the menu card color; without it, a color is picked from the name. `realtime = true` runs `update` every frame (about 60 per second). Otherwise `update` runs only after input.
+- **Header:** see [the header comment](#header-comment) below. All of it is optional.
 - **Hooks:** all are optional global functions. Missing hooks do nothing.
 - **Lifetime:** the file runs from the top every time the app is opened, then `init()` runs. Nothing is kept after you leave the app, and nothing persists across power cycles.
 - **Drawing:** only works inside `update()`; drawing in another hook stops the script with an error. Draw the whole screen every time, starting with `clear()`.
 - **Errors:** an error stops the script and shows the message with its line number. Reopen the app, or save the file again while editing live, to retry.
+
+## Header comment
+
+The comment lines at the very top of the file set how the app appears in the menu. The menu reads them without running the script, so the name and icon show even if the script has a bug.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `title` | the file name without `.lua` | the name in the menu |
+| `author` | none | who made it |
+| `desc` | none | a one-line description |
+| `color` | picked from the name | menu card color: `0x2a6f97`, `#2a6f97` or `2a6f97` |
+| `icon` | the title's first two letters | a `VM1:...` string from the vitmap editor, on one line. The menu draws its first frame at 3× size, so make it about 16 × 16 around its origin. |
+| `realtime` | `false` | `true` runs `update` every frame (about 60 per second). Otherwise `update` runs only after input. |
+
+- **Where it ends:** the header is the run of `--` lines at the start of the file. The first line that isn't one ends it, so leave a blank line before any longer comment.
+- **Format:** each field is `-- key: value`. Keys are lowercase. If a key appears twice, the first one counts. Other comment lines are ignored.
+- **Mistakes:** a field with a bad value (like an `icon` that isn't a valid vitmap) leaves the menu with its default, and opening the app shows the error.
 
 ## Keys
 

@@ -3,7 +3,6 @@ use crate::app::InputContext;
 use crate::audio_engine::AudioEngine;
 use crate::fonts::{self, FontId};
 use crate::graphics;
-use crate::graphics::Vitmap;
 use crate::input::IcKey;
 use crate::platform::CANVAS_WIDTH;
 use crate::platform::IcPlatform;
@@ -1410,11 +1409,11 @@ impl IcApp for Calculator {
         "Programmer & Scientific"
     }
 
-    fn icon(&self) -> &'static Vitmap {
-        match self.engine_mode {
+    fn icon(&self) -> crate::app::AppIcon<'_> {
+        crate::app::AppIcon::Static(match self.engine_mode {
             EngineMode::Programmer => &graphics::CODE_ICON,
             EngineMode::Scientific => &graphics::SCIENTIFIC_ICON,
-        }
+        })
     }
 
     fn color(&self) -> RGB8 {

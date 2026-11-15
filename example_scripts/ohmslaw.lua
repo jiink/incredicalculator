@@ -1,3 +1,7 @@
+-- title: Ohm's Law
+-- desc:  Type any two of voltage, current and resistance; the third updates.
+-- color: 0x2a6f97
+
 -- Ohm's Law: type any two of voltage, current and resistance; the third updates.
 --
 -- Each value is a math_input box, so it types like the calculator: digits,
@@ -8,8 +12,6 @@
 -- The two boxes you edited most recently are the inputs; the remaining box is
 -- calculated from them (V = I * R). Typing into the calculated box makes it an
 -- input, and the older of the other two becomes the calculated one.
-
-app = { name = "Ohm's Law", color = 0x2a6f97 }
 
 local FIELDS = {
     { key = "V", label = "Voltage", unit = "V" },

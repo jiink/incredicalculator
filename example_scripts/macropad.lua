@@ -1,10 +1,13 @@
+-- title: Macropad
+-- desc:  Extra keys and shortcuts for the computer it is plugged into.
+-- color: 0x6a4fc4
+
 -- Macropad: makes the calculator's keys extra keys for the computer it is
 -- plugged into. Each key holds its computer keys down for as long as you
 -- hold it, so shortcuts and key repeat work like on a real keyboard.
 --
 -- The calculator shows up as a USB keyboard whenever it is plugged in. On the
 -- PC and web builds nothing is typed; each change is written to the log.
-app = { name = "Macropad", color = 0x6a4fc4 }
 
 -- Calculator key (as on_key names it) -> label and computer keys. Several
 -- keys are pressed in order and let up in reverse, like a person would.

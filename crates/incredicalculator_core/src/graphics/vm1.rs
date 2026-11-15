@@ -389,3 +389,91 @@ impl<'a> Reader<'a> {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::script::test_sources::VM1_SAMPLE;
+    use alloc::format;
+
+    fn points(shape: &ShapeView<PackedPoints<'_>>) -> Vec<(f32, f32)> {
+        shape.points.clone().map(|p| (p.x, p.y)).collect()
+    }
+
+    fn rgba(color: Color) -> (u8, u8, u8, u8) {
+        (color.r, color.g, color.b, color.a)
+    }
+
+    #[test]
+    fn decodes_the_reference_sample() {
+        let v = PackedVitmap::decode(VM1_SAMPLE).unwrap();
+        assert_eq!(v.fps(), 8);
+        assert_eq!(v.actions().len(), 2);
+
+        let idle = &v.actions()[0];
+        assert_eq!(idle.name(), "Idle");
+        assert!(idle.looping());
+        assert_eq!(idle.frame_count(), 1);
+        let shapes: Vec<_> = v.shapes(0, 0).unwrap().collect();
+        assert_eq!(shapes.len(), 2);
+
+        let tri = &shapes[0];
+        assert_eq!(points(tri), [(8.0, 0.0), (0.0, -8.0), (-8.0, 0.0)]);
+        assert_eq!(rgba(tri.color), (10, 20, 30, 255));
+        assert_eq!(tri.border_width, 0.0);
+        assert!(!tri.open);
+
+        let line = &shapes[1];
+        assert_eq!(points(line), [(0.5, 1.0), (2.0, 2.0)]);
+        assert_eq!(line.color.a, 128);
+        assert_eq!(line.border_width, 0.5);
+        assert_eq!(rgba(line.border_color), (1, 2, 3, 255));
+        assert!(line.open);
+
+        let run = &v.actions()[1];
+        assert_eq!(run.name(), "Run");
+        assert!(!run.looping());
+        assert_eq!(run.frame_count(), 2);
+        assert_eq!(v.shapes(1, 0).unwrap().count(), 0);
+        assert_eq!(v.shapes(1, 1).unwrap().count(), 0);
+        assert_eq!(v.action_index("Run"), Some(1));
+        assert_eq!(v.action_index("Walk"), None);
+    }
+
+    #[test]
+    fn out_of_range_frames_have_no_shapes() {
+        let v = PackedVitmap::decode(VM1_SAMPLE).unwrap();
+        assert!(v.shapes(0, 1).is_none());
+        assert!(v.shapes(1, 2).is_none());
+        assert!(v.shapes(2, 0).is_none());
+    }
+
+    #[test]
+    fn accepts_url_safe_unpadded_and_spaced_base64() {
+        let body = VM1_SAMPLE.strip_prefix("VM1:").unwrap();
+        let url_safe = body.replace('+', "-").replace('/', "_");
+        let unpadded = url_safe.trim_end_matches('=');
+        let (a, b) = unpadded.split_at(10);
+        let text = format!("  VM1:{a}\n  {b}  \n");
+        let v = PackedVitmap::decode(&text).unwrap();
+        assert_eq!(v.actions()[1].name(), "Run");
+    }
+
+    #[test]
+    fn rejects_bad_input() {
+        use DecodeError::*;
+        let err = |text: &str| PackedVitmap::decode(text).unwrap_err();
+        assert_eq!(err("VM2:AAAA"), UnsupportedVersion("VM2".into()));
+        assert_eq!(err(&VM1_SAMPLE[..20]), Truncated);
+        assert_eq!(err("hello"), MissingPrefix);
+        assert_eq!(err("XY1:AAAA"), MissingPrefix);
+        assert_eq!(err("VM1:AA*A"), BadBase64);
+        // Unknown header flags.
+        assert_eq!(err("VM1:AgAAAA"), UnknownFlags);
+        // A scale shift above 15.
+        assert_eq!(err("VM1:ABAAAA"), BadScale);
+        // A valid, empty vitmap, then one with a byte left over.
+        assert!(PackedVitmap::decode("VM1:AAAAAA").is_ok());
+        assert_eq!(err("VM1:AAAAAAA"), TrailingBytes);
+    }
+}

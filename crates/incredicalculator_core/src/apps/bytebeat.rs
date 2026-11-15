@@ -2,7 +2,7 @@ use super::music::{self, BG_COLOR, CELL_COLOR, DIM_TEXT_COLOR, SOUNDING_CELL_COL
 use crate::app::{IcApp, InputContext};
 use crate::audio_engine::{AudioEngine, SAMPLE_RATE_HZ};
 use crate::fonts::FontId;
-use crate::graphics::{self, Vitmap};
+use crate::graphics;
 use crate::input::IcKey;
 use crate::platform::{IcPlatform, rgb8_hex};
 use crate::text::{self, HAlign, TextStyle};
@@ -397,8 +397,8 @@ impl IcApp for Bytebeat {
         "Bytebeat"
     }
 
-    fn icon(&self) -> &'static Vitmap {
-        &graphics::MUSIC_ICON
+    fn icon(&self) -> crate::app::AppIcon<'_> {
+        crate::app::AppIcon::Static(&graphics::MUSIC_ICON)
     }
 
     fn color(&self) -> RGB8 {

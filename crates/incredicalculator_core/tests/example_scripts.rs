@@ -6,7 +6,7 @@ use std::path::Path;
 
 use incredicalculator_core::input::IcKey;
 use incredicalculator_core::platform::{MAX_SCRIPT_BYTES, SCRIPT_EXTENSION};
-use incredicalculator_core::script::{ActiveEngine, ScriptEngine, ScriptHost};
+use incredicalculator_core::script::{ActiveEngine, ScriptEngine, ScriptHost, ScriptMeta};
 
 mod common;
 use common::NullPlatform;
@@ -34,9 +34,12 @@ fn every_example_script_runs() {
         let name = path.file_name().unwrap().to_string_lossy().into_owned();
         let source = std::fs::read_to_string(&path).unwrap();
         assert!(source.len() <= MAX_SCRIPT_BYTES, "{name} is too big");
+        let (meta, problem) = ScriptMeta::parse(&source);
+        assert_eq!(problem, None, "{name}'s header");
+        assert!(meta.title.is_some(), "{name} should have a title");
 
         let mut host = ScriptHost::new();
-        let (mut engine, _) =
+        let mut engine =
             ActiveEngine::load(&source, &mut host).unwrap_or_else(|e| panic!("{name}: {e}"));
         let step = |result: Result<(), String>| {
             result.unwrap_or_else(|e| panic!("{name}: {e}"));

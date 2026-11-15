@@ -4,9 +4,9 @@ use alloc::string::String;
 use glam::Vec2;
 use rgb::RGB8;
 
-use crate::app::{IcApp, InputContext};
+use crate::app::{AppIcon, IcApp, InputContext};
 use crate::audio_engine::AudioEngine;
-use crate::graphics::{self, Vitmap};
+use crate::graphics::vm1::PackedVitmap;
 use crate::input::IcKey;
 use crate::platform::{CANVAS_WIDTH, IcPlatform, rgb8_hex};
 use crate::script::{ActiveEngine, ScriptEngine, ScriptHost, ScriptMeta};
@@ -24,6 +24,10 @@ pub struct ScriptApp {
     name: String,
     color: RGB8,
     realtime: bool,
+    /// The header's icon, or `None` to show the name's initials.
+    icon: Option<PackedVitmap>,
+    /// A bad header field, shown instead of running the script.
+    header_error: Option<String>,
     source: Cow<'static, str>,
     /// Only present while the app is open, so a closed script holds no
     /// engine memory. Its state starts over each time it is opened.
@@ -39,27 +43,29 @@ pub struct ScriptApp {
 
 impl ScriptApp {
     /// `file_name` (like `bouncer.lua`), without its extension, is the app
-    /// name unless the script declares one.
+    /// name unless the script's header gives a title. The script itself
+    /// doesn't run until the app is opened.
     pub fn new(file_name: &str, source: impl Into<Cow<'static, str>>) -> Self {
         let file_stem = file_name
             .strip_suffix(crate::platform::SCRIPT_EXTENSION)
             .and_then(|stem| stem.strip_suffix('.'))
             .unwrap_or(file_name);
-        let mut app = Self {
-            name: String::from(file_stem),
-            color: default_color(file_stem),
-            realtime: false,
-            source: source.into(),
+        let source = source.into();
+        let (meta, header_error) = ScriptMeta::parse(&source);
+        Self {
+            name: meta.title.unwrap_or_else(|| String::from(file_stem)),
+            color: meta
+                .color
+                .map_or_else(|| default_color(file_stem), rgb8_hex),
+            realtime: meta.realtime,
+            icon: meta.icon,
+            header_error,
+            source,
             engine: None,
             host: ScriptHost::new(),
             error: None,
             pressed: [false; IcKey::COUNT],
-        };
-        // Load once for the menu's name and color, then free the engine.
-        app.load();
-        app.engine = None;
-        app.reset_host();
-        app
+        }
     }
 
     /// Replaces the host with a fresh one. Keys the script held on the
@@ -80,23 +86,14 @@ impl ScriptApp {
         self.engine = None;
         self.error = None;
         self.reset_host();
+        if let Some(error) = &self.header_error {
+            self.error = Some(error.clone());
+            return;
+        }
         match ActiveEngine::load(&self.source, &mut self.host) {
-            Ok((engine, meta)) => {
-                self.apply_meta(meta);
-                self.engine = Some(engine);
-            }
+            Ok(engine) => self.engine = Some(engine),
             Err(error) => self.error = Some(error),
         }
-    }
-
-    fn apply_meta(&mut self, meta: ScriptMeta) {
-        if let Some(name) = meta.name {
-            self.name = name;
-        }
-        if let Some(color) = meta.color {
-            self.color = rgb8_hex(color);
-        }
-        self.realtime = meta.realtime;
     }
 
     /// Runs one hook, recording any failure and dropping the engine so the
@@ -165,8 +162,11 @@ impl IcApp for ScriptApp {
         &self.name
     }
 
-    fn icon(&self) -> &'static Vitmap {
-        &graphics::CODE_ICON
+    fn icon(&self) -> AppIcon<'_> {
+        match &self.icon {
+            Some(icon) => AppIcon::Packed(icon),
+            None => AppIcon::Initials(&self.name),
+        }
     }
 
     fn color(&self) -> RGB8 {
@@ -270,7 +270,7 @@ mod tests {
     fn example_script_draws_and_handles_keys() {
         let (name, source) = crate::script::EXAMPLE_SCRIPT;
         let mut host = ScriptHost::new();
-        let (mut engine, _) = ActiveEngine::load(source, &mut host).unwrap();
+        let mut engine = ActiveEngine::load(source, &mut host).unwrap();
         engine.init(&mut host).unwrap();
         for key in [IcKey::Num5, IcKey::Num8, IcKey::Divide] {
             engine.on_key(key, &mut host).unwrap();
@@ -307,15 +307,76 @@ mod tests {
         app.on_enter();
         assert!(app.error.is_none());
 
-        let app = ScriptApp::new("syntax", test_sources::SYNTAX_ERROR);
-        assert!(app.error.is_some());
+        // The script only runs, and fails, once it is opened.
+        let mut app = ScriptApp::new("syntax", test_sources::SYNTAX_ERROR);
+        assert!(app.error.is_none());
         assert_eq!(app.name(), "syntax");
+        app.on_enter();
+        assert!(app.error.is_some());
+    }
+
+    #[test]
+    fn header_sets_menu_name_color_and_icon() {
+        let source = alloc::format!(
+            "-- title: Shapes\n-- color: #123456\n-- icon: {}\nfunction update() end",
+            test_sources::VM1_SAMPLE
+        );
+        let app = ScriptApp::new("shapes.lua", source);
+        assert_eq!(app.name(), "Shapes");
+        assert_eq!(app.color(), rgb8_hex(0x123456));
+        assert!(!app.requires_realtime_updates());
+        let AppIcon::Packed(icon) = app.icon() else {
+            panic!("expected the header's icon");
+        };
+        assert_eq!(icon.shapes(0, 0).unwrap().count(), 2);
+        // Drawing the icon as the menu does doesn't need the script to run.
+        app.icon()
+            .draw(&mut FakePlatform::default(), Vec2::new(50.0, 32.0), 3.0);
+        assert!(app.engine.is_none());
+    }
+
+    #[test]
+    fn scripts_without_an_icon_show_their_initials() {
+        let app = ScriptApp::new("plain.lua", "function update() end");
+        let AppIcon::Initials(name) = app.icon() else {
+            panic!("expected initials");
+        };
+        assert_eq!(name, "plain");
+        assert_eq!(app.color(), default_color("plain"));
+        app.icon()
+            .draw(&mut FakePlatform::default(), Vec2::new(50.0, 32.0), 3.0);
+
+        let app = ScriptApp::new("x.lua", "-- title: Ohm's Law");
+        assert!(matches!(app.icon(), AppIcon::Initials("Ohm's Law")));
+    }
+
+    #[test]
+    fn the_menu_does_not_run_scripts() {
+        // A top level that would fail still shows its header in the menu.
+        let app = ScriptApp::new("x.lua", "-- title: Broken\nerror('boom')");
+        assert_eq!(app.name(), "Broken");
+        assert!(app.error.is_none());
+    }
+
+    #[test]
+    fn bad_header_shows_defaults_then_an_error_when_opened() {
+        let source = "-- title: Bad Icon\n-- icon: VM1:AAAA!\nfunction update() end";
+        let mut app = ScriptApp::new("bad.lua", source);
+        assert_eq!(app.name(), "Bad Icon");
+        assert!(matches!(app.icon(), AppIcon::Initials("Bad Icon")));
+        assert!(app.error.is_none());
+
+        app.on_enter();
+        assert!(app.engine.is_none());
+        let error = app.error.as_deref().expect("an error once opened");
+        assert!(error.starts_with("header: icon:"), "{error}");
+        assert!(!app.requires_realtime_updates());
     }
 
     #[test]
     fn endless_loops_are_stopped() {
         let mut host = ScriptHost::new();
-        let (mut engine, _) = ActiveEngine::load(test_sources::ENDLESS_LOOP, &mut host).unwrap();
+        let mut engine = ActiveEngine::load(test_sources::ENDLESS_LOOP, &mut host).unwrap();
         let error = engine
             .update(&mut host, &mut FakePlatform::default())
             .unwrap_err();
