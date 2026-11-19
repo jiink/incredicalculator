@@ -271,7 +271,36 @@ impl<const N: usize> LineBuffer<N> {
         self.cursor = self.len;
     }
 
+    /// Function names the keypad inserts as a unit (followed by `(`). Longer
+    /// names come first so `asin(` is matched before `sin(`.
+    const FUNCTION_NAMES: [&'static [u8]; 7] =
+        [b"asin", b"acos", b"atan", b"sqrt", b"sin", b"cos", b"tan"];
+
+    /// Length of a `name(` function token ending right before the cursor, if any.
+    fn function_token_before_cursor(&self) -> Option<usize> {
+        let before = &self.data[..self.cursor];
+        let name_end = before.len().checked_sub(1)?;
+        if before[name_end] != b'(' {
+            return None;
+        }
+        let head = &before[..name_end];
+        Self::FUNCTION_NAMES
+            .iter()
+            .find(|name| head.ends_with(name))
+            .map(|name| name.len() + 1)
+    }
+
     pub fn backspace(&mut self) {
+        if let Some(token_len) = self.function_token_before_cursor() {
+            for _ in 0..token_len {
+                self.backspace_char();
+            }
+        } else {
+            self.backspace_char();
+        }
+    }
+
+    fn backspace_char(&mut self) {
         if self.cursor > 0 {
             for i in self.cursor..self.len {
                 self.data[i - 1] = self.data[i];
