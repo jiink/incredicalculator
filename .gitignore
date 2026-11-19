@@ -48,3 +48,6 @@ CACHEDIR.TAG
 **/*.txt
 .direnv/
 incredicalculator_web/pkg/
+
+# Windows "downloaded from internet" metadata created when copying files into WSL
+*:Zone.Identifier
