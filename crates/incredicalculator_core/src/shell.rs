@@ -411,52 +411,97 @@ impl IcShell {
     }
 
     fn draw_adjustable_readout(platform: &mut dyn IcPlatform, adjustable: Adjustable, value: u8) {
-        let center_x = CANVAS_WIDTH as i32 / 2;
+        let white = rgb8_hex(0xFFFFFF);
+        let black = rgb8_hex(0x000000);
+
+        // Outer panel: black with a white frame, spanning nearly the full width.
+        let panel_margin = 6;
+        let panel_h = 84;
         let center_y = CANVAS_HEIGHT as i32 / 2;
+        let panel_start = IVec2::new(panel_margin, center_y - panel_h / 2);
+        let panel_end = IVec2::new(CANVAS_WIDTH as i32 - panel_margin, center_y + panel_h / 2);
+        platform.draw_rectangle(panel_start, panel_end, white, 2, Some(black));
 
-        let bar_w = 194;
-        let bar_h = 24;
-        let stroke_w = 4;
-
-        let start = IVec2::new(center_x - bar_w / 2, center_y - bar_h / 2);
-        let end = IVec2::new(center_x + bar_w / 2, center_y + bar_h / 2);
-
-        platform.draw_rectangle_rounded(
-            start,
-            end,
-            rgb8_hex(0x000000),
-            stroke_w as u32,
-            Some(rgb8_hex(0x222222)),
-            6,
+        // Icon on the left. The vitmaps are ~16px and centered on their origin.
+        let icon_size = 56;
+        let icon_start = IVec2::new(panel_start.x + 8, center_y - icon_size / 2);
+        let icon_end = icon_start + IVec2::splat(icon_size);
+        let icon = match adjustable {
+            Adjustable::Brightness => &graphics::BRIGHTNESS,
+            Adjustable::Volume if value == 0 => &graphics::VOLUME_OFF,
+            Adjustable::Volume => &graphics::VOLUME_HIGH,
+        };
+        draw_vitmap(
+            platform,
+            icon,
+            0,
+            (icon_start + icon_end).as_vec2() / 2.0,
+            Vec2::splat(3.0),
         );
 
-        let inner_start_x = start.x + stroke_w;
-        let inner_start_y = start.y + stroke_w;
-        let max_inner_w = bar_w - (stroke_w * 2);
-        let inner_h = bar_h - (stroke_w * 2);
+        // Right-hand content column: [-]  NN%  [+] above the level bar.
+        let content_left = icon_end.x + 16;
+        let content_right = panel_end.x - 10;
+        let row_center_y = panel_start.y + 24;
+        let button_size = 22;
 
+        let draw_button = |platform: &mut dyn IcPlatform, left: i32, plus: bool| {
+            let start = IVec2::new(left, row_center_y - button_size / 2);
+            let end = start + IVec2::splat(button_size);
+            platform.draw_rectangle(start, end, white, 0, Some(white));
+            let mid = (start + end).as_vec2() / 2.0;
+            let arm = button_size as f32 / 2.0 - 4.0;
+            platform.draw_line(
+                Vec2::new(mid.x - arm, mid.y),
+                Vec2::new(mid.x + arm, mid.y),
+                black,
+                4,
+            );
+            if plus {
+                platform.draw_line(
+                    Vec2::new(mid.x, mid.y - arm),
+                    Vec2::new(mid.x, mid.y + arm),
+                    black,
+                    4,
+                );
+            }
+        };
+        draw_button(platform, content_left, false);
+        draw_button(platform, content_right - button_size, true);
+
+        let percentage = (value as u32 * 100 + 127) / 255;
+        let pct_text = alloc::format!("{}%", percentage);
+        let pct_style = TextStyle::new(9.0, white).align(HAlign::Center);
+        let (pct_ink_top, pct_ink_bottom) =
+            text_ink_bounds(&pct_text, pct_style.scale, pct_style.font).unwrap_or_default();
+        draw_text(
+            platform,
+            &pct_text,
+            Vec2::new(
+                (content_left + content_right) as f32 / 2.0,
+                row_center_y as f32 - (pct_ink_top + pct_ink_bottom) / 2.0,
+            ),
+            pct_style,
+        );
+
+        // Level bar: white outline, black trough, green fill.
+        let bar_stroke = 2;
+        let bar_start = IVec2::new(content_left, panel_end.y - 34);
+        let bar_end = IVec2::new(content_right, panel_end.y - 10);
+        platform.draw_rectangle(bar_start, bar_end, white, bar_stroke as u32, Some(black));
+
+        let inset = bar_stroke + 2;
+        let max_inner_w = (bar_end.x - bar_start.x) - inset * 2;
         let fill_w = (value as i32 * max_inner_w) / 255;
-
         if fill_w > 0 {
-            let fill_radius = 2.min(fill_w as u32 / 2);
-
-            platform.draw_rectangle_rounded(
-                IVec2::new(inner_start_x, inner_start_y),
-                IVec2::new(inner_start_x + fill_w, inner_start_y + inner_h),
-                rgb8_hex(0x000000),
+            platform.draw_rectangle(
+                IVec2::new(bar_start.x + inset, bar_start.y + inset),
+                IVec2::new(bar_start.x + inset + fill_w, bar_end.y - inset),
+                black,
                 0,
                 Some(rgb8_hex(0x6ABE30)),
-                fill_radius,
             );
         }
-
-        let _percentage = (value as i32 * 100) / 255;
-        draw_text_f(
-            platform,
-            format_args!("{:?}", adjustable),
-            Vec2::new(start.x as f32 + 3.0, start.y as f32 - 20.0),
-            TextStyle::new(5.0, rgb8_hex(0xFFFFFF)),
-        );
     }
 
     fn draw_startup_help(platform: &mut dyn IcPlatform) {
