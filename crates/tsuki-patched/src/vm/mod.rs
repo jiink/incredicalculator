@@ -2105,7 +2105,7 @@ pub async unsafe fn run<A>(
                         pc += 1;
                         let io_10 = ra_22;
 
-                        (*io_10).value_.i = (i1_1 as u64 * i2_1 as u64) as i64;
+                        (*io_10).value_.i = (i1_1 as u64).wrapping_mul(i2_1 as u64) as i64;
                         (*io_10).tt_ = (3 as c_int | (0 as c_int) << 4 as c_int) as u8;
                     } else {
                         let mut n1_1 = Float::default();

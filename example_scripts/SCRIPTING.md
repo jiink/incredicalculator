@@ -213,21 +213,23 @@ end
 
 ## Typing on the computer (USB keyboard)
 
-Plugged into a computer, the calculator is a USB keyboard with media keys as well as a drive, so a script can press keys there: a macropad, a shortcut pad, a media remote. See `macropad.lua`. The keyboard stays silent until a script presses something.
+Plugged into a computer, the calculator is a USB keyboard with media keys (and a gamepad, below) as well as a drive, so a script can press keys there: a macropad, a shortcut pad, a media remote. See `macropad.lua`. The keyboard stays silent until a script presses something.
+
+**Permission:** the first time an app session tries to press a key or move a gamepad control, the app asks whether to allow it. Press Enter (`=`) to allow or ⌫ to deny; the script doesn't see either press. Until it is allowed, and for the rest of the session once denied, presses are dropped: the functions below return `false` and change nothing. It is asked again each time the app is opened.
 
 | Function | Does |
 |---|---|
-| `hid_press(key)` | Holds `key` down on the computer until `hid_release`. Returns `false`, and presses nothing, when 6 keys (not counting modifiers) are already held. |
+| `hid_press(key)` | Holds `key` down on the computer until `hid_release`. Returns `false`, and presses nothing, when 6 keys (not counting modifiers) are already held or input isn't allowed. |
 | `hid_release(key)` | Lets `key` up. Does nothing if it isn't held. |
-| `hid_release_all()` | Lets every key the script holds up. |
+| `hid_release_all()` | Lets every key the script holds up, and every gamepad control go. |
 | `hid_connected()` | Whether a computer is connected to receive keys. Presses made while it isn't are dropped. |
 
 - **Combos and taps:** press the modifier, then the key; release in reverse. A press and release in the same call is a tap: `hid_press("ctrl") hid_press("c") hid_release("c") hid_release("ctrl")`.
 - **Holding:** to mirror a calculator key, press in `on_key` and release in `on_key_up`. The computer then repeats the key while it is held, as a keyboard would.
 - **Let go for you:** every key the script holds is released when you leave the app, when the script stops with an error, and when it reloads.
-- **Limits:** 6 keys plus modifiers at once, one media key at a time (pressing another replaces it), and at most 32 presses and releases per frame (more stops the script with an error).
+- **Limits:** 6 keys plus modifiers at once, one media key at a time (pressing another replaces it), and at most 32 presses and releases (keys and gamepad together) per frame (more stops the script with an error). Axis moves in a row count once.
 - **Layout:** keys are positions on a US keyboard. The computer's keyboard layout decides what they type, so `"z"` types `y` on a German layout.
-- **PC and web:** nothing is typed; each change is written to the log, like `hid: keyboard: left_ctrl c`.
+- **PC and web:** nothing is typed; each change is written to the log, like `hid: keyboard: left_ctrl c` or `hid: gamepad: a up lx=-1.00`.
 
 **Key names** (or pass a [HID usage](https://usb.org/document-library/hid-usage-tables-15) number: `hid_press(0x68)` for F13, `hid_press(0xE9, "media")` for a media key):
 
@@ -244,6 +246,24 @@ Plugged into a computer, the calculator is a USB keyboard with media keys as wel
 | Media | `"volume_up"`, `"volume_down"`, `"mute"`, `"play_pause"`, `"next_track"`, `"prev_track"`, `"stop"`, `"brightness_up"`, `"brightness_down"`, `"calculator"` |
 
 These names are for the computer's keys, so they differ from `on_key`'s calculator key names (the calculator's `"="` key is not `"equal"`).
+
+## Gamepad
+
+The same USB device is also a gamepad with 16 buttons, a d-pad, two sticks and two analog triggers, for games on the computer. See `gamepad.lua`. Everything above about permission, letting go and the per-frame limit applies to it too.
+
+| Function | Does |
+|---|---|
+| `gamepad_press(button)` | Holds `button` until `gamepad_release`. Returns `false` if input isn't allowed. |
+| `gamepad_release(button)` | Lets `button` go. |
+| `gamepad_axis(axis, value)` | Moves an axis and leaves it there. Sticks `"lx"`, `"ly"`, `"rx"`, `"ry"` take -1 to 1 (y is positive downwards); triggers `"lt"`, `"rt"` take 0 (let go) to 1 (pulled). Values outside are clamped. Returns `false` if input isn't allowed. |
+
+**Buttons:** a number 1–16, or a name: `"a"` 1, `"b"` 2, `"x"` 3, `"y"` 4, `"lb"` 5, `"rb"` 6, `"back"` (or `"select"`) 7, `"start"` 8, `"l3"` 9, `"r3"` 10, `"home"` 11. Games only see the numbers, so how they label them is up to the game or the computer's controller mapping. Also:
+- `"up"`, `"down"`, `"left"`, `"right"`: the d-pad (a hat switch). Opposite directions held together cancel out.
+- `"lt"`, `"rt"`: pull a trigger fully, as a button; releasing lets it go to 0.
+
+**What the computer sees:** the sticks are axes X/Y (left) and Z/Rz (right), the triggers are Rx/Ry, and the d-pad is a hat switch. A let-go trigger sits at the middle of its axis (0 in a browser gamepad tester) and a pulled one at the top (1), so mapping screens don't mistake a resting trigger for a held one.
+
+Holding an arrow as a stick: set the axis when the key goes down and back to 0 when it comes up, like `gamepad_axis("lx", -1)` and `gamepad_axis("lx", 0)`.
 
 ## Lua environment
 

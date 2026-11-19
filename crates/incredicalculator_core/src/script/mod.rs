@@ -52,8 +52,8 @@ pub const MAX_LOG_LINES: usize = 8;
 pub const MAX_INPUTS: usize = 12;
 /// Characters a `math_input` box holds.
 pub const INPUT_CAPACITY: usize = 40;
-/// Most HID key changes (`hid_press`/`hid_release`) a script may make in one
-/// frame, before they are sent.
+/// Most HID changes (keys, gamepad buttons and gamepad axes) a script may
+/// make in one frame, before they are sent. Consecutive axis moves count once.
 pub const MAX_HID_REPORTS: usize = 32;
 
 /// A `math_input` box: the number and expression entry the compiled apps
@@ -79,6 +79,21 @@ pub struct ScriptHost {
     pub hid_reports: Vec<HidReport>,
     /// Whether the computer can receive the script's key presses.
     pub hid_connected: bool,
+    /// Whether the person let this app session send keys and gamepad input.
+    pub hid_permission: HidPermission,
+}
+
+/// Whether a scripted app may send keys and gamepad input to the computer.
+/// Asked the first time it tries, once per app session.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum HidPermission {
+    /// The script hasn't tried yet.
+    #[default]
+    Unasked,
+    /// The script tried; the app is asking the person.
+    Asking,
+    Allowed,
+    Denied,
 }
 
 impl ScriptHost {
@@ -92,16 +107,63 @@ impl ScriptHost {
             hid: HidState::new(),
             hid_reports: Vec::new(),
             hid_connected: false,
+            hid_permission: HidPermission::Unasked,
         }
     }
 
     /// Queues a report for the computer, or fails once the per-call cap is
-    /// reached.
-    pub fn push_hid_report(&mut self, report: HidReport) -> Result<(), &'static str> {
+    /// reached. With `coalesce`, a gamepad report replaces a gamepad report
+    /// queued just before it, since only the latest axis position matters.
+    fn push_hid_report(&mut self, report: HidReport, coalesce: bool) -> Result<(), &'static str> {
+        if coalesce
+            && let (HidReport::Gamepad(_), Some(last @ HidReport::Gamepad(_))) =
+                (report, self.hid_reports.last_mut())
+        {
+            *last = report;
+            return Ok(());
+        }
         if self.hid_reports.len() >= MAX_HID_REPORTS {
-            return Err("too many hid_press/hid_release changes in one frame");
+            return Err("too many HID changes (keys, gamepad) in one frame");
         }
         self.hid_reports.push(report);
+        Ok(())
+    }
+
+    /// Applies `change` to the keys and gamepad the script holds, and queues
+    /// the report it returns, if the person allowed HID input. The first
+    /// change the computer would see starts asking them; until they allow
+    /// it, changes are dropped. Returns whether the change was made.
+    pub fn change_hid(
+        &mut self,
+        change: impl FnOnce(&mut HidState) -> Option<HidReport>,
+        coalesce: bool,
+    ) -> Result<bool, &'static str> {
+        let mut next = self.hid;
+        let Some(report) = change(&mut next) else {
+            self.hid = next;
+            return Ok(true);
+        };
+        match self.hid_permission {
+            HidPermission::Allowed => {
+                self.push_hid_report(report, coalesce)?;
+                self.hid = next;
+                Ok(true)
+            }
+            HidPermission::Unasked => {
+                self.hid_permission = HidPermission::Asking;
+                Ok(false)
+            }
+            HidPermission::Asking | HidPermission::Denied => Ok(false),
+        }
+    }
+
+    /// Lets every key and gamepad control the script holds go.
+    pub fn release_all_hid(&mut self) -> Result<(), &'static str> {
+        let mut hid = self.hid;
+        for report in hid.release_all() {
+            self.push_hid_report(report, false)?;
+        }
+        self.hid = hid;
         Ok(())
     }
 

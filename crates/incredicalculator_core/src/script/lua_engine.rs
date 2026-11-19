@@ -25,7 +25,7 @@ use super::{
 use crate::app::InputContext;
 use crate::graphics::draw_shapes;
 use crate::graphics::vm1::PackedVitmap;
-use crate::hid::{HidKey, MAX_MEDIA_USAGE};
+use crate::hid::{HidKey, MAX_MEDIA_USAGE, PadAxis, PadButton};
 use crate::input::{IcKey, KeyMode, KeyState};
 use crate::platform::{IcPlatform, rgb8_hex};
 use crate::text::{HAlign, TextStyle, draw_text, text_width};
@@ -305,6 +305,9 @@ fn register_api(lua: &Lua<Host>) {
     g.set_str_key("hid_release", fp!(hid_release));
     g.set_str_key("hid_release_all", fp!(hid_release_all));
     g.set_str_key("hid_connected", fp!(hid_connected));
+    g.set_str_key("gamepad_press", fp!(gamepad_press));
+    g.set_str_key("gamepad_release", fp!(gamepad_release));
+    g.set_str_key("gamepad_axis", fp!(gamepad_axis));
 
     // Standard functions tsuki doesn't implement yet.
     if let Value::Table(table) = g.get_str_key("table") {
@@ -453,41 +456,93 @@ fn hid_key(cx: &Cx) -> Result<HidKey, Box<dyn Error>> {
 }
 
 /// `hid_press(key)`: holds a key down on the computer until `hid_release`.
-/// Returns false when six keys (besides modifiers) are already held.
+/// Returns false when six keys (besides modifiers) are already held, or the
+/// person hasn't allowed (or denied) the app's HID input.
 fn hid_press(cx: Cx) -> FnResult {
     let key = hid_key(&cx)?;
     let pressed = {
         let mut host = cx.associated_data().get();
-        match host.hid.press(key) {
-            Ok(Some(report)) => host.push_hid_report(report).map(|()| true),
-            Ok(None) => Ok(true),
-            Err(_) => Ok(false),
-        }
+        let mut full = false;
+        let changed = host.change_hid(
+            |hid| {
+                hid.press(key).unwrap_or_else(|_| {
+                    full = true;
+                    None
+                })
+            },
+            false,
+        )?;
+        changed && !full
     };
-    cx.push(pressed?)?;
+    cx.push(pressed)?;
     Ok(cx.into())
 }
 
 /// `hid_release(key)`: lets a key up on the computer.
 fn hid_release(cx: Cx) -> FnResult {
     let key = hid_key(&cx)?;
-    let mut host = cx.associated_data().get();
-    if let Some(report) = host.hid.release(key) {
-        host.push_hid_report(report)?;
-    }
-    drop(host);
+    cx.associated_data()
+        .get()
+        .change_hid(|hid| hid.release(key), false)?;
     Ok(cx.into())
 }
 
-/// `hid_release_all()`: lets every key the script holds up.
+/// `hid_release_all()`: lets every key and gamepad control the script holds
+/// go.
 fn hid_release_all(cx: Cx) -> FnResult {
-    let mut host = cx.associated_data().get();
-    let mut hid = host.hid;
-    for report in hid.release_all() {
-        host.push_hid_report(report)?;
+    cx.associated_data().get().release_all_hid()?;
+    Ok(cx.into())
+}
+
+/// The gamepad control named by argument 1: a name like `"a"`, `"start"`,
+/// `"up"` or `"lt"`, or a button number 1-16.
+fn pad_button(cx: &Cx) -> Result<PadButton, Box<dyn Error>> {
+    let arg = cx.arg(1);
+    if let Some(number) = arg.as_int(false) {
+        return PadButton::from_number(number)
+            .ok_or_else(|| arg.error(format!("gamepad buttons are 1-16, not {number}")));
     }
-    host.hid = hid;
-    drop(host);
+    let name = arg.to_utf8()?;
+    PadButton::from_name(name)
+        .ok_or_else(|| arg.error(format!("unknown gamepad button \"{name}\"")))
+}
+
+/// `gamepad_press(button)`: holds a gamepad button down until
+/// `gamepad_release`. Returns false if the person hasn't allowed (or denied)
+/// the app's HID input.
+fn gamepad_press(cx: Cx) -> FnResult {
+    let button = pad_button(&cx)?;
+    let pressed = cx
+        .associated_data()
+        .get()
+        .change_hid(|hid| hid.pad_press(button), false)?;
+    cx.push(pressed)?;
+    Ok(cx.into())
+}
+
+/// `gamepad_release(button)`: lets a gamepad button go.
+fn gamepad_release(cx: Cx) -> FnResult {
+    let button = pad_button(&cx)?;
+    cx.associated_data()
+        .get()
+        .change_hid(|hid| hid.pad_release(button), false)?;
+    Ok(cx.into())
+}
+
+/// `gamepad_axis(axis, value)`: moves a stick axis (`"lx"`, `"ly"`, `"rx"`,
+/// `"ry"`) to -1..1 or a trigger (`"lt"`, `"rt"`) to 0..1. It stays there
+/// until moved again.
+fn gamepad_axis(cx: Cx) -> FnResult {
+    let arg = cx.arg(1);
+    let name = arg.to_utf8()?;
+    let axis = PadAxis::from_name(name)
+        .ok_or_else(|| arg.error(format!("unknown gamepad axis \"{name}\"")))?;
+    let value = num(&cx, 2)?;
+    let moved = cx
+        .associated_data()
+        .get()
+        .change_hid(|hid| hid.pad_axis(axis, value), true)?;
+    cx.push(moved)?;
     Ok(cx.into())
 }
 

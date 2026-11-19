@@ -8,15 +8,21 @@ use crate::app::{AppIcon, IcApp, InputContext};
 use crate::audio_engine::AudioEngine;
 use crate::graphics::vm1::PackedVitmap;
 use crate::input::IcKey;
-use crate::platform::{CANVAS_WIDTH, IcPlatform, rgb8_hex};
-use crate::script::{ActiveEngine, ScriptEngine, ScriptHost, ScriptMeta};
-use crate::text::{TextStyle, draw_text, wrap_text};
+use crate::platform::{CANVAS_HEIGHT, CANVAS_WIDTH, IcPlatform, rgb8_hex};
+use crate::script::{ActiveEngine, HidPermission, ScriptEngine, ScriptHost, ScriptMeta};
+use crate::text::{HAlign, TextStyle, draw_text, wrap_text};
 
 /// Card colors for scripts that don't pick their own, chosen by name hash.
 const DEFAULT_COLORS: [u32; 6] = [0x2A6F97, 0x6A4C93, 0x1B998B, 0xC05746, 0x8D6A9F, 0x3D5A80];
 
 const ERROR_TEXT_SIZE: f32 = 5.0;
 const ERROR_MARGIN: f32 = 8.0;
+
+/// The HID permission prompt's box, centered on the screen.
+const PROMPT_WIDTH: f32 = 280.0;
+const PROMPT_HEIGHT: f32 = 150.0;
+const PROMPT_PADDING: f32 = 12.0;
+const PROMPT_TEXT_SIZE: f32 = 5.0;
 
 /// An app whose behavior comes from a script, run by the engine chosen at
 /// compile time.
@@ -155,6 +161,63 @@ impl ScriptApp {
             TextStyle::new(ERROR_TEXT_SIZE, rgb8_hex(0xC0A0A0)),
         );
     }
+
+    /// Asks whether the script may send keys and gamepad input, over
+    /// whatever it drew.
+    fn draw_hid_prompt(&self, platform: &mut dyn IcPlatform) {
+        let left = (CANVAS_WIDTH as f32 - PROMPT_WIDTH) / 2.0;
+        let top = (CANVAS_HEIGHT as f32 - PROMPT_HEIGHT) / 2.0;
+        platform.draw_rectangle_rounded(
+            glam::IVec2::new(left as i32, top as i32),
+            glam::IVec2::new((left + PROMPT_WIDTH) as i32, (top + PROMPT_HEIGHT) as i32),
+            rgb8_hex(0xFFB040),
+            3,
+            Some(rgb8_hex(0x1E1A12)),
+            8,
+        );
+        let center = CANVAS_WIDTH as f32 / 2.0;
+        draw_text(
+            platform,
+            "Allow USB input?",
+            Vec2::new(center, top + 26.0),
+            TextStyle::new(7.0, rgb8_hex(0xFFD080))
+                .thickness(3.0)
+                .align(HAlign::Center),
+        );
+        let message = alloc::format!(
+            "\"{}\" wants to press keys or gamepad buttons on the connected computer.",
+            self.name
+        );
+        let wrapped = wrap_text(
+            &message,
+            PROMPT_WIDTH - 2.0 * PROMPT_PADDING,
+            PROMPT_TEXT_SIZE,
+        );
+        draw_text(
+            platform,
+            &wrapped,
+            Vec2::new(center, top + 54.0),
+            TextStyle::new(PROMPT_TEXT_SIZE, rgb8_hex(0xFFFFFF)).align(HAlign::Center),
+        );
+        let bottom = top + PROMPT_HEIGHT - PROMPT_PADDING;
+        let quarter = PROMPT_WIDTH / 4.0;
+        draw_text(
+            platform,
+            "Enter: Allow",
+            Vec2::new(left + quarter, bottom),
+            TextStyle::new(PROMPT_TEXT_SIZE, rgb8_hex(0x80FF90))
+                .thickness(2.5)
+                .align(HAlign::Center),
+        );
+        draw_text(
+            platform,
+            "Backspace: Deny",
+            Vec2::new(left + 3.0 * quarter, bottom),
+            TextStyle::new(PROMPT_TEXT_SIZE, rgb8_hex(0xFF9080))
+                .thickness(2.5)
+                .align(HAlign::Center),
+        );
+    }
 }
 
 impl IcApp for ScriptApp {
@@ -188,6 +251,24 @@ impl IcApp for ScriptApp {
     }
 
     fn on_key(&mut self, key: IcKey, ctx: &InputContext) {
+        if self.host.hid_permission == HidPermission::Asking {
+            // The prompt takes every key until it is answered; the script
+            // doesn't hear these presses, nor their releases.
+            let answer = match key {
+                IcKey::Equals => HidPermission::Allowed,
+                IcKey::Backspace => HidPermission::Denied,
+                _ => return,
+            };
+            self.host.hid_permission = answer;
+            let verdict = if answer == HidPermission::Allowed {
+                "allowed"
+            } else {
+                "denied"
+            };
+            self.host
+                .log(&alloc::format!("USB keyboard/gamepad input {verdict}"));
+            return;
+        }
         self.pressed[key as usize] = true;
         self.read_keys(ctx);
         self.run(|engine, host| engine.on_key(key, host));
@@ -221,6 +302,9 @@ impl IcApp for ScriptApp {
 
         if let Some(error) = &self.error {
             self.draw_error(platform, error);
+        }
+        if self.host.hid_permission == HidPermission::Asking {
+            self.draw_hid_prompt(platform);
         }
     }
 }

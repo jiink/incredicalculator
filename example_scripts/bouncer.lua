@@ -62,7 +62,9 @@
 --   text_width(string, size)
 -- Input and time: is_down(key), millis().  print(...) writes to the log.
 -- Typing on the computer over USB: hid_press(key), hid_release(key),
---   hid_release_all(), hid_connected(); see macropad.lua.
+--   hid_release_all(), hid_connected(); see macropad.lua. As a gamepad:
+--   gamepad_press(button), gamepad_release(button), gamepad_axis(axis,
+--   value); see gamepad.lua. The app asks before sending either.
 -- Also available: Lua's math, string and table libraries, including
 -- string.format("%.3g", x) and friends.
 

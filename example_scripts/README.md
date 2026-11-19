@@ -25,6 +25,11 @@ moves around with the same keys as the built-in apps.
 plugged into, with `hid_press`/`hid_release` and the `on_key_up` hook. Edit its
 `PAD` table to make your own.
 
+`gamepad.lua` makes the calculator a USB gamepad: keys hold buttons, tilt
+the left stick (or press the d-pad) and pull the triggers, with
+`gamepad_press`/`gamepad_release`/`gamepad_axis`. Like any app that sends
+input, it asks first: press Enter (`=`) to allow it.
+
 `vitmap.lua` is the smallest use of `vitmap`: it pastes in a picture exported
 from the vitmap editor and draws it twice. The same picture is its menu icon,
 through the `icon:` field of its header comment.

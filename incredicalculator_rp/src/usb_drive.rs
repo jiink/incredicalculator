@@ -1,7 +1,8 @@
 //! Shares the script drive with a computer as a USB mass storage device
 //! whenever the calculator is plugged in, which it can tell from VBUS. The
-//! same USB device is also a keyboard with media keys, which scripted apps
-//! type on through [`send_hid_report`]; it stays silent until they do.
+//! same USB device is also a keyboard with media keys and a gamepad, which
+//! scripted apps use through [`send_hid_report`]; it stays silent until
+//! they do.
 //!
 //! Unplugged, USB is completely off: its PLL and clock only run during a
 //! session, which also holds the system clock at full speed (that's fine on
@@ -35,7 +36,7 @@ use embassy_usb::driver::{Endpoint, EndpointError, EndpointIn, EndpointOut};
 use embassy_usb::{Builder, Handler};
 use flash_disk::scsi::{self, Cbw, CswStatus, Data, Scsi};
 use flash_disk::{BlockDevice, SECTOR_SIZE};
-use incredicalculator_core::hid::{self as ic_hid, HidReport, MAX_HELD_KEYS};
+use incredicalculator_core::hid::{self as ic_hid, GamepadReport, HidReport, MAX_HELD_KEYS};
 
 use crate::power;
 use crate::script_drive::{self, with_disk};
@@ -56,8 +57,9 @@ const IDLE_FLUSH_DELAY: Duration = Duration::from_millis(500);
 const USB_VID: u16 = 0x1209;
 const USB_PID: u16 = 0x0001;
 /// Raised when the device's interfaces change (the keyboard was added in
-/// 0x0020), so computers don't reuse descriptors cached for the old ones.
-const USB_DEVICE_RELEASE: u16 = 0x0020;
+/// 0x0020, the gamepad in 0x0021, centered triggers in 0x0022), so computers
+/// don't reuse descriptors cached for the old ones.
+const USB_DEVICE_RELEASE: u16 = 0x0022;
 /// How often the computer collects key reports.
 const HID_POLL_MS: u8 = 1;
 /// Key reports waiting to go out. A script sends at most 32 per frame.
@@ -73,25 +75,27 @@ static PLUGGED_IN: AtomicBool = AtomicBool::new(false);
 static CONNECTED: AtomicBool = AtomicBool::new(false);
 /// Key reports for the computer, oldest first.
 static HID_REPORTS: Channel<CriticalSectionRawMutex, HidReport, HID_QUEUE_LEN> = Channel::new();
-/// The newest keyboard and media reports queued, resent if the queue
-/// overflows so no key is left held down.
-static LATEST_HID: Mutex<CriticalSectionRawMutex, Cell<[HidReport; 2]>> = Mutex::new(Cell::new([
+/// The newest keyboard, media and gamepad reports queued, resent if the
+/// queue overflows so no key is left held down. Indexed by
+/// [`HidReport::kind_index`].
+static LATEST_HID: Mutex<CriticalSectionRawMutex, Cell<[HidReport; 3]>> = Mutex::new(Cell::new([
     HidReport::Keyboard {
         modifiers: 0,
         keys: [0; MAX_HELD_KEYS],
     },
     HidReport::Media(0),
+    HidReport::Gamepad(GamepadReport::NEUTRAL),
 ]));
 
-/// Queues a keyboard or media-key report for the computer. Dropped when no
-/// computer is connected, since it would only see stale keys later.
+/// Queues a keyboard, media-key or gamepad report for the computer. Dropped
+/// when no computer is connected, since it would only see stale keys later.
 pub fn send_hid_report(report: HidReport) {
     if !connected() {
         return;
     }
     let latest = LATEST_HID.lock(|latest| {
         let mut reports = latest.get();
-        reports[matches!(report, HidReport::Media(_)) as usize] = report;
+        reports[report.kind_index()] = report;
         latest.set(reports);
         reports
     });
