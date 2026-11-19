@@ -198,6 +198,10 @@ impl ModifierKeys {
         self.super_key = ModifierLatch::default();
     }
 
+    pub fn clear_super_latch(&mut self) {
+        self.super_key = ModifierLatch::default();
+    }
+
     pub fn set_mode(&mut self, mode: KeyMode) {
         if self.mode != mode {
             self.mode = mode;

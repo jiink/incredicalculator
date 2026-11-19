@@ -794,32 +794,35 @@ impl IcShell {
                 continue;
             }
             let mut input_consumed_by_shell: bool = false;
-            if ctx.is_super() {
-                match key {
-                    IcKey::Num3 => {
-                        self.adjusting_something = Some(Adjustable::Brightness);
-                        input_consumed_by_shell = true;
-                    }
-                    IcKey::Num9 => {
-                        self.adjusting_something = Some(Adjustable::Volume);
-                        input_consumed_by_shell = true;
-                    }
-                    _ => (),
-                }
-            } else if let Some(adjustable) = self.adjusting_something {
-                let adjust_amt = 32;
+            let adjust_amt = match key {
+                IcKey::Minus => -32,
+                IcKey::Plus => 32,
+                _ => 0,
+            };
+            if let Some(adjustable) = self.adjusting_something
+                && adjust_amt != 0
+            {
+                // +/- adjust even with Super engaged (otherwise they'd be F2/F3), and
+                // consume a latched Super so it doesn't linger after adjusting.
+                Self::adjust_adjustable(platform, adjustable, adjust_amt);
+                self.modifiers.clear_super_latch();
                 input_consumed_by_shell = true;
-                match key {
-                    IcKey::Minus => {
-                        Self::adjust_adjustable(platform, adjustable, -adjust_amt);
-                    }
-                    IcKey::Plus => {
-                        Self::adjust_adjustable(platform, adjustable, adjust_amt);
-                    }
-                    _ => {
-                        self.adjusting_something = None;
-                    }
+            } else if ctx.is_super() {
+                let adjustable = match key {
+                    IcKey::Num3 => Some(Adjustable::Brightness),
+                    IcKey::Num9 => Some(Adjustable::Volume),
+                    _ => None,
+                };
+                if adjustable.is_some() {
+                    self.adjusting_something = adjustable;
+                    // In Toggle mode Super would stay latched; release it so the
+                    // user doesn't press Super again (which would dismiss the UI).
+                    self.modifiers.clear_super_latch();
+                    input_consumed_by_shell = true;
                 }
+            } else if self.adjusting_something.is_some() {
+                input_consumed_by_shell = true;
+                self.adjusting_something = None;
             }
             self.held_by_shell[i] |= input_consumed_by_shell;
             if let Some(app_idx) = self.active_app_idx {
