@@ -414,7 +414,7 @@ impl IcShell {
         let white = rgb8_hex(0xFFFFFF);
         let black = rgb8_hex(0x000000);
 
-        // Outer panel: black with a white frame, spanning nearly the full width.
+        // Outer panel
         let panel_margin = 6;
         let panel_h = 84;
         let center_y = CANVAS_HEIGHT as i32 / 2;
@@ -422,7 +422,6 @@ impl IcShell {
         let panel_end = IVec2::new(CANVAS_WIDTH as i32 - panel_margin, center_y + panel_h / 2);
         platform.draw_rectangle(panel_start, panel_end, white, 2, Some(black));
 
-        // Icon on the left. The vitmaps are ~16px and centered on their origin.
         let icon_size = 56;
         let icon_start = IVec2::new(panel_start.x + 8, center_y - icon_size / 2);
         let icon_end = icon_start + IVec2::splat(icon_size);
@@ -439,7 +438,7 @@ impl IcShell {
             Vec2::splat(3.0),
         );
 
-        // Right-hand content column: [-]  NN%  [+] above the level bar.
+        // Right-hand content column
         let content_left = icon_end.x + 16;
         let content_right = panel_end.x - 10;
         let row_center_y = panel_start.y + 24;
@@ -484,7 +483,7 @@ impl IcShell {
             pct_style,
         );
 
-        // Level bar: white outline, black trough, green fill.
+        // Level bar
         let bar_stroke = 2;
         let bar_start = IVec2::new(content_left, panel_end.y - 34);
         let bar_end = IVec2::new(content_right, panel_end.y - 10);
@@ -712,6 +711,7 @@ impl IcShell {
             && (self.key_states[IcKey::Super as usize].just_pressed
                 || self.key_states[IcKey::Shift as usize].just_pressed);
         if menu_chord {
+            self.adjusting_something = None;
             self.modifiers.clear_latches();
             effective_states[IcKey::Super as usize].is_down = false;
             effective_states[IcKey::Shift as usize].is_down = false;
