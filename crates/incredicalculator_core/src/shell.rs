@@ -553,10 +553,10 @@ impl IcShell {
             None,
         );
 
-        let icon_position = Vec2::new((CANVAS_WIDTH - 18) as f32, (CANVAS_HEIGHT - 18) as f32);
+        let icon_position = Vec2::new((CANVAS_WIDTH - 18) as f32, 18.0);
         platform.draw_rectangle(
             icon_position.as_ivec2() - IVec2::splat(16),
-            IVec2::new(CANVAS_WIDTH as i32, CANVAS_HEIGHT as i32),
+            IVec2::new(CANVAS_WIDTH as i32, icon_position.y as i32 + 16),
             rgb8_hex(0xffffff),
             0,
             Some(color),

@@ -669,9 +669,6 @@ impl CalcEngine for ProgrammerEngine {
             KeyAction::Enter => {
                 self.binary_widget_set_bit(self.binary_selection_idx, buffer, current_result);
             }
-            KeyAction::Backspace => {
-                self.set_bit_state(false, buffer, current_result);
-            }
             _ => return false,
         }
         true
@@ -1029,6 +1026,10 @@ impl Calculator {
 
     fn apply_action(&mut self, act: KeyAction) {
         if self.focused_ui == FocusUi::Widget {
+            if act == KeyAction::Backspace {
+                self.focused_ui = FocusUi::Equation;
+                return;
+            }
             let current_result_str =
                 core::str::from_utf8(&self.current_result[..self.current_result_len])
                     .unwrap_or("0");
