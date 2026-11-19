@@ -78,6 +78,7 @@ pub struct IcShell {
     last_active_app_idx: Option<usize>,
     selector_page: usize,
     selector_hints_started_at: Option<u64>,
+    selector_pressed: Option<IcKey>,
     settings_open: bool,
     settings_menu: SettingsMenu,
     settings_loaded: bool,
@@ -117,6 +118,7 @@ impl IcShell {
             last_active_app_idx: None,
             selector_page: 0,
             selector_hints_started_at: None,
+            selector_pressed: None,
             settings_open: false,
             settings_menu: SettingsMenu::new(),
             settings_loaded: false,
@@ -644,17 +646,59 @@ impl IcShell {
         cards
     }
 
+    fn selector_action(&self, key: IcKey) -> Option<SelectorAction> {
+        self.selector_cards()
+            .iter()
+            .find(|card| card.button == key)
+            .map(|card| card.action)
+            .filter(|action| !matches!(action, SelectorAction::None))
+    }
+
+    fn run_selector_action(&mut self, key: IcKey) {
+        match self.selector_action(key) {
+            Some(SelectorAction::Launch(idx)) => {
+                self.active_app_idx = Some(idx);
+                self.apps[idx].on_enter();
+            }
+            Some(SelectorAction::PreviousPage) if self.selector_page > 0 => {
+                self.selector_page -= 1;
+            }
+            Some(SelectorAction::NextPage)
+                if (self.selector_page + 1) * APPS_PER_PAGE < self.apps.len() =>
+            {
+                self.selector_page += 1;
+            }
+            Some(SelectorAction::OpenSettings) => {
+                self.settings_open = true;
+                self.settings_menu.open();
+            }
+            _ => {}
+        }
+    }
+
     fn draw_app_selector(&self, platform: &mut dyn IcPlatform, hint_opacity: Option<u8>) {
         platform.clear(rgb8_hex(0x000000));
-        let page_count = (self.apps.len() + APPS_PER_PAGE - 1) / APPS_PER_PAGE;
-        draw_text_f(
-            platform,
-            format_args!("Apps - Page {} of {}", self.selector_page + 1, page_count),
-            Vec2::new(5.0, 12.0),
-            TextStyle::new(6.0, rgb8_hex(0xffffff)),
-        );
-
         let cards = self.selector_cards();
+        let pressed_card = self
+            .selector_pressed
+            .and_then(|key| cards.iter().find(|card| card.button == key));
+        if let Some(card) = pressed_card {
+            draw_text(
+                platform,
+                card.name,
+                Vec2::new(5.0, 12.0),
+                TextStyle::new(6.0, rgb8_hex(0xffffff)),
+            );
+        } else {
+            let page_count = (self.apps.len() + APPS_PER_PAGE - 1) / APPS_PER_PAGE;
+            draw_text_f(
+                platform,
+                format_args!("Apps - Page {} of {}", self.selector_page + 1, page_count),
+                Vec2::new(5.0, 12.0),
+                TextStyle::new(6.0, rgb8_hex(0xffffff)),
+            );
+        }
+
         for (index, card) in cards.iter().enumerate() {
             let column = (index % 3) as i32;
             let row = (index / 3) as i32;
@@ -663,6 +707,14 @@ impl IcShell {
             let is_empty = matches!(card.action, SelectorAction::None) && index < APPS_PER_PAGE;
             if is_empty {
                 continue;
+            }
+            if self.selector_pressed == Some(card.button) {
+                let white = rgb8_hex(0xffffff);
+                let black = rgb8_hex(0x000000);
+                let ring = IVec2::splat(10);
+                platform.draw_rectangle_rounded(start - ring, end + ring, white, 0, Some(white), 7);
+                let gap = IVec2::splat(5);
+                platform.draw_rectangle_rounded(start - gap, end + gap, black, 0, Some(black), 6);
             }
             platform.draw_rectangle_rounded(start, end, rgb8_hex(0xffffff), 0, Some(card.color), 5);
             card.icon.draw(
@@ -779,31 +831,9 @@ impl IcShell {
                         self.settings_open = false;
                         self.settings_menu.close(platform);
                     }
-                } else {
-                    let action = self
-                        .selector_cards()
-                        .iter()
-                        .find(|card| card.button == key)
-                        .map(|card| card.action);
-                    match action {
-                        Some(SelectorAction::Launch(idx)) => {
-                            self.active_app_idx = Some(idx);
-                            self.apps[idx].on_enter();
-                        }
-                        Some(SelectorAction::PreviousPage) if self.selector_page > 0 => {
-                            self.selector_page -= 1;
-                        }
-                        Some(SelectorAction::NextPage)
-                            if (self.selector_page + 1) * APPS_PER_PAGE < self.apps.len() =>
-                        {
-                            self.selector_page += 1;
-                        }
-                        Some(SelectorAction::OpenSettings) => {
-                            self.settings_open = true;
-                            self.settings_menu.open();
-                        }
-                        _ => {}
-                    }
+                } else if self.selector_action(key).is_some() {
+                    // Highlight now; the action runs on release.
+                    self.selector_pressed = Some(key);
                 }
             }
         }
@@ -816,6 +846,18 @@ impl IcShell {
                     self.apps[app_idx].on_key_up(key, &ctx);
                 }
             }
+        }
+        if backspace_closes_menu
+            || menu_chord
+            || self.active_app_idx.is_some()
+            || self.settings_open
+        {
+            self.selector_pressed = None;
+        } else if let Some(key) = self.selector_pressed
+            && self.key_states[key as usize].just_released
+        {
+            self.selector_pressed = None;
+            self.run_selector_action(key);
         }
         if backspace_closes_menu || menu_chord {
             if let Some(idx) = self.active_app_idx {
