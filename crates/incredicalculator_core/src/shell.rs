@@ -705,10 +705,11 @@ impl IcShell {
             let start = IVec2::new(4 + column * 106, 27 + row * 69);
             let end = start + IVec2::new(100, 64);
             let is_empty = matches!(card.action, SelectorAction::None) && index < APPS_PER_PAGE;
-            if is_empty {
+            let is_pressed = self.selector_pressed == Some(card.button);
+            if is_empty || (pressed_card.is_some() && !is_pressed) {
                 continue;
             }
-            if self.selector_pressed == Some(card.button) {
+            if is_pressed {
                 let white = rgb8_hex(0xffffff);
                 let black = rgb8_hex(0x000000);
                 let ring = IVec2::splat(10);
@@ -722,7 +723,7 @@ impl IcShell {
                 Vec2::new(start.x as f32 + 50.0, start.y as f32 + 32.0),
                 3.0,
             );
-            if let Some(opacity) = hint_opacity {
+            if let Some(opacity) = hint_opacity.filter(|_| pressed_card.is_none()) {
                 let hint_start = start;
                 let shadow_color = mix_colors(rgb8_hex(0x000000), card.color, opacity);
                 draw_text_f(

@@ -1435,7 +1435,10 @@ impl Calculator {
 
 impl IcApp for Calculator {
     fn name(&self) -> &str {
-        "Programmer & Scientific"
+        match self.engine_mode {
+            EngineMode::Programmer => "Programmer Calculator",
+            EngineMode::Scientific => "Scientific Calculator",
+        }
     }
 
     fn icon(&self) -> crate::app::AppIcon<'_> {
