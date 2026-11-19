@@ -131,9 +131,15 @@ pub fn mount_or_format() {
     let result = with_disk(|disk| match fat::check(disk) {
         Err(FatError::NotFat) => {
             info!("script drive: no filesystem, formatting");
-            let (name, source) = incredicalculator_core::script::EXAMPLE_SCRIPT;
+            #[cfg(feature = "scripting")]
+            let files = {
+                let (name, source) = incredicalculator_core::script::EXAMPLE_SCRIPT;
+                [(name, source.as_bytes())]
+            };
+            #[cfg(not(feature = "scripting"))]
+            let files: [(&str, &[u8]); 0] = [];
             let volume_id = embassy_time::Instant::now().as_ticks() as u32;
-            fat::format(disk, volume_id, &[(name, source.as_bytes())])
+            fat::format(disk, volume_id, &files)
                 .and_then(|()| disk.release_cache().map_err(FatError::from))
                 .and_then(|()| fat::check(disk))
         }
