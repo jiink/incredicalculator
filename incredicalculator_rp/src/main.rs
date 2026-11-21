@@ -4,6 +4,7 @@
 extern crate alloc;
 
 mod backlight;
+mod fuel_gauge;
 mod memory;
 mod power;
 mod script_drive;
@@ -16,7 +17,7 @@ use core::{fmt, mem};
 use defmt::*;
 use embassy_embedded_hal::shared_bus::asynch::spi::SpiDeviceWithConfig;
 use embassy_executor::{Executor, InterruptExecutor, Spawner};
-use embassy_futures::select::{Either, Either3, select, select3, select4};
+use embassy_futures::select::{Either, Either3, Either4, select, select3, select4};
 use embassy_rp::bind_interrupts;
 use embassy_rp::flash::Flash;
 use embassy_rp::gpio::{Input, Level, Output, Pull};
@@ -41,6 +42,7 @@ use embedded_graphics::pixelcolor::{IntoStorage, Rgb565};
 use embedded_graphics::prelude::*;
 use embedded_graphics::primitives::PrimitiveStyleBuilder;
 use embedded_graphics::text::Text;
+use fuel_gauge::FuelGauge;
 use glam::{IVec2, Vec2};
 use incredicalculator_core::input::IcKey;
 use incredicalculator_core::platform::{IcPlatform, SETTINGS_STORAGE_LEN, rgb8_hex};
@@ -50,7 +52,6 @@ use lcd_async::models::ST7789;
 use lcd_async::options::{ColorInversion, Orientation, Rotation};
 use lcd_async::raw_framebuf::RawFrameBuf;
 use lcd_async::{Builder, Display};
-use max170xx::Max17048;
 use rgb::RGB8;
 use settings_storage::SettingsStorage;
 use static_cell::{ConstStaticCell, StaticCell};
@@ -103,9 +104,9 @@ static mut CORE1_STACK: Stack<CORE1_STACK_SIZE> = Stack::new();
 static EXECUTOR1: StaticCell<Executor> = StaticCell::new();
 static INPUT_BUFFER: Channel<CriticalSectionRawMutex, InputBufferEvent, 32> = Channel::new();
 
-type BoardI2c =
-    embassy_rp::i2c::I2c<'static, embassy_rp::peripherals::I2C0, embassy_rp::i2c::Blocking>;
 static BATTERY_SOC: AtomicI32 = AtomicI32::new(-1);
+/// Raised whenever [`BATTERY_SOC`] changes, so the UI redraws the battery icon.
+static BATTERY_CHANGED: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 
 bind_interrupts!(struct Irqs {
     PIO0_IRQ_0 => InterruptHandler<PIO0>;
@@ -1489,9 +1490,10 @@ async fn main(spawner: Spawner) {
     };
     FREE_FRAME_BUFFERS.send(spare_canvas).await;
 
-    // This board uses a MAX17048 battery fuel gauge
-    let fuel_gauge: Max17048<BoardI2c> = Max17048::new(board_i2c);
-    unwrap!(spawner.spawn(battery_task(fuel_gauge)));
+    // This board uses a MAX17048 battery fuel gauge, whose open-drain ALRT
+    // output is on GPIO23.
+    let fuel_gauge_alert_n = Input::new(p.PIN_23, Pull::Up);
+    unwrap!(spawner.spawn(battery_task(FuelGauge::new(board_i2c), fuel_gauge_alert_n)));
     interrupt::SWI_IRQ_0.set_priority(Priority::P2);
     let audio_spawner = AUDIO_EXECUTOR.start(interrupt::SWI_IRQ_0);
     unwrap!(audio_spawner.spawn(audio_task(i2s, audio_shutdown_n)));
@@ -1576,19 +1578,25 @@ async fn main(spawner: Spawner) {
         let (first_input, mut audio_buffer, realtime_tick) = if screen_dirty {
             (None, None, false)
         } else {
-            match select3(
+            match select4(
                 wait_for_work,
                 wait_for_backlight,
                 usb_drive::wait_for_change(),
+                BATTERY_CHANGED.wait(),
             )
             .await
             {
-                Either3::First(work) => work,
-                Either3::Second(()) => (None, None, false),
-                Either3::Third(()) => {
+                Either4::First(work) => work,
+                Either4::Second(()) => (None, None, false),
+                Either4::Third(()) => {
                     // The computer saved to the drive, or the cable went in
                     // or out: reload scripts and redraw (charging indicator).
                     ic_rp_platform.scripts_version = ic_rp_platform.scripts_version.wrapping_add(1);
+                    screen_dirty = true;
+                    (None, None, false)
+                }
+                Either4::Fourth(()) => {
+                    // The battery level changed: redraw its icon.
                     screen_dirty = true;
                     (None, None, false)
                 }
@@ -1772,18 +1780,44 @@ async fn display_task(mut display: LcdDisplay) {
     }
 }
 
+/// Publishes the state of charge, then releases the ALRT pin.
+fn update_battery_soc(fuel_gauge: &mut FuelGauge) -> Result<(), embassy_rp::i2c::Error> {
+    let soc = fuel_gauge.soc()? as i32;
+    if BATTERY_SOC.swap(soc, Ordering::Relaxed) != soc {
+        BATTERY_CHANGED.signal(());
+    }
+    fuel_gauge.clear_alert()
+}
+
+/// Reads the battery level at boot and then whenever the fuel gauge pulls
+/// ALRT low (each 1% change, or a low-battery alert), instead of polling.
 #[embassy_executor::task]
-async fn battery_task(mut fuel_gauge: Max17048<BoardI2c>) {
+async fn battery_task(mut fuel_gauge: FuelGauge, mut alert_n: Input<'static>) {
+    let mut enabled = false;
     loop {
-        {
+        let result = {
             let _clock_guard = power::keep_awake();
-            if let Ok(soc) = fuel_gauge.soc() {
-                BATTERY_SOC.store(soc as i32, core::sync::atomic::Ordering::Relaxed);
-            } else {
-                warn!("Error getting battery soc from fuel gauge");
+            if !enabled {
+                enabled = fuel_gauge.enable_alert().is_ok();
             }
+            update_battery_soc(&mut fuel_gauge)
+        };
+        if result.is_err() || !enabled {
+            warn!("fuel gauge: I2C error, retrying");
+            Timer::after_secs(1).await;
+            continue;
         }
-        Timer::after_secs(10).await;
+        // Let the pull-up raise the released line. If something holds it low
+        // anyway, back off rather than hammering the bus.
+        Timer::after_millis(10).await;
+        if alert_n.is_low() {
+            warn!("fuel gauge: ALRT still low after clearing");
+            Timer::after_secs(1).await;
+            continue;
+        }
+        // Waiting for the level (not an edge) means an alert that arrived
+        // while we were servicing the last one is never missed.
+        alert_n.wait_for_low().await;
     }
 }
 
