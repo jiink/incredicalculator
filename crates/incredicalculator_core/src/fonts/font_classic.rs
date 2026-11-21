@@ -1995,7 +1995,7 @@ pub static FONT_CLASSIC: HersheyFont = HersheyFont {
     name: "Classic",
     first_char: 0x00,
     glyphs: &CLASSIC_GLYPHS,
-    space_advance: 35,
+    space_advance: 15,
     line_height: 50,
     placeholder_glyph: &CLASSIC_STAR,
     units_per_em: 20.0,

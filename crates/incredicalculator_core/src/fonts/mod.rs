@@ -2,8 +2,10 @@ mod types;
 pub use types::{HERSHEY_LIFT, HersheyFont, HersheyGlyph, HersheyVertex};
 mod font_classic;
 mod font_futural;
+mod font_timesr;
 pub use font_classic::FONT_CLASSIC;
 pub use font_futural::FONT_FUTURAL;
+pub use font_timesr::FONT_TIMESR;
 
 use core::sync::atomic::{AtomicU8, Ordering};
 
@@ -13,17 +15,19 @@ pub enum FontId {
     System,
     Futural,
     Classic,
+    Times,
 }
 
 impl FontId {
     /// Concrete fonts the user can pick as the system font, in cycle order.
-    pub const SELECTABLE: [FontId; 2] = [FontId::Futural, FontId::Classic];
+    pub const SELECTABLE: [FontId; 3] = [FontId::Futural, FontId::Classic, FontId::Times];
 
     pub const fn label(self) -> &'static str {
         match self {
             FontId::System => "System",
             FontId::Futural => "Futural",
             FontId::Classic => "Classic",
+            FontId::Times => "Times",
         }
     }
 
@@ -76,6 +80,7 @@ pub fn set_system_font(font: FontId) {
 pub fn get_font(id: FontId) -> &'static HersheyFont {
     match id.resolve() {
         FontId::Classic => &FONT_CLASSIC,
+        FontId::Times => &FONT_TIMESR,
         FontId::Futural | FontId::System => &FONT_FUTURAL,
     }
 }

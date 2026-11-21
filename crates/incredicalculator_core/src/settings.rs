@@ -350,7 +350,7 @@ impl SettingsMenu {
         let instructions = if self.editing_value {
             ""
         } else {
-            "^/v: Navigate  =: Edit/Cycle"
+            "8/2: Navigate  =: Edit/Cycle"
         };
         draw_text_f(
             platform,
