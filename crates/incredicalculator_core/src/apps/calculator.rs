@@ -701,16 +701,16 @@ impl CalcEngine for ProgrammerEngine {
             draw_text(
                 platform,
                 &result_as_hex,
-                Vec2::new(margin as f32, 228.0),
+                Vec2::new(margin as f32, 226.0),
                 TextStyle::new(7.0, theme.emphasis_0),
             );
             // draw bin form of ans
-            let bin_widget_bit1_x: i32 = 310;
-            let bin_widget_bit1_y: i32 = 230;
+            let bin_widget_bit1_x: i32 = 305;
+            let bin_widget_bit1_y: i32 = 225;
             let bin_widget_element_w: i32 = 8;
             let bin_widget_element_margin: i32 = 2;
-            let gap_4bit: i32 = 3;
-            let gap_8bit: i32 = 6;
+            let gap_4bit: i32 = 2;
+            let gap_8bit: i32 = 3;
             for i in 0..self.bit_width as i32 {
                 let row_idx = i % 16;
                 let extra_gap = (row_idx / 4) * gap_4bit + (row_idx / 8) * gap_8bit;
