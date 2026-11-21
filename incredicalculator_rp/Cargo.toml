@@ -38,3 +38,6 @@ flash_disk = { path = "../crates/flash_disk" }
 [features]
 default = ["scripting"]
 scripting = ["incredicalculator_core/scripting"]
+# Scripted on-device audio stress test: opens Scale keys, enables the arp,
+# holds a chord under each font, and logs per-phase audio starvation totals.
+audio-bench = []

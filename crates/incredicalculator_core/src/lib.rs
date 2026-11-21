@@ -197,6 +197,6 @@ pub mod graphics {
     #[cfg(feature = "scripting")]
     pub mod vm1;
 }
-mod fonts;
+pub mod fonts;
 mod text;
 mod ui;

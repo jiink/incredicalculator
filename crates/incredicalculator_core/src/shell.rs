@@ -246,6 +246,13 @@ impl IcShell {
             let s = self.audio.next_sample();
             *sample = s;
         }
+        self.mix_app_audio(out_pcm);
+    }
+
+    /// Mixes the open app's own audio (see [`IcShell::app_produces_audio`]),
+    /// at the current volume, into `out_pcm`. `fill_audio` already does
+    /// this; it's separate for platforms whose synth runs in remote mode.
+    pub fn mix_app_audio(&mut self, out_pcm: &mut [i16]) {
         if !self.app_produces_audio() {
             return;
         }
@@ -268,8 +275,9 @@ impl IcShell {
         self.audio.is_active() || self.app_produces_audio()
     }
 
-    /// Only the open app plays its own audio, so leaving it falls silent.
-    fn app_produces_audio(&self) -> bool {
+    /// Whether the open app is generating samples of its own, besides the
+    /// synth. Only the open app plays its own audio, so leaving it falls silent.
+    pub fn app_produces_audio(&self) -> bool {
         self.audio.volume() != 0
             && self
                 .active_app_idx

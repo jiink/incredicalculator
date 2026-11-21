@@ -1,3 +1,4 @@
+use alloc::vec::Vec;
 use culsynth::context::ContextFxP;
 use culsynth::devices::{
     Amp, Device, Env, EnvParams, Lfo, LfoOptions, LfoParams, LfoWave, Osc, OscParams,
@@ -21,7 +22,7 @@ impl NoteId {
 }
 
 /// Patch parameters shared by every active voice.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct AudioPatch {
     pub attack_ms: u16,
     pub release_ms: u16,
@@ -43,7 +44,29 @@ impl Default for AudioPatch {
     }
 }
 
+/// A change to the synth, recorded by an [`AudioEngine`] in remote mode so
+/// that another engine (for example on another core) can apply it with
+/// [`AudioEngine::apply`].
+#[derive(Clone, Copy)]
+pub enum AudioCommand {
+    SetNote(NoteId, Option<u8>),
+    ReleaseAll,
+    SetPatch(AudioPatch),
+    SetVolume(u8),
+}
+
+/// What a remote-mode engine knows about the synth it is controlling.
+struct Remote {
+    /// Commands not yet collected by [`AudioEngine::drain_commands`].
+    commands: Vec<AudioCommand>,
+    /// Sources this side has gated on and not released yet, with their notes.
+    gated: Vec<(NoteId, u8)>,
+    /// The remote synth's last report of still producing sound.
+    synth_active: bool,
+}
+
 pub struct AudioEngine {
+    remote: Option<Remote>,
     context: ContextFxP,
     patch: AudioPatch,
     amp_env_params: EnvParams<i16>,
@@ -59,6 +82,7 @@ impl AudioEngine {
     pub fn new() -> Self {
         let patch = AudioPatch::default();
         Self {
+            remote: None,
             context: ContextFxP::new_480(),
             patch,
             amp_env_params: env_params_for_patch(patch),
@@ -71,17 +95,68 @@ impl AudioEngine {
         }
     }
 
+    /// Switches to remote mode: instead of synthesizing, every change is
+    /// queued as an [`AudioCommand`] for another engine, which the platform
+    /// collects with [`AudioEngine::drain_commands`]. Platforms use this to
+    /// synthesize somewhere that UI work can't delay.
+    pub fn make_remote(&mut self) {
+        self.remote = Some(Remote {
+            commands: Vec::new(),
+            gated: Vec::new(),
+            synth_active: false,
+        });
+    }
+
+    /// Takes the commands queued in remote mode, oldest first.
+    pub fn drain_commands(&mut self) -> impl Iterator<Item = AudioCommand> + '_ {
+        self.remote
+            .as_mut()
+            .map(|remote| remote.commands.drain(..))
+            .into_iter()
+            .flatten()
+    }
+
+    /// In remote mode, records whether the remote synth is still sounding
+    /// (including release tails), for [`AudioEngine::is_active`].
+    pub fn set_remote_synth_active(&mut self, active: bool) {
+        if let Some(remote) = self.remote.as_mut() {
+            remote.synth_active = active;
+        }
+    }
+
+    /// Applies a command recorded by a remote-mode engine.
+    pub fn apply(&mut self, command: AudioCommand) {
+        match command {
+            AudioCommand::SetNote(source, midi_note) => self.set_note(source, midi_note),
+            AudioCommand::ReleaseAll => self.release_all(),
+            AudioCommand::SetPatch(patch) => self.set_patch(patch),
+            AudioCommand::SetVolume(volume) => self.set_volume(volume),
+        }
+    }
+
     pub fn patch(&self) -> AudioPatch {
         self.patch
     }
 
     pub fn set_patch(&mut self, patch: AudioPatch) {
-        self.patch = sanitize_patch(patch);
+        let patch = sanitize_patch(patch);
+        if let Some(remote) = self.remote.as_mut() {
+            // Apps set their patch every frame; only send real changes.
+            if patch != self.patch {
+                remote.commands.push(AudioCommand::SetPatch(patch));
+            }
+        }
+        self.patch = patch;
         self.amp_env_params = env_params_for_patch(self.patch);
         self.vibrato_depth_bits = vibrato_depth_bits(self.patch);
     }
 
     pub fn set_volume(&mut self, volume: u8) {
+        if let Some(remote) = self.remote.as_mut()
+            && volume != self.volume
+        {
+            remote.commands.push(AudioCommand::SetVolume(volume));
+        }
         self.volume = volume;
     }
 
@@ -95,6 +170,9 @@ impl AudioEngine {
     /// so their scheduled release tail must be considered as well as their
     /// gate state.
     pub fn is_active(&self) -> bool {
+        if let Some(remote) = &self.remote {
+            return self.volume != 0 && (!remote.gated.is_empty() || remote.synth_active);
+        }
         self.volume != 0
             && self
                 .voices
@@ -108,6 +186,25 @@ impl AudioEngine {
     /// does not name a physical voice; the engine assigns a free or released
     /// voice and steals the oldest held voice only as a last resort.
     pub fn set_note(&mut self, source: NoteId, midi_note: Option<u8>) {
+        if let Some(remote) = self.remote.as_mut() {
+            let gated = remote.gated.iter().position(|&(gated, _)| gated == source);
+            match (midi_note, gated) {
+                (Some(note), None) => remote.gated.push((source, note)),
+                // Apps re-send held notes every frame; only send changes.
+                (Some(note), Some(index)) if remote.gated[index].1 == note => return,
+                (Some(note), Some(index)) => remote.gated[index].1 = note,
+                (None, Some(index)) => {
+                    remote.gated.swap_remove(index);
+                }
+                // Releasing a source that isn't sounding is a no-op, and
+                // apps release every idle source each frame.
+                (None, None) => return,
+            }
+            remote
+                .commands
+                .push(AudioCommand::SetNote(source, midi_note));
+            return;
+        }
         match midi_note {
             Some(midi_note) => self.start_or_update_note(source, midi_note),
             None => {
@@ -124,6 +221,11 @@ impl AudioEngine {
 
     /// Gate every active note off, preserving its normal release envelope.
     pub fn release_all(&mut self) {
+        if let Some(remote) = self.remote.as_mut() {
+            remote.gated.clear();
+            remote.commands.push(AudioCommand::ReleaseAll);
+            return;
+        }
         for voice in self.voices.iter_mut() {
             voice.release(self.patch.release_ms);
         }

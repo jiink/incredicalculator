@@ -3,6 +3,8 @@
 
 extern crate alloc;
 
+#[cfg(feature = "audio-bench")]
+mod audio_bench;
 mod backlight;
 mod fuel_gauge;
 mod memory;
@@ -13,7 +15,7 @@ mod usb_drive;
 
 use core::cell::RefCell;
 use core::fmt::Write as _;
-use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, Ordering};
 use core::{fmt, mem};
 
 use defmt::*;
@@ -47,6 +49,7 @@ use embedded_graphics::primitives::PrimitiveStyleBuilder;
 use embedded_graphics::text::Text;
 use fuel_gauge::FuelGauge;
 use glam::{IVec2, Vec2};
+use incredicalculator_core::audio_engine::{AudioCommand, AudioEngine};
 use incredicalculator_core::input::IcKey;
 use incredicalculator_core::platform::{IcPlatform, SETTINGS_STORAGE_LEN, rgb8_hex};
 use incredicalculator_core::shell::IcShell;
@@ -152,19 +155,48 @@ const AUDIO_SLOW_WORK_WARN_US: u32 = 1_000;
 // counters only, while the main task prints a compact report once per second.
 static AUDIO_BUFFERS_RENDERED: AtomicU32 = AtomicU32::new(0);
 static AUDIO_RENDER_MAX_US: AtomicU32 = AtomicU32::new(0);
-static AUDIO_QUEUE_SEND_MAX_US: AtomicU32 = AtomicU32::new(0);
 static AUDIO_DMA_TRANSFERS: AtomicU32 = AtomicU32::new(0);
 static AUDIO_DMA_MAX_US: AtomicU32 = AtomicU32::new(0);
 static AUDIO_LATE_DMA_COMPLETIONS: AtomicU32 = AtomicU32::new(0);
 static AUDIO_STARVATIONS: AtomicU32 = AtomicU32::new(0);
 static AUDIO_STARVATION_MAX_US: AtomicU32 = AtomicU32::new(0);
+/// Buffers core 1 rendered without app audio because core 0's was late.
+static APP_PCM_MISSES: AtomicU32 = AtomicU32::new(0);
 static SHELL_UPDATES: AtomicU32 = AtomicU32::new(0);
 static SHELL_UPDATE_MAX_US: AtomicU32 = AtomicU32::new(0);
 static DISPLAY_TRANSFERS: AtomicU32 = AtomicU32::new(0);
 static DISPLAY_TRANSFER_MAX_US: AtomicU32 = AtomicU32::new(0);
+// Running totals, never reset, for `audio_bench`.
+static AUDIO_STARVATIONS_TOTAL: AtomicU32 = AtomicU32::new(0);
+static AUDIO_STARVATION_US_TOTAL: AtomicU32 = AtomicU32::new(0);
+static SHELL_UPDATES_TOTAL: AtomicU32 = AtomicU32::new(0);
+static SHELL_UPDATE_US_TOTAL: AtomicU32 = AtomicU32::new(0);
 
+// Plain load/store inside a critical section rather than `fetch_max` and
+// friends: hot LDREX/STREX loops have livelocked on this board, and these
+// counters are now updated from both cores.
 fn record_max(maximum: &AtomicU32, value: u32) {
-    maximum.fetch_max(value, Ordering::Relaxed);
+    critical_section::with(|_| {
+        if value > maximum.load(Ordering::Relaxed) {
+            maximum.store(value, Ordering::Relaxed);
+        }
+    });
+}
+
+/// Reads a counter and resets it to zero.
+fn take_count(counter: &AtomicU32) -> u32 {
+    critical_section::with(|_| {
+        let value = counter.load(Ordering::Relaxed);
+        counter.store(0, Ordering::Relaxed);
+        value
+    })
+}
+
+fn add_count(counter: &AtomicU32, value: u32) {
+    critical_section::with(|_| {
+        let total = counter.load(Ordering::Relaxed).wrapping_add(value);
+        counter.store(total, Ordering::Relaxed);
+    });
 }
 
 fn elapsed_us(start: Instant) -> u32 {
@@ -172,29 +204,29 @@ fn elapsed_us(start: Instant) -> u32 {
 }
 
 fn report_audio_diagnostics() {
-    let rendered = AUDIO_BUFFERS_RENDERED.swap(0, Ordering::Relaxed);
-    let render_max_us = AUDIO_RENDER_MAX_US.swap(0, Ordering::Relaxed);
-    let queue_send_max_us = AUDIO_QUEUE_SEND_MAX_US.swap(0, Ordering::Relaxed);
-    let dma_transfers = AUDIO_DMA_TRANSFERS.swap(0, Ordering::Relaxed);
-    let dma_max_us = AUDIO_DMA_MAX_US.swap(0, Ordering::Relaxed);
-    let late_dma_completions = AUDIO_LATE_DMA_COMPLETIONS.swap(0, Ordering::Relaxed);
-    let starvations = AUDIO_STARVATIONS.swap(0, Ordering::Relaxed);
-    let starvation_max_us = AUDIO_STARVATION_MAX_US.swap(0, Ordering::Relaxed);
-    let shell_updates = SHELL_UPDATES.swap(0, Ordering::Relaxed);
-    let shell_update_max_us = SHELL_UPDATE_MAX_US.swap(0, Ordering::Relaxed);
-    let display_transfers = DISPLAY_TRANSFERS.swap(0, Ordering::Relaxed);
-    let display_transfer_max_us = DISPLAY_TRANSFER_MAX_US.swap(0, Ordering::Relaxed);
+    let rendered = take_count(&AUDIO_BUFFERS_RENDERED);
+    let render_max_us = take_count(&AUDIO_RENDER_MAX_US);
+    let dma_transfers = take_count(&AUDIO_DMA_TRANSFERS);
+    let dma_max_us = take_count(&AUDIO_DMA_MAX_US);
+    let late_dma_completions = take_count(&AUDIO_LATE_DMA_COMPLETIONS);
+    let starvations = take_count(&AUDIO_STARVATIONS);
+    let starvation_max_us = take_count(&AUDIO_STARVATION_MAX_US);
+    let app_pcm_misses = take_count(&APP_PCM_MISSES);
+    let shell_updates = take_count(&SHELL_UPDATES);
+    let shell_update_max_us = take_count(&SHELL_UPDATE_MAX_US);
+    let display_transfers = take_count(&DISPLAY_TRANSFERS);
+    let display_transfer_max_us = take_count(&DISPLAY_TRANSFER_MAX_US);
 
     info!(
-        "audio/s: rendered={} dma={} render_max={}us queue_max={}us dma_max={}us dma_late={} starve={} starve_max={}us shell_updates={} update_max={}us display={} display_max={}us",
+        "audio/s: rendered={} dma={} render_max={}us dma_max={}us dma_late={} starve={} starve_max={}us app_miss={} shell_updates={} update_max={}us display={} display_max={}us",
         rendered,
         dma_transfers,
         render_max_us,
-        queue_send_max_us,
         dma_max_us,
         late_dma_completions,
         starvations,
         starvation_max_us,
+        app_pcm_misses,
         shell_updates,
         shell_update_max_us,
         display_transfers,
@@ -281,6 +313,36 @@ struct AudioBuffer {
 static EMPTY_BUFFERS: Channel<CriticalSectionRawMutex, AudioBuffer, 2> = Channel::new();
 
 static FILLED_BUFFERS: Channel<CriticalSectionRawMutex, AudioBuffer, 2> = Channel::new();
+
+// The synth runs on core 1 so that UI rendering on core 0 can never delay
+// it. The shell's `AudioEngine` is in remote mode: core 0 forwards its note
+// commands here, and core 1's engine renders them into the I2S buffers.
+static SYNTH_COMMANDS: Channel<CriticalSectionRawMutex, AudioCommand, 32> = Channel::new();
+static SYNTH_ENGINE: StaticCell<AudioEngine> = StaticCell::new();
+/// Core 1's engine is still sounding (held notes or release tails).
+static SYNTH_ACTIVE: AtomicBool = AtomicBool::new(false);
+/// Core 1 finished a release tail, so core 0 may let the clocks idle.
+static SYNTH_WENT_IDLE: Signal<CriticalSectionRawMutex, ()> = Signal::new();
+/// Core 0 started app audio, which core 1 must mix in.
+static SYNTH_WAKE: Signal<CriticalSectionRawMutex, ()> = Signal::new();
+/// Core 0 sent the synth something. The I2S task needs this because core 1
+/// cannot wake it: an interrupt executor's waker pends its interrupt in the
+/// NVIC of whichever core runs the waker, and core 1's NVIC isn't the one
+/// that dispatches SWI_IRQ_0.
+static AUDIO_KICK: Signal<CriticalSectionRawMutex, ()> = Signal::new();
+
+// Audio an app generates itself (Bytebeat) still has to be rendered on core
+// 0, where the app lives. It travels to core 1 in these buffers to be mixed.
+struct AppPcmBuffer {
+    samples: &'static mut [i16; AUDIO_BUFFER_SIZE],
+}
+static APP_PCM_EMPTY: Channel<CriticalSectionRawMutex, AppPcmBuffer, 2> = Channel::new();
+static APP_PCM_FILLED: Channel<CriticalSectionRawMutex, AppPcmBuffer, 2> = Channel::new();
+static APP_PCM0: ConstStaticCell<[i16; AUDIO_BUFFER_SIZE]> =
+    ConstStaticCell::new([0; AUDIO_BUFFER_SIZE]);
+static APP_PCM1: ConstStaticCell<[i16; AUDIO_BUFFER_SIZE]> =
+    ConstStaticCell::new([0; AUDIO_BUFFER_SIZE]);
+static APP_AUDIO_ON: AtomicBool = AtomicBool::new(false);
 static AUDIO_DMA0: StaticCell<[u32; AUDIO_BUFFER_SIZE]> = StaticCell::new();
 static AUDIO_DMA1: StaticCell<[u32; AUDIO_BUFFER_SIZE]> = StaticCell::new();
 
@@ -565,6 +627,10 @@ impl<'d> IcPlatform for IcRpPlatform<'d> {
     }
 
     fn get_volume(&self) -> u8 {
+        // Nearly silent, but nonzero so the whole audio path still runs.
+        if cfg!(feature = "audio-bench") {
+            return 1;
+        }
         self.volume
     }
 
@@ -1511,6 +1577,16 @@ async fn main(spawner: Spawner) {
     // Initially both buffers are empty.
     EMPTY_BUFFERS.send(buf0).await;
     EMPTY_BUFFERS.send(buf1).await;
+    APP_PCM_EMPTY
+        .send(AppPcmBuffer {
+            samples: APP_PCM0.take(),
+        })
+        .await;
+    APP_PCM_EMPTY
+        .send(AppPcmBuffer {
+            samples: APP_PCM1.take(),
+        })
+        .await;
 
     // The UI starts with one canvas; the other is immediately available for a
     // future frame once the display task has finished with it.
@@ -1573,6 +1649,8 @@ async fn main(spawner: Spawner) {
     unwrap!(audio_spawner.spawn(audio_task(i2s, audio_shutdown_n)));
     unwrap!(spawner.spawn(display_task(display)));
     unwrap!(spawner.spawn(usb_drive::usb_drive_task(p.USB, vbus_present_n)));
+    #[cfg(feature = "audio-bench")]
+    unwrap!(spawner.spawn(audio_bench::audio_bench_task()));
 
     let core1_stack = unsafe {
         // consider changing to new syntax: `&mut *&raw mut CORE1_STACK`
@@ -1580,16 +1658,18 @@ async fn main(spawner: Spawner) {
     };
     memory::paint_core1_stack(&mut core1_stack.mem);
     let core1_stack_bottom = core1_stack.mem.as_ptr() as usize;
+    let synth_engine = SYNTH_ENGINE.init(AudioEngine::new());
     spawn_core1(p.CORE1, core1_stack, move || {
         memory::init_core1_stack(core1_stack_bottom);
         let exec1 = EXECUTOR1.init(Executor::new());
         exec1.run(|spawner| {
             unwrap!(spawner.spawn(inputs_core1_task(key_matrix)));
+            unwrap!(spawner.spawn(synth_core1_task(synth_engine)));
         });
     });
 
     let mut icalc: IcShell = IcShell::new();
-    let mut pcm_buffer = [0i16; AUDIO_BUFFER_SIZE];
+    icalc.audio_mut().make_remote();
 
     // render the first frame
     icalc.update(&mut ic_rp_platform);
@@ -1605,6 +1685,9 @@ async fn main(spawner: Spawner) {
     let mut audio_is_running = false;
     info!("audio idle: no active voices; waiting for input");
     loop {
+        icalc
+            .audio_mut()
+            .set_remote_synth_active(SYNTH_ACTIVE.load(Ordering::Relaxed));
         let clock_guard = power::keep_awake();
         let backlight_deadline = ic_rp_platform.update_backlight();
         power::set_idle_allowed(
@@ -1614,11 +1697,15 @@ async fn main(spawner: Spawner) {
         );
         drop(clock_guard);
         // Backlight deadlines also wake an otherwise idle UI, without polling.
+        let wait_mode = (
+            icalc.app_produces_audio(),
+            icalc.requires_realtime_updates(),
+        );
         let wait_for_work = async {
-            match (icalc.has_active_audio(), icalc.requires_realtime_updates()) {
+            match wait_mode {
                 (true, true) => match select3(
                     INPUT_BUFFER.receive(),
-                    EMPTY_BUFFERS.receive(),
+                    APP_PCM_EMPTY.receive(),
                     Timer::after_millis(16),
                 )
                 .await
@@ -1628,7 +1715,7 @@ async fn main(spawner: Spawner) {
                     Either3::Third(()) => (None, None, true),
                 },
                 (true, false) => {
-                    match select(INPUT_BUFFER.receive(), EMPTY_BUFFERS.receive()).await {
+                    match select(INPUT_BUFFER.receive(), APP_PCM_EMPTY.receive()).await {
                         Either::First(event) => (Some(event), None, false),
                         Either::Second(buffer) => (None, Some(buffer), false),
                     }
@@ -1639,7 +1726,14 @@ async fn main(spawner: Spawner) {
                         Either::Second(()) => (None, None, true),
                     }
                 }
-                (false, false) => (Some(INPUT_BUFFER.receive().await), None, false),
+                // A finished release tail only changes the idle decision
+                // at the top of the loop; it needs no redraw.
+                (false, false) => {
+                    match select(INPUT_BUFFER.receive(), SYNTH_WENT_IDLE.wait()).await {
+                        Either::First(event) => (Some(event), None, false),
+                        Either::Second(()) => (None, None, false),
+                    }
+                }
             }
         };
         let wait_for_backlight = async {
@@ -1678,6 +1772,10 @@ async fn main(spawner: Spawner) {
         };
         let _clock_guard = power::keep_awake();
         ic_rp_platform.update_backlight();
+        // The wait may have ended because core 1 went quiet.
+        icalc
+            .audio_mut()
+            .set_remote_synth_active(SYNTH_ACTIVE.load(Ordering::Relaxed));
 
         let mut inputs_changed = false;
         if let Some(event) = first_input {
@@ -1723,8 +1821,10 @@ async fn main(spawner: Spawner) {
             let update_start = Instant::now();
             icalc.update(&mut ic_rp_platform);
             let update_us = elapsed_us(update_start);
-            SHELL_UPDATES.fetch_add(1, Ordering::Relaxed);
+            add_count(&SHELL_UPDATES, 1);
             record_max(&SHELL_UPDATE_MAX_US, update_us);
+            add_count(&SHELL_UPDATES_TOTAL, 1);
+            add_count(&SHELL_UPDATE_US_TOTAL, update_us);
             if Instant::now() >= next_memory_check {
                 report_memory(&mut last_memory_stats);
                 next_memory_check = Instant::now() + embassy_time::Duration::from_secs(1);
@@ -1741,37 +1841,43 @@ async fn main(spawner: Spawner) {
             settings_storage.save(&data).await;
         }
 
+        let mut sent_commands = false;
+        for command in icalc.audio_mut().drain_commands() {
+            if let Err(embassy_sync::channel::TrySendError::Full(command)) =
+                SYNTH_COMMANDS.try_send(command)
+            {
+                SYNTH_COMMANDS.send(command).await;
+            }
+            sent_commands = true;
+        }
+        let app_audio = icalc.app_produces_audio();
+        // Only core 0 writes this flag, so a plain load/store is enough.
+        let app_audio_started = app_audio && !APP_AUDIO_ON.load(Ordering::Relaxed);
+        APP_AUDIO_ON.store(app_audio, Ordering::Relaxed);
+        if app_audio_started {
+            SYNTH_WAKE.signal(());
+            sent_commands = true;
+        }
+        if sent_commands {
+            AUDIO_KICK.signal(());
+        }
+
         if icalc.has_active_audio() && !audio_is_running {
-            info!("audio active: resuming PCM rendering and I2S DMA");
+            info!("audio active: core 1 is rendering");
             audio_is_running = true;
         }
 
-        // Once silent, leave the empty buffers in their channel and let the
-        // audio task block waiting for a future sound. This also lets the I2S
-        // PIO stall instead of transmitting a continuous stream of zeroes.
-        if audio_buffer.is_none() && icalc.has_active_audio() {
-            audio_buffer = EMPTY_BUFFERS.try_receive().ok();
+        if audio_buffer.is_none() && app_audio {
+            audio_buffer = APP_PCM_EMPTY.try_receive().ok();
         }
         if let Some(buf) = audio_buffer {
-            let render_start = Instant::now();
-            icalc.fill_audio(&mut pcm_buffer);
-            for (dst, &pcm_sample) in buf.samples.iter_mut().zip(pcm_buffer.iter()) {
-                let sample_u16 = pcm_sample as u16 as u32;
-                *dst = (sample_u16 << 16) | sample_u16;
+            if app_audio {
+                buf.samples.fill(0);
+                icalc.mix_app_audio(&mut buf.samples[..]);
+                APP_PCM_FILLED.send(buf).await;
+            } else {
+                APP_PCM_EMPTY.send(buf).await;
             }
-            let render_us = elapsed_us(render_start);
-            AUDIO_BUFFERS_RENDERED.fetch_add(1, Ordering::Relaxed);
-            record_max(&AUDIO_RENDER_MAX_US, render_us);
-            if render_us > AUDIO_BUFFER_DURATION_US {
-                warn!(
-                    "audio render took {}us (buffer duration {}us)",
-                    render_us, AUDIO_BUFFER_DURATION_US,
-                );
-            }
-
-            let queue_send_start = Instant::now();
-            FILLED_BUFFERS.send(buf).await;
-            record_max(&AUDIO_QUEUE_SEND_MAX_US, elapsed_us(queue_send_start));
         }
 
         if icalc.has_active_audio() {
@@ -1784,7 +1890,7 @@ async fn main(spawner: Spawner) {
         } else {
             next_audio_report = None;
             if audio_is_running {
-                info!("audio idle: release tail finished; PCM rendering and I2S DMA stopped");
+                info!("audio idle: release tail finished; synth and I2S DMA stopped");
                 audio_is_running = false;
             }
         }
@@ -1846,7 +1952,7 @@ async fn display_task(mut display: LcdDisplay) {
             .await
             .unwrap();
         let display_us = elapsed_us(display_start);
-        DISPLAY_TRANSFERS.fetch_add(1, Ordering::Relaxed);
+        add_count(&DISPLAY_TRANSFERS, 1);
         record_max(&DISPLAY_TRANSFER_MAX_US, display_us);
 
         // The UI may draw into this canvas only after DMA has completed.
@@ -1880,7 +1986,7 @@ async fn battery_task(fuel_gauge: &'static SharedFuelGauge, mut alert_n: Input<'
             update_battery_soc(fuel_gauge)
         });
         if alerted && let Ok(flags) = result {
-            FUEL_GAUGE_ALERTS.fetch_add(1, Ordering::Relaxed);
+            add_count(&FUEL_GAUGE_ALERTS, 1);
             FUEL_GAUGE_LAST_ALERT_MS.store(Instant::now().as_millis() as u32, Ordering::Relaxed);
             FUEL_GAUGE_LAST_ALERT_FLAGS.store(flags as u32, Ordering::Relaxed);
         }
@@ -1903,6 +2009,34 @@ async fn battery_task(fuel_gauge: &'static SharedFuelGauge, mut alert_n: Input<'
     }
 }
 
+/// Waits for core 1's next filled buffer. Core 1 can't wake this task (see
+/// [`AUDIO_KICK`]), so it polls while a buffer is expected soon: while the
+/// synth or app audio is active, and for a while after core 0 sends the
+/// synth something (core 1 may not have seen it yet). Otherwise it sleeps
+/// until the next kick.
+async fn next_filled_buffer() -> AudioBuffer {
+    const POLL_US: u64 = 100;
+    const KICK_POLL_MS: u64 = 100;
+    let mut poll_until = None;
+    loop {
+        if let Ok(buf) = FILLED_BUFFERS.try_receive() {
+            return buf;
+        }
+        if AUDIO_KICK.try_take().is_some() {
+            poll_until = Some(Instant::now() + embassy_time::Duration::from_millis(KICK_POLL_MS));
+        }
+        let expecting = SYNTH_ACTIVE.load(Ordering::Relaxed)
+            || APP_AUDIO_ON.load(Ordering::Relaxed)
+            || poll_until.is_some_and(|until| Instant::now() < until);
+        if expecting {
+            Timer::after_micros(POLL_US).await;
+        } else {
+            AUDIO_KICK.wait().await;
+            poll_until = Some(Instant::now() + embassy_time::Duration::from_millis(KICK_POLL_MS));
+        }
+    }
+}
+
 #[embassy_executor::task]
 async fn audio_task(mut i2s: PioI2sOut<'static, PIO0, 0>, mut audio_shutdown_n: Output<'static>) {
     let mut has_started = false;
@@ -1918,21 +2052,24 @@ async fn audio_task(mut i2s: PioI2sOut<'static, PIO0, 0>, mut audio_shutdown_n: 
                 let wait_start = Instant::now();
                 // Allow the final PIO FIFO samples to play and tolerate brief
                 // producer delays before putting the amplifier into shutdown.
-                let buf = match select(FILLED_BUFFERS.receive(), Timer::after_millis(1)).await {
+                let buf = match select(next_filled_buffer(), Timer::after_millis(1)).await {
                     Either::First(buf) => buf,
                     Either::Second(()) => {
                         audio_shutdown_n.set_low();
                         // DMA completion precedes the last FIFO samples, so
                         // release the clock only after the drain grace period.
                         drop(clock_guard.take());
-                        FILLED_BUFFERS.receive().await
+                        next_filled_buffer().await
                     }
                 };
                 // Waiting for the very first buffer is expected during boot;
                 // after that it means the PIO had no next DMA transfer ready.
                 if has_started {
-                    AUDIO_STARVATIONS.fetch_add(1, Ordering::Relaxed);
-                    record_max(&AUDIO_STARVATION_MAX_US, elapsed_us(wait_start));
+                    let waited_us = elapsed_us(wait_start);
+                    add_count(&AUDIO_STARVATIONS, 1);
+                    record_max(&AUDIO_STARVATION_MAX_US, waited_us);
+                    add_count(&AUDIO_STARVATIONS_TOTAL, 1);
+                    add_count(&AUDIO_STARVATION_US_TOTAL, waited_us);
                 }
                 buf
             }
@@ -1943,16 +2080,89 @@ async fn audio_task(mut i2s: PioI2sOut<'static, PIO0, 0>, mut audio_shutdown_n: 
         let dma_start = Instant::now();
         i2s.write(buf.samples).await;
         let dma_us = elapsed_us(dma_start);
-        AUDIO_DMA_TRANSFERS.fetch_add(1, Ordering::Relaxed);
+        add_count(&AUDIO_DMA_TRANSFERS, 1);
         record_max(&AUDIO_DMA_MAX_US, dma_us);
         if dma_us > AUDIO_BUFFER_DURATION_US + AUDIO_FIFO_COVERAGE_US {
-            AUDIO_LATE_DMA_COMPLETIONS.fetch_add(1, Ordering::Relaxed);
+            add_count(&AUDIO_LATE_DMA_COMPLETIONS, 1);
         }
         has_started = true;
         // ok now you have like 100 uS to start a new DMA transfer before
         // there's a pop (since the PIO only holds like 8 samples in its FIFO).
         // This is why the task runs on the interrupt-priority AUDIO_EXECUTOR.
+        // The send wakes core 1's synth through its thread executor, whose
+        // waker works across cores.
         EMPTY_BUFFERS.send(buf).await;
+    }
+}
+
+/// Renders the synth (and any app audio from core 0) into I2S buffers on
+/// core 1, which otherwise only scans the keys, so frame rendering on core 0
+/// can't starve the audio.
+#[embassy_executor::task]
+async fn synth_core1_task(engine: &'static mut AudioEngine) {
+    let mut clock_guard = None;
+    let mut was_active = false;
+    loop {
+        while let Ok(command) = SYNTH_COMMANDS.try_receive() {
+            engine.apply(command);
+        }
+        let synth_active = engine.is_active();
+        SYNTH_ACTIVE.store(synth_active, Ordering::Relaxed);
+        let app_audio = APP_AUDIO_ON.load(Ordering::Relaxed);
+        if !synth_active && !app_audio {
+            if was_active {
+                was_active = false;
+                SYNTH_WENT_IDLE.signal(());
+            }
+            drop(clock_guard.take());
+            match select(SYNTH_COMMANDS.receive(), SYNTH_WAKE.wait()).await {
+                Either::First(command) => engine.apply(command),
+                Either::Second(()) => {}
+            }
+            continue;
+        }
+        was_active = true;
+        clock_guard.get_or_insert_with(power::keep_awake);
+
+        let buf = EMPTY_BUFFERS.receive().await;
+        // Notes that arrived while waiting start one buffer sooner.
+        while let Ok(command) = SYNTH_COMMANDS.try_receive() {
+            engine.apply(command);
+        }
+        let render_start = Instant::now();
+        let app_pcm = if app_audio {
+            let app_pcm = APP_PCM_FILLED.try_receive().ok();
+            if app_pcm.is_none() {
+                add_count(&APP_PCM_MISSES, 1);
+            }
+            app_pcm
+        } else {
+            None
+        };
+        match &app_pcm {
+            Some(app_pcm) => {
+                for (dst, &app_sample) in buf.samples.iter_mut().zip(app_pcm.samples.iter()) {
+                    let mixed = (engine.next_sample() as i32 + app_sample as i32)
+                        .clamp(i16::MIN as i32, i16::MAX as i32);
+                    let sample_u16 = mixed as i16 as u16 as u32;
+                    *dst = (sample_u16 << 16) | sample_u16;
+                }
+            }
+            None => {
+                for dst in buf.samples.iter_mut() {
+                    let sample_u16 = engine.next_sample() as u16 as u32;
+                    *dst = (sample_u16 << 16) | sample_u16;
+                }
+            }
+        }
+        let render_us = elapsed_us(render_start);
+        add_count(&AUDIO_BUFFERS_RENDERED, 1);
+        record_max(&AUDIO_RENDER_MAX_US, render_us);
+        // Both buffers fit in each channel, so neither send waits.
+        FILLED_BUFFERS.send(buf).await;
+        if let Some(app_pcm) = app_pcm {
+            APP_PCM_EMPTY.send(app_pcm).await;
+        }
     }
 }
 
