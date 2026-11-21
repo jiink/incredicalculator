@@ -11,6 +11,8 @@ mod script_drive;
 mod settings_storage;
 mod usb_drive;
 
+use core::cell::RefCell;
+use core::fmt::Write as _;
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use core::{fmt, mem};
 
@@ -30,6 +32,7 @@ use embassy_rp::pio_programs::i2s::{PioI2sOut, PioI2sOutProgram};
 use embassy_rp::pwm::{Config as PwmConfig, Pwm};
 use embassy_rp::spi;
 use embassy_rp::spi::Spi;
+use embassy_sync::blocking_mutex::NoopMutex;
 use embassy_sync::blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex};
 use embassy_sync::channel::{Channel, DynamicSender};
 use embassy_sync::mutex::Mutex as AsyncMutex;
@@ -107,6 +110,17 @@ static INPUT_BUFFER: Channel<CriticalSectionRawMutex, InputBufferEvent, 32> = Ch
 static BATTERY_SOC: AtomicI32 = AtomicI32::new(-1);
 /// Raised whenever [`BATTERY_SOC`] changes, so the UI redraws the battery icon.
 static BATTERY_CHANGED: Signal<CriticalSectionRawMutex, ()> = Signal::new();
+/// Fuel gauge alerts handled since boot, for the Info app.
+static FUEL_GAUGE_ALERTS: AtomicU32 = AtomicU32::new(0);
+/// When the last alert was handled, in ms since boot.
+static FUEL_GAUGE_LAST_ALERT_MS: AtomicU32 = AtomicU32::new(0);
+/// The STATUS flags behind the last alert.
+static FUEL_GAUGE_LAST_ALERT_FLAGS: AtomicU32 = AtomicU32::new(0);
+
+/// Shared by `battery_task` and the Info app, which both run on core 0's
+/// thread executor and never hold it across an await.
+type SharedFuelGauge = NoopMutex<RefCell<FuelGauge>>;
+static FUEL_GAUGE: StaticCell<SharedFuelGauge> = StaticCell::new();
 
 bind_interrupts!(struct Irqs {
     PIO0_IRQ_0 => InterruptHandler<PIO0>;
@@ -300,10 +314,16 @@ pub struct IcRpPlatform<'d> {
     // Scanning the stacks for their high-water marks reads ~120 KiB, so the
     // on-screen readout reuses a recent result instead of rescanning per frame.
     memory_stats_cache: core::cell::Cell<Option<(Instant, memory::MemoryStats)>>,
+    fuel_gauge: &'static SharedFuelGauge,
 }
 
 impl<'d> IcRpPlatform<'d> {
-    fn new(backlight: Pwm<'d>, backlight2: Pwm<'d>, canvas: FrameBuffer) -> Self {
+    fn new(
+        backlight: Pwm<'d>,
+        backlight2: Pwm<'d>,
+        canvas: FrameBuffer,
+        fuel_gauge: &'static SharedFuelGauge,
+    ) -> Self {
         let mut platform = Self {
             canvas: Some(canvas),
             loaded_settings: None,
@@ -318,6 +338,7 @@ impl<'d> IcRpPlatform<'d> {
             volume: 100,
             screen_timeout_seconds: 120,
             memory_stats_cache: core::cell::Cell::new(None),
+            fuel_gauge,
         };
         platform.update_backlight();
         platform
@@ -601,6 +622,57 @@ impl<'d> IcPlatform for IcRpPlatform<'d> {
         self.memory_stats_cache.set(Some((Instant::now(), stats)));
         Some(stats)
     }
+
+    fn info(&mut self) -> alloc::string::String {
+        let mut text = alloc::string::String::new();
+        let readings = self.fuel_gauge.lock(|fuel_gauge| {
+            let _clock_guard = power::keep_awake();
+            fuel_gauge.try_borrow_mut().ok().map(|mut f| f.readings())
+        });
+        let _ = write_fuel_gauge_info(&mut text, readings);
+        text
+    }
+}
+
+/// The Info app's text: the fuel gauge's readings and its alert history.
+fn write_fuel_gauge_info(
+    text: &mut alloc::string::String,
+    readings: Option<Result<fuel_gauge::Readings, embassy_rp::i2c::Error>>,
+) -> fmt::Result {
+    let usb = if usb_drive::plugged_in() { "yes" } else { "no" };
+    match readings {
+        Some(Ok(r)) => {
+            core::writeln!(text, "Battery: {:.2}%", r.soc)?;
+            core::writeln!(text, "Voltage: {:.3} V", r.voltage)?;
+            core::writeln!(text, "Rate: {:+.2} %/hr", r.charge_rate)?;
+            core::writeln!(text, "USB power: {usb}")?;
+            core::writeln!(text, "MAX17048 v{:#06x} id {:#04x}", r.version, r.id)?;
+            let sleep = yes_no(r.sleeping);
+            core::writeln!(text, "RCOMP {:#04x}, sleep: {sleep}", r.rcomp)?;
+            core::writeln!(text, "1% alert: {}", yes_no(r.soc_change_alert))?;
+            core::writeln!(text, "Low alert: {}%", r.empty_alert)?;
+            let (v_min, v_max) = (r.voltage_alert_min, r.voltage_alert_max);
+            core::writeln!(text, "V alert: {v_min:.2}-{v_max:.2} V")?;
+        }
+        Some(Err(_)) => core::writeln!(text, "Fuel gauge: I2C error\nUSB power: {usb}")?,
+        None => core::writeln!(text, "Fuel gauge busy\nUSB power: {usb}")?,
+    }
+    let alerts = FUEL_GAUGE_ALERTS.load(Ordering::Relaxed);
+    core::write!(text, "Alerts: {alerts}")?;
+    if alerts > 0 {
+        let last_ms = FUEL_GAUGE_LAST_ALERT_MS.load(Ordering::Relaxed);
+        let ago_s = (Instant::now().as_millis() as u32).wrapping_sub(last_ms) / 1000;
+        core::write!(text, ", last {}m {}s ago", ago_s / 60, ago_s % 60)?;
+        let flags = FUEL_GAUGE_LAST_ALERT_FLAGS.load(Ordering::Relaxed) as u16;
+        for name in fuel_gauge::alert_flag_names(flags) {
+            core::write!(text, "\n  {name}")?;
+        }
+    }
+    Ok(())
+}
+
+fn yes_no(value: bool) -> &'static str {
+    if value { "yes" } else { "no" }
 }
 
 #[inline(always)]
@@ -1442,7 +1514,10 @@ async fn main(spawner: Spawner) {
 
     // The UI starts with one canvas; the other is immediately available for a
     // future frame once the display task has finished with it.
-    let mut ic_rp_platform = IcRpPlatform::new(backlight, backlight2, initial_canvas);
+    // This board uses a MAX17048 battery fuel gauge.
+    let fuel_gauge: &'static SharedFuelGauge =
+        FUEL_GAUGE.init(NoopMutex::new(RefCell::new(FuelGauge::new(board_i2c))));
+    let mut ic_rp_platform = IcRpPlatform::new(backlight, backlight2, initial_canvas, fuel_gauge);
     if enter_bootsel {
         show_message(
             &mut ic_rp_platform,
@@ -1490,10 +1565,9 @@ async fn main(spawner: Spawner) {
     };
     FREE_FRAME_BUFFERS.send(spare_canvas).await;
 
-    // This board uses a MAX17048 battery fuel gauge, whose open-drain ALRT
-    // output is on GPIO23.
+    // The fuel gauge's open-drain ALRT output is on GPIO23.
     let fuel_gauge_alert_n = Input::new(p.PIN_23, Pull::Up);
-    unwrap!(spawner.spawn(battery_task(FuelGauge::new(board_i2c), fuel_gauge_alert_n)));
+    unwrap!(spawner.spawn(battery_task(fuel_gauge, fuel_gauge_alert_n)));
     interrupt::SWI_IRQ_0.set_priority(Priority::P2);
     let audio_spawner = AUDIO_EXECUTOR.start(interrupt::SWI_IRQ_0);
     unwrap!(audio_spawner.spawn(audio_task(i2s, audio_shutdown_n)));
@@ -1780,8 +1854,9 @@ async fn display_task(mut display: LcdDisplay) {
     }
 }
 
-/// Publishes the state of charge, then releases the ALRT pin.
-fn update_battery_soc(fuel_gauge: &mut FuelGauge) -> Result<(), embassy_rp::i2c::Error> {
+/// Publishes the state of charge, then releases the ALRT pin. Returns the
+/// alert flags that were set.
+fn update_battery_soc(fuel_gauge: &mut FuelGauge) -> Result<u16, embassy_rp::i2c::Error> {
     let soc = fuel_gauge.soc()? as i32;
     if BATTERY_SOC.swap(soc, Ordering::Relaxed) != soc {
         BATTERY_CHANGED.signal(());
@@ -1792,16 +1867,23 @@ fn update_battery_soc(fuel_gauge: &mut FuelGauge) -> Result<(), embassy_rp::i2c:
 /// Reads the battery level at boot and then whenever the fuel gauge pulls
 /// ALRT low (each 1% change, or a low-battery alert), instead of polling.
 #[embassy_executor::task]
-async fn battery_task(mut fuel_gauge: FuelGauge, mut alert_n: Input<'static>) {
+async fn battery_task(fuel_gauge: &'static SharedFuelGauge, mut alert_n: Input<'static>) {
     let mut enabled = false;
     loop {
-        let result = {
+        let alerted = alert_n.is_low();
+        let result = fuel_gauge.lock(|fuel_gauge| {
+            let fuel_gauge = &mut *fuel_gauge.borrow_mut();
             let _clock_guard = power::keep_awake();
             if !enabled {
                 enabled = fuel_gauge.enable_alert().is_ok();
             }
-            update_battery_soc(&mut fuel_gauge)
-        };
+            update_battery_soc(fuel_gauge)
+        });
+        if alerted && let Ok(flags) = result {
+            FUEL_GAUGE_ALERTS.fetch_add(1, Ordering::Relaxed);
+            FUEL_GAUGE_LAST_ALERT_MS.store(Instant::now().as_millis() as u32, Ordering::Relaxed);
+            FUEL_GAUGE_LAST_ALERT_FLAGS.store(flags as u32, Ordering::Relaxed);
+        }
         if result.is_err() || !enabled {
             warn!("fuel gauge: I2C error, retrying");
             Timer::after_secs(1).await;

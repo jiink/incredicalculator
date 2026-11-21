@@ -102,6 +102,11 @@ pub trait IcPlatform {
     fn memory_stats(&self) -> Option<MemoryStats> {
         None
     }
+    /// Free-form text about the platform for the Info app, such as hardware
+    /// readings.
+    fn info(&mut self) -> String {
+        String::from("No info for this platform.")
+    }
 }
 
 /// Memory use in bytes. Stack figures are high-water marks: the deepest each

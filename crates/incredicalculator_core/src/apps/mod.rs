@@ -15,6 +15,8 @@ mod chord_pad;
 pub use chord_pad::ChordPad;
 mod bytebeat;
 pub use bytebeat::Bytebeat;
+mod info;
+pub use info::Info;
 mod color_calculator;
 pub use color_calculator::ColorCalculator;
 #[cfg(feature = "scripting")]

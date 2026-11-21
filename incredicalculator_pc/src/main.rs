@@ -255,6 +255,10 @@ impl IcPlatform for IcRaylibPlatform {
         None
     }
 
+    fn info(&mut self) -> String {
+        String::from("Incredicalculator PC build.\nNo hardware info to show.")
+    }
+
     fn get_brightness(&self) -> u8 {
         self.fake_brightness
     }

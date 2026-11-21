@@ -4,6 +4,7 @@ use crate::apps::AspectRatioCalculator;
 use crate::apps::Bytebeat;
 use crate::apps::ChordPad;
 use crate::apps::ColorCalculator;
+use crate::apps::Info;
 use crate::apps::ScaleKeys;
 use crate::apps::SoundTest;
 use crate::apps::{Calculator, EngineMode};
@@ -110,6 +111,7 @@ impl IcShell {
             Box::new(ChordPad::new()),
             Box::new(Bytebeat::new()),
             Box::new(FaceCalculator::new()),
+            Box::new(Info::new()),
         ];
         Self {
             apps,

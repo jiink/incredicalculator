@@ -206,6 +206,10 @@ impl IcPlatform for BrowserPlatform {
         None
     }
 
+    fn info(&mut self) -> String {
+        String::from("Incredicalculator web build.\nNo hardware info to show.")
+    }
+
     fn get_brightness(&self) -> u8 {
         self.brightness
     }
