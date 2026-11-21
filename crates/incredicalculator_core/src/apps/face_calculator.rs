@@ -646,6 +646,12 @@ impl FaceCalculator {
         eyes.set_idle_mode(true, 3, 2);
         Self { eyes }
     }
+
+    /// Look in a direction, and stop the idle wandering so it stays there.
+    fn look(&mut self, pos: RoboPosition) {
+        self.eyes.set_idle_mode(false, 3, 2);
+        self.eyes.set_position(pos);
+    }
 }
 
 impl IcApp for FaceCalculator {
@@ -671,21 +677,28 @@ impl IcApp for FaceCalculator {
 
     fn on_key(&mut self, key: IcKey, _ctx: &InputContext) {
         match key {
-            IcKey::Num1 => self.eyes.set_mood(RoboMood::Default),
-            IcKey::Num2 => self.eyes.set_mood(RoboMood::Tired),
-            IcKey::Num3 => self.eyes.set_mood(RoboMood::Angry),
-            IcKey::Num4 => self.eyes.set_mood(RoboMood::Happy),
+            // Number pad = where the eyes look, laid out like the keys
+            // (7 8 9 on top, 1 2 3 on the bottom, 5 in the middle).
+            IcKey::Num7 => self.look(RoboPosition::NW),
+            IcKey::Num8 => self.look(RoboPosition::N),
+            IcKey::Num9 => self.look(RoboPosition::NE),
+            IcKey::Num4 => self.look(RoboPosition::W),
+            IcKey::Num5 => self.look(RoboPosition::Center),
+            IcKey::Num6 => self.look(RoboPosition::E),
+            IcKey::Num1 => self.look(RoboPosition::SW),
+            IcKey::Num2 => self.look(RoboPosition::S),
+            IcKey::Num3 => self.look(RoboPosition::SE),
 
-            IcKey::Num5 => self.eyes.anim_confused(),
-            IcKey::Num6 => self.eyes.anim_laugh(),
+            // Operators = moods.
+            IcKey::Divide => self.eyes.set_mood(RoboMood::Default),
+            IcKey::Multiply => self.eyes.set_mood(RoboMood::Angry),
+            IcKey::Minus => self.eyes.set_mood(RoboMood::Tired),
+            IcKey::Plus => self.eyes.set_mood(RoboMood::Happy),
 
-            IcKey::Num7 => self.eyes.sweat = true,
-            IcKey::Num8 => self.eyes.sweat = false,
-
-            IcKey::Backspace => self.eyes.set_position(RoboPosition::NW),
-            IcKey::Divide => self.eyes.set_position(RoboPosition::N),
-            IcKey::Multiply => self.eyes.set_position(RoboPosition::NE),
-            IcKey::Plus => self.eyes.set_position(RoboPosition::Center),
+            // Reactions.
+            IcKey::Equals => self.eyes.anim_laugh(),
+            IcKey::Backspace => self.eyes.anim_confused(),
+            IcKey::Num0 => self.eyes.sweat = !self.eyes.sweat,
 
             _ => {}
         }
