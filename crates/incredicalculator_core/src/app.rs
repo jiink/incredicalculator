@@ -68,11 +68,9 @@ impl AppIcon<'_> {
     }
 }
 
-/// The first two characters of `name` that aren't spaces, written into
-/// `buffer`: "Ohm's Law" gives "Oh", "A Game" gives "AG".
 fn initials<'b>(name: &str, buffer: &'b mut [u8; 8]) -> &'b str {
     let mut len = 0;
-    for c in name.chars().filter(|c| !c.is_whitespace()).take(2) {
+    for c in name.chars().filter(|c| !c.is_whitespace()).take(4) {
         len += c.encode_utf8(&mut buffer[len..]).len();
     }
     core::str::from_utf8(&buffer[..len]).unwrap_or_default()
@@ -80,13 +78,13 @@ fn initials<'b>(name: &str, buffer: &'b mut [u8; 8]) -> &'b str {
 
 #[cfg(test)]
 #[test]
-fn initials_are_the_first_two_non_space_characters() {
+fn initials_are_the_first_x_non_space_characters() {
     let mut buffer = [0u8; 8];
-    assert_eq!(initials("Ohm's Law", &mut buffer), "Oh");
-    assert_eq!(initials("  A Game", &mut buffer), "AG");
+    assert_eq!(initials("Ohm's Law", &mut buffer), "Ohm'");
+    assert_eq!(initials("  A Game", &mut buffer), "AGam");
     assert_eq!(initials("X", &mut buffer), "X");
     assert_eq!(initials("", &mut buffer), "");
-    assert_eq!(initials("ééé", &mut buffer), "éé");
+    assert_eq!(initials("ééé", &mut buffer), "ééé");
 }
 
 pub struct InputContext<'a> {
