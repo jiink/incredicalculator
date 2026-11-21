@@ -113,11 +113,11 @@ function update()
     clear(BG)
     line(0, 20, 320, 20, EDGE)
     line(0, 220, 320, 220, EDGE)
-    text("OHM'S LAW   V = I x R", 6, 15, 6, TEXT)
+    text("OHM'S LAW   V = I * R", 6, 15, 6, TEXT)
 
     local V, I = boxes.V:value(), boxes.I:value()
     local p = (V and I) and fmt(V * I) .. " W" or "---"
-    text("P = " .. p, 314, 15, 5, DIM, "right")
+    text("P = " .. p, 160, 235, 4, DIM, "center")
 
     local c = calc_key()
     for i, f in ipairs(FIELDS) do
@@ -129,6 +129,4 @@ function update()
         end
         boxes[f.key]:draw(i == sel)
     end
-
-    text("Super+8/2 move   Super+Bk clear   F4 reset", 160, 235, 4, DIM, "center")
 end

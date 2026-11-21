@@ -78,6 +78,9 @@ pub struct IcShell {
     last_active_app_idx: Option<usize>,
     selector_page: usize,
     selector_hints_started_at: Option<u64>,
+    /// The selector's key hints were still fading in on the last update, so
+    /// the platform should keep redrawing until they're fully shown.
+    selector_hints_fading: bool,
     selector_pressed: Option<IcKey>,
     settings_open: bool,
     settings_menu: SettingsMenu,
@@ -118,6 +121,7 @@ impl IcShell {
             last_active_app_idx: None,
             selector_page: 0,
             selector_hints_started_at: None,
+            selector_hints_fading: false,
             selector_pressed: None,
             settings_open: false,
             settings_menu: SettingsMenu::new(),
@@ -271,9 +275,10 @@ impl IcShell {
     }
 
     pub fn requires_realtime_updates(&self) -> bool {
-        self.active_app_idx
-            .map(|idx| self.apps[idx].requires_realtime_updates())
-            .unwrap_or(false)
+        match self.active_app_idx {
+            Some(idx) => self.apps[idx].requires_realtime_updates(),
+            None => self.selector_hints_fading,
+        }
     }
 
     /// Compact RAM readout in the status area, left of the battery icon:
@@ -901,6 +906,7 @@ impl IcShell {
             key_states: &app_states,
             ..ctx
         };
+        self.selector_hints_fading = false;
         if let Some(appidx) = self.active_app_idx {
             self.apps[appidx].update(platform, &app_ctx, &mut self.audio);
             self.apps[appidx].send_hid(platform);
@@ -912,6 +918,7 @@ impl IcShell {
                 let fade_elapsed = elapsed.saturating_sub(KEY_HINT_FADE_DELAY_MS);
                 (fade_elapsed.min(KEY_HINT_FADE_IN_MS) * u8::MAX as u64 / KEY_HINT_FADE_IN_MS) as u8
             });
+            self.selector_hints_fading = hint_opacity.is_some_and(|opacity| opacity < u8::MAX);
             self.draw_app_selector(platform, hint_opacity);
         }
         if let Some(adjustable) = self.adjusting_something {
