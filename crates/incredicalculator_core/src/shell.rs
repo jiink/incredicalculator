@@ -682,6 +682,15 @@ impl IcShell {
         let pressed_card = self
             .selector_pressed
             .and_then(|key| cards.iter().find(|card| card.button == key));
+        // Pressing an app card hides the others; navigation cards keep the grid visible.
+        let hide_unpressed = pressed_card.is_some_and(|card| {
+            !matches!(
+                card.action,
+                SelectorAction::PreviousPage
+                    | SelectorAction::NextPage
+                    | SelectorAction::OpenSettings
+            )
+        });
         if let Some(card) = pressed_card {
             draw_text(
                 platform,
@@ -706,7 +715,7 @@ impl IcShell {
             let end = start + IVec2::new(100, 64);
             let is_empty = matches!(card.action, SelectorAction::None) && index < APPS_PER_PAGE;
             let is_pressed = self.selector_pressed == Some(card.button);
-            if is_empty || (pressed_card.is_some() && !is_pressed) {
+            if is_empty || (hide_unpressed && !is_pressed) {
                 continue;
             }
             if is_pressed {
