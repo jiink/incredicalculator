@@ -244,7 +244,7 @@ impl Bytebeat {
             // end of a full one, except at the very end of the text.
             let is_last = line_idx + 1 == line_count;
             if cursor >= start && (cursor < end || (is_last && cursor == end)) {
-                let x = text::text_to_pos(line, left, scale, cursor - start, FontId::Futural);
+                let x = text::text_to_pos(line, left, scale, cursor - start, FontId::System);
                 platform.draw_line(
                     Vec2::new(x, y - scale * 1.4),
                     Vec2::new(x, y + scale * 0.8),
@@ -301,7 +301,7 @@ fn wrap_lines(
     while count < lines.len() {
         let mut end = start;
         while end < text.len()
-            && text::text_width(&text[start..end + 1], scale, FontId::Futural) <= max_width
+            && text::text_width(&text[start..end + 1], scale, FontId::System) <= max_width
         {
             end += 1;
         }

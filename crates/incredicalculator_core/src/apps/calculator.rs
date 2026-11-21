@@ -188,7 +188,7 @@ struct FittedText {
 
 impl FittedText {
     fn new(text: &str, max_scale: f32, width: f32, height: f32, center_y: f32) -> Self {
-        let font_id = FontId::Futural;
+        let font_id = FontId::System;
         let width = width.max(0.0);
         let height = height.max(0.0);
         let max_width = text_width(text, max_scale, font_id);
@@ -1372,7 +1372,7 @@ impl Calculator {
                 margin,
                 eq_layout.scale,
                 self.current_eq.cursor,
-                FontId::Futural,
+                FontId::System,
             );
             platform.draw_line(
                 Vec2::new(cursor_x, eq_center_y - eq_layout.height * 0.5),

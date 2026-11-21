@@ -140,7 +140,7 @@ impl TextStyle {
             scale,
             color,
             stroke: Stroke::Fixed(2.0),
-            font: fonts::FontId::Futural,
+            font: fonts::FontId::System,
             align: HAlign::Left,
         }
     }

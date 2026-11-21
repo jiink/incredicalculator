@@ -498,7 +498,7 @@ impl<const N: usize> MathInput<N> {
 
         let margin = Self::TEXT_MARGIN;
         let display_text = self.text();
-        let font_id = FontId::Futural;
+        let font_id = FontId::System;
         let text_scale = self.text_scale(display_text, font_id);
         let text_x = self.pos.x as f32 + margin;
         let text_center_y = self.pos.y as f32 + self.size.y as f32 * 0.5;

@@ -1,5 +1,6 @@
 use crate::FIRMWARE_VERSION;
 use crate::app::InputContext;
+use crate::fonts::{self, FontId};
 use crate::input::{IcKey, KeyMode};
 use crate::platform::{CANVAS_WIDTH, IcPlatform, SETTINGS_STORAGE_LEN, rgb8_hex};
 use crate::text::{HAlign, TextStyle, draw_text_f};
@@ -26,6 +27,7 @@ enum CheckboxSettingKind {
 #[derive(Clone, Copy)]
 enum ChoiceSettingKind {
     KeyMode,
+    Font,
 }
 
 #[derive(Clone, Copy)]
@@ -55,7 +57,7 @@ enum EntryValue {
     Choice { label: &'static str },
 }
 
-const SETTINGS: [SettingEntry; 3] = [
+const SETTINGS: [SettingEntry; 4] = [
     SettingEntry {
         label: "Screen timeout",
         display: SettingDisplay::Integer {
@@ -68,6 +70,12 @@ const SETTINGS: [SettingEntry; 3] = [
         label: "Keys",
         display: SettingDisplay::Choice {
             kind: ChoiceSettingKind::KeyMode,
+        },
+    },
+    SettingEntry {
+        label: "Font",
+        display: SettingDisplay::Choice {
+            kind: ChoiceSettingKind::Font,
         },
     },
     SettingEntry {
@@ -88,15 +96,21 @@ struct StoredSettings {
     screen_timeout_seconds: u32,
     key_mode: KeyMode,
     show_memory: bool,
+    font: FontId,
 }
 
 const FLAG_SHOW_MEMORY: u8 = 0x10;
 const KEY_MODE_MASK: u8 = 0x0F;
+// Index into FontId::SELECTABLE. Blobs saved before this existed have it
+// clear, which is the default font.
+const FONT_MASK: u8 = 0x60;
+const FONT_SHIFT: u8 = 5;
 
 impl StoredSettings {
     // Layout: magic (4), screen timeout LE (4), then one byte holding the key
-    // mode in the low nibble and flags in the high nibble. Blobs saved before
-    // the flags existed have them all clear, so they still decode. Integrity
+    // mode in the low nibble and flags plus the font index in the high
+    // nibble. Blobs saved before those existed have them all clear, so they
+    // still decode. Integrity
     // checking is left to the platform's storage.
     fn encode(&self) -> [u8; SETTINGS_STORAGE_LEN] {
         let mut bytes = [0; SETTINGS_STORAGE_LEN];
@@ -112,7 +126,8 @@ impl StoredSettings {
         } else {
             0
         };
-        bytes[8] = key_mode | flags;
+        let font = (self.font.to_index() << FONT_SHIFT) & FONT_MASK;
+        bytes[8] = key_mode | flags | font;
         bytes
     }
 
@@ -120,10 +135,11 @@ impl StoredSettings {
         if bytes[0..4] != STORED_SETTINGS_MAGIC {
             return None;
         }
-        let flags = bytes[8] & !KEY_MODE_MASK;
+        let flags = bytes[8] & !KEY_MODE_MASK & !FONT_MASK;
         if flags & !FLAG_SHOW_MEMORY != 0 {
             return None;
         }
+        let font = FontId::from_index((bytes[8] & FONT_MASK) >> FONT_SHIFT)?;
         let key_mode = match bytes[8] & KEY_MODE_MASK {
             0 => KeyMode::Normal,
             1 => KeyMode::Sticky,
@@ -134,6 +150,7 @@ impl StoredSettings {
             screen_timeout_seconds: u32::from_le_bytes(bytes[4..8].try_into().unwrap()),
             key_mode,
             show_memory: flags & FLAG_SHOW_MEMORY != 0,
+            font,
         })
     }
 }
@@ -190,6 +207,7 @@ impl SettingsMenu {
             platform.set_screen_timeout_seconds(stored.screen_timeout_seconds);
             self.key_mode = stored.key_mode;
             self.show_memory = stored.show_memory;
+            fonts::set_system_font(stored.font);
         }
         self.persisted = Some(self.stored_settings(platform));
     }
@@ -208,6 +226,7 @@ impl SettingsMenu {
             screen_timeout_seconds: platform.get_screen_timeout_seconds(),
             key_mode: self.key_mode,
             show_memory: self.show_memory,
+            font: fonts::system_font(),
         }
     }
 
@@ -270,6 +289,9 @@ impl SettingsMenu {
                     },
                     SettingDisplay::Choice { kind } => match kind {
                         ChoiceSettingKind::KeyMode => self.key_mode = self.key_mode.next(),
+                        ChoiceSettingKind::Font => {
+                            fonts::set_system_font(fonts::system_font().next())
+                        }
                     },
                 }
             }
@@ -374,6 +396,7 @@ impl SettingsMenu {
             SettingDisplay::Choice { kind } => EntryValue::Choice {
                 label: match kind {
                     ChoiceSettingKind::KeyMode => self.key_mode.label(),
+                    ChoiceSettingKind::Font => fonts::system_font().label(),
                 },
             },
         }
@@ -451,6 +474,7 @@ mod tests {
                 screen_timeout_seconds: 300,
                 key_mode: KeyMode::Sticky,
                 show_memory,
+                font: FontId::Classic,
             };
             assert!(StoredSettings::decode(&settings.encode()) == Some(settings));
         }
@@ -473,6 +497,7 @@ mod tests {
             screen_timeout_seconds: 120,
             key_mode: KeyMode::Normal,
             show_memory: false,
+            font: FontId::Futural,
         }
         .encode();
         bytes[8] |= 0x80;
