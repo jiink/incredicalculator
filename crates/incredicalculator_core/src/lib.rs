@@ -138,6 +138,10 @@ pub mod graphics {
         shapes: impl IntoIterator<Item = ShapeView<P>>,
         transform: Affine2,
     ) {
+        // Borders scale with the shape so they keep their thickness relative
+        // to it. Under a stretch the axis scales differ, so this uses their
+        // geometric mean (the square root of the area scale).
+        let border_scale = libm::sqrtf(transform.matrix2.determinant().abs());
         let mut stack = [Vec2::ZERO; STACK_POINTS];
         let mut heap = Vec::new();
         for shape in shapes {
@@ -162,7 +166,7 @@ pub mod graphics {
             };
 
             let border_width = if shape.border_width > 0.0 {
-                (shape.border_width as u32).max(1)
+                (libm::roundf(shape.border_width * border_scale) as u32).max(1)
             } else {
                 0
             };
