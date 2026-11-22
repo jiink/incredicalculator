@@ -7,6 +7,7 @@ use crate::apps::Info;
 use crate::apps::ScaleKeys;
 use crate::apps::{Calculator, EngineMode};
 use crate::apps::RangeMapperCalculator;
+use crate::apps::Grapher;
 use crate::audio_engine::AudioEngine;
 use crate::graphics;
 use crate::graphics::draw_vitmap_aff;
@@ -103,6 +104,7 @@ impl IcShell {
             Box::new(Calculator::new(EngineMode::Scientific)),
             Box::new(AspectRatioCalculator::new()),
             Box::new(RangeMapperCalculator::new()),
+            Box::new(Grapher::new()),
             Box::new(ScaleKeys::new()),
             Box::new(ChordPad::new()),
             Box::new(Bytebeat::new()),

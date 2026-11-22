@@ -4,6 +4,8 @@ mod aspect_ratio_calculator;
 pub use aspect_ratio_calculator::AspectRatioCalculator;
 mod range_mapper_calculator;
 pub use range_mapper_calculator::RangeMapperCalculator;
+mod grapher;
+pub use grapher::Grapher;
 mod music;
 mod scale_keys;
 pub use scale_keys::ScaleKeys;

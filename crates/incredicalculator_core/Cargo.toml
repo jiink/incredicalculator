@@ -11,6 +11,7 @@ format_no_std = "1.2.0"
 glam = { version = "0.30.9", default-features = false, features = ["libm", "scalar-math"] }
 rgb = "0.8.52"
 libm = "0.2.15"
+bumpalo = { version = "3.16", default-features = false }
 num-derive = "0.4.2"
 culsynth = { version = "0.2.0" }
 tsuki = { version = "0.4.8", optional = true, default-features = false }

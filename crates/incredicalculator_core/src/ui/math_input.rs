@@ -15,6 +15,9 @@ pub enum MathInputMode {
     /// Integer bitwise expressions in the variable `t`, typed with the
     /// programmer calculator's keys plus Super+0 for `t`.
     Bytebeat,
+    /// An expression in the variable `x`, typed like `Expression` plus
+    /// Super+0 for `x`.
+    Graph,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -266,7 +269,7 @@ impl<const N: usize> MathInput<N> {
                     }
                 }
             }
-            MathInputMode::Expression => {
+            MathInputMode::Expression | MathInputMode::Graph => {
                 for byte in text.bytes() {
                     let ch = byte as char;
                     if !Self::mode_char_allowed(self.mode, ch) {
@@ -420,7 +423,7 @@ impl<const N: usize> MathInput<N> {
                 .map(f64::from)
                 .map_err(|_| MathInputError::InvalidValue)?,
 
-            MathInputMode::Expression => exp_rs::interp(self.text(), None)
+            MathInputMode::Expression | MathInputMode::Graph => exp_rs::interp(self.text(), None)
                 .map(|v| v as f64)
                 .map_err(|_| MathInputError::InvalidValue)?,
 
@@ -557,6 +560,11 @@ impl<const N: usize> MathInput<N> {
         MathInputEvent::Handled
     }
 
+    /// Whether the mode takes decimal expressions, with or without `x`.
+    fn is_expression(&self) -> bool {
+        matches!(self.mode, MathInputMode::Expression | MathInputMode::Graph)
+    }
+
     fn handle_shifted_key(&mut self, key: IcKey) -> MathInputEvent {
         if self.mode == MathInputMode::Bytebeat {
             return self.handle_shifted_bytebeat_key(key);
@@ -568,10 +576,10 @@ impl<const N: usize> MathInput<N> {
             IcKey::Num3 if self.mode == MathInputMode::Hexadecimal => Some('D'),
             IcKey::Num4 if self.mode == MathInputMode::Hexadecimal => Some('E'),
             IcKey::Num5 if self.mode == MathInputMode::Hexadecimal => Some('F'),
-            IcKey::Num6 if self.mode == MathInputMode::Expression => Some('.'),
-            IcKey::Num7 if self.mode == MathInputMode::Expression => Some('('),
-            IcKey::Num8 if self.mode == MathInputMode::Expression => Some(')'),
-            IcKey::Equals if self.mode == MathInputMode::Expression => Some('^'),
+            IcKey::Num6 if self.is_expression() => Some('.'),
+            IcKey::Num7 if self.is_expression() => Some('('),
+            IcKey::Num8 if self.is_expression() => Some(')'),
+            IcKey::Equals if self.is_expression() => Some('^'),
             _ => None,
         };
 
@@ -610,6 +618,9 @@ impl<const N: usize> MathInput<N> {
             IcKey::Num0 if self.mode == MathInputMode::Bytebeat => {
                 Self::changed_from(self.insert_char('t'))
             }
+            IcKey::Num0 if self.mode == MathInputMode::Graph => {
+                Self::changed_from(self.insert_char('x'))
+            }
             IcKey::Num0 => {
                 self.insert_char('.');
                 MathInputEvent::Changed
@@ -645,7 +656,9 @@ impl<const N: usize> MathInput<N> {
                         && self.buffer.cursor == 0
                         && !self.text().as_bytes().contains(&b'-'))
             }
-            MathInputMode::Expression => Self::mode_char_allowed(self.mode, ch),
+            MathInputMode::Expression | MathInputMode::Graph => {
+                Self::mode_char_allowed(self.mode, ch)
+            }
             MathInputMode::Hexadecimal | MathInputMode::Bytebeat => {
                 Self::mode_char_allowed(self.mode, ch)
             }
@@ -660,6 +673,9 @@ impl<const N: usize> MathInput<N> {
                     ch,
                     '0'..='9' | '.' | '(' | ')' | '^' | '/' | '*' | '-' | '+'
                 )
+            }
+            MathInputMode::Graph => {
+                ch == 'x' || Self::mode_char_allowed(MathInputMode::Expression, ch)
             }
             MathInputMode::Hexadecimal => ch.is_ascii_hexdigit(),
             MathInputMode::Bytebeat => ch.is_ascii_hexdigit() || "tx()~&|%<>^/*-+".contains(ch),

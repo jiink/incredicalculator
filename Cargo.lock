@@ -1599,6 +1599,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "bitwise_expr",
+ "bumpalo",
  "culsynth",
  "exp-rs",
  "format_no_std",
