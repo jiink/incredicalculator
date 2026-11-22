@@ -1,6 +1,7 @@
 -- title: Gamepad
 -- desc:  Plays games on the computer it is plugged into, as a USB gamepad.
 -- color: 0x2f8f5b
+-- icon: VM1:AQQMAQdEZWZhdWx0AQEFANvb2wiQ/2AAsP9QAMD/MAAQADAAEACw/7D/sP+Q/9D/gP8wAADb29sIcABgAFAAUABAADAA8P8wAPD/sP9QALD/cADQ/4AAMAAAISEhDLL/4f+u//b/wv/2/8T/DgDZ/w4A3P/2//D/9f/v/9//2//g/9n/yf/I/8j/wf/g/wDQGxsGPADY/zIA6v8fAOf/FQDZ/x4Ax/8zAMn/AAeB8gZhAAMAVwAVAEMAEwA5AAQAQwDz/1cA9P8=
 
 -- Gamepad: makes the calculator a game controller for the computer it is
 -- plugged into. Each key holds its button (or tilts the stick) for as long as

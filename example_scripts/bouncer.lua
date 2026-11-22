@@ -2,6 +2,7 @@
 -- desc:     A square bounces around the screen; push it with 2 4 6 8.
 -- color:    0x2a6f97
 -- realtime: true
+-- icon: VM1:AAAMAQdEZWZhdWx0AQEEAP///wT4CAgICPj4+AA3Ly8E+fkH+QcH+QcFK+6jWgB3sXsDAgEABvz7ACvuowgCAAQABf8F/QT8AvwB/QH/
 
 -- Bouncer: an example scripted app.
 --
