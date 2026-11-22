@@ -1682,6 +1682,8 @@ async fn main(spawner: Spawner) {
     report_memory(&mut last_memory_stats);
     let mut next_memory_check = Instant::now();
     let mut screen_dirty = false;
+    // An input held back for the next update; see the drain below.
+    let mut deferred_input: Option<InputBufferEvent> = None;
     let mut audio_is_running = false;
     info!("audio idle: no active voices; waiting for input");
     loop {
@@ -1743,7 +1745,11 @@ async fn main(spawner: Spawner) {
             }
         };
         // Something already wants a redraw (see the USB drive handling below).
-        let (first_input, mut audio_buffer, realtime_tick) = if screen_dirty {
+        let (first_input, mut audio_buffer, realtime_tick) = if let Some(event) =
+            deferred_input.take()
+        {
+            (Some(event), None, false)
+        } else if screen_dirty {
             (None, None, false)
         } else {
             match select4(
@@ -1777,22 +1783,29 @@ async fn main(spawner: Spawner) {
             .audio_mut()
             .set_remote_synth_active(SYNTH_ACTIVE.load(Ordering::Relaxed));
 
+        // The shell sees key levels once per update, so a key that goes
+        // down and up (or up and down) before the next update would lose
+        // its press. Each update applies at most one change per key; a
+        // second change waits for the next update, which runs right away.
+        // Quick repeated taps of one key (+/- in the volume readout) would
+        // otherwise drop presses whenever a frame takes longer to draw than
+        // the gap between taps.
         let mut inputs_changed = false;
-        if let Some(event) = first_input {
-            match event.movement {
-                KeyMovement::Up => {
-                    debug!("input key={} up", event.key as usize);
-                    icalc.key_up(event.key);
-                }
-                KeyMovement::Down => {
-                    ic_rp_platform.record_key_activity();
-                    debug!("input key={} down", event.key as usize);
-                    icalc.key_down(event.key);
-                }
+        let mut changed_keys = 0u32;
+        let mut next_input = first_input;
+        loop {
+            let Some(event) = next_input
+                .take()
+                .or_else(|| INPUT_BUFFER.try_receive().ok())
+            else {
+                break;
+            };
+            let key_bit = 1u32 << (event.key as u32);
+            if changed_keys & key_bit != 0 {
+                deferred_input = Some(event);
+                break;
             }
-            inputs_changed = true;
-        }
-        while let Ok(event) = INPUT_BUFFER.try_receive() {
+            changed_keys |= key_bit;
             match event.movement {
                 KeyMovement::Up => {
                     debug!("input key={} up", event.key as usize);
@@ -2098,6 +2111,9 @@ async fn audio_task(mut i2s: PioI2sOut<'static, PIO0, 0>, mut audio_shutdown_n: 
 /// Renders the synth (and any app audio from core 0) into I2S buffers on
 /// core 1, which otherwise only scans the keys, so frame rendering on core 0
 /// can't starve the audio.
+/// Samples rendered between yields to the key scanner, about 2.5 ms of work.
+const SYNTH_CHUNK: usize = 256;
+
 #[embassy_executor::task]
 async fn synth_core1_task(engine: &'static mut AudioEngine) {
     let mut clock_guard = None;
@@ -2139,21 +2155,21 @@ async fn synth_core1_task(engine: &'static mut AudioEngine) {
         } else {
             None
         };
-        match &app_pcm {
-            Some(app_pcm) => {
-                for (dst, &app_sample) in buf.samples.iter_mut().zip(app_pcm.samples.iter()) {
-                    let mixed = (engine.next_sample() as i32 + app_sample as i32)
-                        .clamp(i16::MIN as i32, i16::MAX as i32);
-                    let sample_u16 = mixed as i16 as u16 as u32;
-                    *dst = (sample_u16 << 16) | sample_u16;
-                }
+        // A whole buffer takes ~20 ms to render. The key scanner shares this
+        // executor, so yield between chunks: otherwise a quick tap can come
+        // and go between two scans while audio is playing.
+        for (chunk_idx, chunk) in buf.samples.chunks_mut(SYNTH_CHUNK).enumerate() {
+            let app_chunk = app_pcm
+                .as_ref()
+                .map(|app_pcm| &app_pcm.samples[chunk_idx * SYNTH_CHUNK..][..chunk.len()]);
+            for (i, dst) in chunk.iter_mut().enumerate() {
+                let app_sample = app_chunk.map_or(0, |app_chunk| app_chunk[i] as i32);
+                let mixed = (engine.next_sample() as i32 + app_sample)
+                    .clamp(i16::MIN as i32, i16::MAX as i32);
+                let sample_u16 = mixed as i16 as u16 as u32;
+                *dst = (sample_u16 << 16) | sample_u16;
             }
-            None => {
-                for dst in buf.samples.iter_mut() {
-                    let sample_u16 = engine.next_sample() as u16 as u32;
-                    *dst = (sample_u16 << 16) | sample_u16;
-                }
-            }
+            embassy_futures::yield_now().await;
         }
         let render_us = elapsed_us(render_start);
         add_count(&AUDIO_BUFFERS_RENDERED, 1);
