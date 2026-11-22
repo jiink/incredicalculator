@@ -34,6 +34,20 @@ pub const EXAMPLE_SCRIPT: (&str, &str) = (
     include_str!("../../../../example_scripts/bouncer.lua"),
 );
 
+/// Scripts bundled into the firmware, as (file name, source): the default
+/// example plus the apps that used to be compiled in.
+pub const EXAMPLE_SCRIPTS: &[(&str, &str)] = &[
+    EXAMPLE_SCRIPT,
+    (
+        "colors.lua",
+        include_str!("../../../../example_scripts/colors.lua"),
+    ),
+    (
+        "face.lua",
+        include_str!("../../../../example_scripts/face.lua"),
+    ),
+];
+
 /// Small scripts for tests.
 #[cfg(test)]
 pub(crate) mod test_sources {

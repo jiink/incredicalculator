@@ -320,11 +320,9 @@
           remove.title = `Delete ${name}`;
           remove.setAttribute('aria-label', `Delete ${name}`);
           remove.addEventListener('click', () => {
-            if (confirm(`Delete ${name}?`)) {
-              delete_script(name);
-              refreshScriptList();
-              requestFrame();
-            }
+            delete_script(name);
+            refreshScriptList();
+            requestFrame();
           });
           const label = document.createElement('span');
           label.textContent = name;

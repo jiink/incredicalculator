@@ -132,10 +132,11 @@ pub fn mount_or_format() {
         Err(FatError::NotFat) => {
             info!("script drive: no filesystem, formatting");
             #[cfg(feature = "scripting")]
-            let files = {
-                let (name, source) = incredicalculator_core::script::EXAMPLE_SCRIPT;
-                [(name, source.as_bytes())]
-            };
+            let files: alloc::vec::Vec<(&str, &[u8])> =
+                incredicalculator_core::script::EXAMPLE_SCRIPTS
+                    .iter()
+                    .map(|&(name, source)| (name, source.as_bytes()))
+                    .collect();
             #[cfg(not(feature = "scripting"))]
             let files: [(&str, &[u8]); 0] = [];
             let volume_id = embassy_time::Instant::now().as_ticks() as u32;

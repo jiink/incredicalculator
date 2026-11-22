@@ -3,12 +3,10 @@ use crate::app::{AppIcon, IcApp};
 use crate::apps::AspectRatioCalculator;
 use crate::apps::Bytebeat;
 use crate::apps::ChordPad;
-use crate::apps::ColorCalculator;
 use crate::apps::Info;
 use crate::apps::ScaleKeys;
-use crate::apps::SoundTest;
 use crate::apps::{Calculator, EngineMode};
-use crate::apps::{FaceCalculator, RangeMapperCalculator};
+use crate::apps::RangeMapperCalculator;
 use crate::audio_engine::AudioEngine;
 use crate::graphics;
 use crate::graphics::draw_vitmap_aff;
@@ -105,12 +103,9 @@ impl IcShell {
             Box::new(Calculator::new(EngineMode::Scientific)),
             Box::new(AspectRatioCalculator::new()),
             Box::new(RangeMapperCalculator::new()),
-            Box::new(ColorCalculator::new()),
-            Box::new(SoundTest::new()),
             Box::new(ScaleKeys::new()),
             Box::new(ChordPad::new()),
             Box::new(Bytebeat::new()),
-            Box::new(FaceCalculator::new()),
             Box::new(Info::new()),
         ];
         Self {
@@ -155,8 +150,10 @@ impl IcShell {
 
         let files: Vec<(String, String)> = match platform.list_scripts() {
             None => {
-                let (file_name, source) = crate::script::EXAMPLE_SCRIPT;
-                vec![(file_name.into(), source.into())]
+                crate::script::EXAMPLE_SCRIPTS
+                    .iter()
+                    .map(|&(file_name, source)| (file_name.into(), source.into()))
+                    .collect()
             }
             Some(mut names) => {
                 names.sort();
@@ -1032,10 +1029,10 @@ mod tests {
     }
 
     #[test]
-    fn without_storage_the_example_is_shown() {
+    fn without_storage_the_bundled_scripts_are_shown() {
         let mut shell = IcShell::new();
         shell.update(&mut FakePlatform::default());
-        assert_eq!(script_names(&shell), ["Bouncer"]);
+        assert_eq!(script_names(&shell), ["Bouncer", "Color Converter", "Face"]);
     }
 
     #[test]

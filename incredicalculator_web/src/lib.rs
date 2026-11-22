@@ -366,8 +366,10 @@ fn seed_example_script() {
     if let Ok(Some(_)) = storage.get_item(SCRIPTS_SEEDED_KEY) {
         return;
     }
-    let (file_name, source) = incredicalculator_core::script::EXAMPLE_SCRIPT;
-    if install_script(file_name, source).is_ok() {
+    let installed = incredicalculator_core::script::EXAMPLE_SCRIPTS
+        .iter()
+        .all(|&(file_name, source)| install_script(file_name, source).is_ok());
+    if installed {
         let _ = storage.set_item(SCRIPTS_SEEDED_KEY, "1");
     }
 }

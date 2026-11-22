@@ -12,7 +12,7 @@ entry with `math_input`) and `macropad.lua` (typing on the computer).
 | **Calculator** | Plug it into a computer with a USB cable. The `INCREDICALC` drive appears whatever the calculator is doing, even with the screen asleep. Copy `.lua` files to the root of the drive. Subfolders, hidden files and dot files such as macOS `._name` files are ignored. Unplugged, USB is off entirely. |
 | **Live editing** | About half a second after the computer saves, the scripts reload: new files show up in the menu, and an open scripted app restarts with the new code or shows the error. |
 | **Web app** | Drop `.lua` files onto the page, or use **Add script…** in the ⋯ menu. |
-| **PC app** | Only runs the bundled `bouncer.lua`. |
+| **PC app** | Only runs the bundled scripts (`bouncer.lua`, `colors.lua`, `face.lua`). |
 
 If the computer says the drive needs formatting, the default FAT format works.
 
