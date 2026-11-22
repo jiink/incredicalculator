@@ -2,6 +2,7 @@
 -- desc:  A pair of animated robot eyes you steer with the number pad.
 -- color: 0x000000
 -- realtime: true
+-- icon: VM1:AAAMAQdEZWZhdWx0AQEDAP/3AAgB/AEEAgUFBQYEBvwF+wL7AP/3AAj6+/oE+wX+Bf8E//v++vv6AP/3AAT+BgIGAwf9Bw==
 
 -- Face: animated robot eyes, ported from FluxGarage's RoboEyes.
 --

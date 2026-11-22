@@ -1,6 +1,7 @@
 -- title: Color Converter
 -- desc:  Convert a color between RGB, 0-1 floats, hex and RGB565.
 -- color: 0x1f5c55
+-- icon: VM1:AQQMAQdEZWZhdWx0AQEHAP8AAAggAEAAAABwAND/gACQ/2AAgP8gAKD/8P/g/+D/EAAAAAAA/wQIgABAAGAAcAAwAIAA8P9gAOD/IAAAAPD/QADg/3AAAAAAABH/CFAA4P8wABAAAAAgAMD/AACw/8D/0P+Q/xAAgP9AAKD/AAD7/wUAACAAMgAUAFAA4P8QAPD/8P8QAAD/APcFwP8AAAAAIAAAAPD/4P/g/7n/6v8A4f8ABQAAcAAgAEAAAAAAAOD/IADw/2AAAP///wTg/xAAAAAwACAAEAAAAPD/
 
 -- Color Converter: type a color in any of four forms; the others update.
 --
