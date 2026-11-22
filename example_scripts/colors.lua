@@ -12,12 +12,14 @@
 --
 -- Enter or Super+4/6 move between the channel boxes.
 
-local BG      = 0x202a2d
-local FIELD   = 0x1f5c55
-local FOCUS   = 0xe8f27a
-local BORDER  = 0x123b38
-local FG      = 0xf4f1df
-local SUBTLE  = 0x91d8ca
+-- The whole screen is filled with the color being edited. Text switches
+-- between near-black and near-white depending on which reads better, and the
+-- input boxes stay dark so they are legible on any color.
+local FIELD   = 0x1d2733
+local FOCUS   = 0xf4f1df
+local BORDER  = 0xf4f1df
+local DARK    = 0x10161a
+local LIGHT   = 0xffffff
 
 local MODES = { "rgb", "unit", "hex", "rgb565" }
 local LABELS = {
@@ -123,24 +125,55 @@ function on_key(key, action)
     end
 end
 
+local function lin(v)
+    v = v / 255
+    if v <= 0.03928 then return v / 12.92 end
+    return ((v + 0.055) / 1.055) ^ 2.4
+end
+
+local function luminance(r, g, b)
+    return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+end
+
+-- Whichever of DARK/LIGHT has the higher contrast against (r, g, b).
+local function ink_for(r, g, b)
+    local l = luminance(r, g, b)
+    -- contrast with white is 1.05/(l+.05); with near-black ~ (l+.05)/.055
+    if (l + 0.05) / 0.055 > 1.05 / (l + 0.05) then return DARK end
+    return LIGHT
+end
+
+local function mix(r, g, b, to, t)
+    local tr, tg, tb = (to >> 16) & 0xff, (to >> 8) & 0xff, to & 0xff
+    return rgb(
+        math.floor(r + (tr - r) * t + 0.5),
+        math.floor(g + (tg - g) * t + 0.5),
+        math.floor(b + (tb - b) * t + 0.5))
+end
+
 function update()
-    clear(BG)
-    text("Color Converter", 8, 15, 6, FG)
-    text("Press F1-F4", 8, 35, 6, SUBTLE)
+    local r, g, b = c[1], c[2], c[3]
+    local ink = ink_for(r, g, b)
+    clear(rgb(r, g, b))
+    text("Color Converter", 8, 15, 6, ink)
+    text("Press F1-F4", 8, 35, 6, mix(r, g, b, ink, 0.7))
 
     local y = 60
-    text(LABELS[mode], 8, y, 6, FG)
-    rect(0, y + 12, 320, 32, rgb(c[1], c[2], c[3]))
-    rect_outline(0, y + 12, 320, 32, FG, 2)
+    text(LABELS[mode], 8, y, 6, ink)
     local group = inputs[mode]
     for i = 1, #group do
         group[i]:draw(#group == 1 or i == focus)
     end
 
+    -- Readout card: a slightly shifted shade of the color, so it reads as a
+    -- panel without hiding the color behind it.
     local cy = 124
-    text(string.format("HEX 0x%06X", rgb24()), 8, cy, 6, FG)
-    text(string.format("DEC (%d, %d, %d)", c[1], c[2], c[3]), 8, cy + 20, 6, FG)
-    text(string.format("FLOAT (%.3f, %.3f, %.3f)", c[1] / 255, c[2] / 255, c[3] / 255),
-        8, cy + 40, 6, FG)
-    text(string.format("RGB565 0x%04X", to_565()), 8, cy + 60, 6, FG)
+    local panel = mix(r, g, b, ink, 0.16)
+    round_rect(4, cy - 14, 312, 92, 6, panel)
+    local pi = ink_for((panel >> 16) & 0xff, (panel >> 8) & 0xff, panel & 0xff)
+    text(string.format("HEX 0x%06X", rgb24()), 12, cy, 6, pi)
+    text(string.format("DEC (%d, %d, %d)", r, g, b), 12, cy + 20, 6, pi)
+    text(string.format("FLOAT (%.3f, %.3f, %.3f)", r / 255, g / 255, b / 255),
+        12, cy + 40, 6, pi)
+    text(string.format("RGB565 0x%04X", to_565()), 12, cy + 60, 6, pi)
 end
