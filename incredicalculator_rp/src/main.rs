@@ -413,8 +413,14 @@ impl<'d> IcRpPlatform<'d> {
 
     fn update_backlight(&mut self) -> Option<Instant> {
         let idle_ms = self.last_key_activity.elapsed().as_millis();
-        let (brightness, next_change_ms) =
-            backlight::idle_backlight(self.brightness, self.screen_timeout_seconds, idle_ms);
+        // A 0% setting maps to a dim-but-visible floor so users never get a black screen.
+        // Idle timeout can still turn the backlight fully off.
+        const MIN_USER_BRIGHTNESS: u8 = 8;
+        let (brightness, next_change_ms) = backlight::idle_backlight(
+            self.brightness.max(MIN_USER_BRIGHTNESS),
+            self.screen_timeout_seconds,
+            idle_ms,
+        );
         let sleep = backlight::idle_display_sleep(self.screen_timeout_seconds, idle_ms);
         if self.display_sleep_requested != Some(sleep) {
             DISPLAY_SLEEP_REQUEST.signal(sleep);
