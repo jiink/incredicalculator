@@ -1,4 +1,5 @@
 -- title: Macropad
+-- api:   1
 -- desc:  Extra keys and shortcuts for the computer it is plugged into.
 -- color: 0x6a4fc4
 -- icon: VM1:AAQMAQdEZWZhdWx0AQEKAKRvMgSWl5ZnZmdmlwAfHx8Epqem19bX1qcAHx8fBKbnphfWF9bnAB8fHwSmJ6ZX1lfWJwAfHx8E5qfm1xbXFqcAHx8fBCanJtdW11anAB8fHwTm5+YXFhcW5wAfHx8EJucmF1YXVucAHx8fBOYn5lcWVxYnAB8fHwQmJyZXVldWJw==

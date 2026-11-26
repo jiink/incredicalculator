@@ -1,4 +1,5 @@
 -- title: Face
+-- api:   1
 -- desc:  A pair of animated robot eyes you steer with the number pad.
 -- color: 0x000000
 -- realtime: true

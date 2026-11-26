@@ -60,6 +60,13 @@ pub(crate) mod test_sources {
         "VM1:AAEIAgRJZGxlAQECAAoUHgMQAADw8AAH/wAAgDIAAQIDAgECBAQDUnVuAAIAAA==";
 }
 
+/// The script API this firmware runs. Bump it on every change that can break
+/// existing scripts. Scripts say which version they were written for with
+/// `-- api: N` in their header; any other version is refused with a message
+/// saying why, since old versions are not kept working. Scripts that leave it
+/// out are run as if written for the current version.
+pub const SCRIPT_API: u32 = 1;
+
 /// Most log lines kept from one script call.
 pub const MAX_LOG_LINES: usize = 8;
 /// Most `math_input` boxes one script may make.
@@ -221,8 +228,14 @@ impl Default for ScriptHost {
 /// first line that isn't one ends it. Inside it, lines like
 /// `-- title: My App` set a field. Keys are lowercase, the first line with a
 /// key wins, and other comment lines (unknown keys, prose) are ignored.
+///
+/// A script that gives `api` but was written for a different
+/// [`SCRIPT_API`] gets a problem back.
 #[derive(Debug, Default)]
 pub struct ScriptMeta {
+    /// `api:` the [`SCRIPT_API`] version the script was written for. Left
+    /// out, the script is assumed to be written for the current one.
+    pub api: Option<u32>,
     /// `title:` the name in the menu.
     pub title: Option<String>,
     /// `author:`
@@ -279,10 +292,36 @@ impl ScriptMeta {
                     Ok(icon) => meta.icon = Some(icon),
                     Err(e) => fail(format!("not a valid vitmap: {e}")),
                 },
+                "api" if meta.api.is_none() => match value.parse::<u32>() {
+                    Ok(api) => {
+                        meta.api = Some(api);
+                        if let Some(message) = api_mismatch(api) {
+                            fail(message);
+                        }
+                    }
+                    Err(_) => fail(format!("expected a whole number like 1, not \"{value}\"")),
+                },
                 _ => {}
             }
         }
         (meta, problem)
+    }
+}
+
+/// Why a script written for `api` can't run on this firmware, if it can't.
+fn api_mismatch(api: u32) -> Option<String> {
+    use core::cmp::Ordering;
+    match api.cmp(&SCRIPT_API) {
+        Ordering::Equal => None,
+        Ordering::Less => Some(format!(
+            "written for script API {api}, but this firmware runs API {SCRIPT_API}. \
+             Update the script for the changes listed in SCRIPTING.md, then set \
+             \"-- api: {SCRIPT_API}\""
+        )),
+        Ordering::Greater => Some(format!(
+            "written for script API {api}, but this firmware only runs API {SCRIPT_API}. \
+             Update the calculator's firmware to run it"
+        )),
     }
 }
 
@@ -372,6 +411,7 @@ mod header_tests {
     fn reads_every_field() {
         let source = format!(
             "-- title:    My App\n\
+             -- api:      1\n\
              -- author:   Someone\n\
              -- desc:     Does: things\n\
              -- color:    0x2a6f97\n\
@@ -383,6 +423,7 @@ mod header_tests {
         let (meta, problem) = ScriptMeta::parse(&source);
         assert_eq!(problem, None);
         assert_eq!(meta.title.as_deref(), Some("My App"));
+        assert_eq!(meta.api, Some(SCRIPT_API));
         assert_eq!(meta.author.as_deref(), Some("Someone"));
         // Only the first colon separates the key.
         assert_eq!(meta.desc.as_deref(), Some("Does: things"));
@@ -397,7 +438,7 @@ mod header_tests {
         let (meta, problem) = ScriptMeta::parse("function update() end");
         assert_eq!(problem, None);
         assert!(meta.title.is_none() && meta.color.is_none() && meta.icon.is_none());
-        assert!(!meta.realtime);
+        assert!(meta.api.is_none() && !meta.realtime);
         assert_eq!(ScriptMeta::parse("").1, None);
     }
 
@@ -465,5 +506,18 @@ mod header_tests {
         let (meta, problem) = bad("-- color: red\n-- title: Still\n-- realtime: maybe");
         assert_eq!(meta.title.as_deref(), Some("Still"));
         assert!(problem.starts_with("header: color:"), "{problem}");
+
+        // Other API versions are refused, saying which side is out of date.
+        let (meta, problem) = bad("-- api: 0");
+        assert_eq!(meta.api, Some(0));
+        assert!(problem.contains("Update the script"), "{problem}");
+        let (_, problem) = bad("-- api: 99");
+        assert!(
+            problem.contains("Update the calculator's firmware"),
+            "{problem}"
+        );
+        let (meta, problem) = bad("-- api: one");
+        assert!(meta.api.is_none());
+        assert!(problem.starts_with("header: api: expected"), "{problem}");
     }
 }

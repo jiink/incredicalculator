@@ -20,6 +20,7 @@ If the computer says the drive needs formatting, the default FAT format works.
 
 ```lua
 -- title:    My App
+-- api:      1
 -- author:   You
 -- desc:     Counts presses of the = key.
 -- color:    0x2a6f97
@@ -44,7 +45,7 @@ function update()                -- draw the whole screen
 end
 ```
 
-- **Header:** see [the header comment](#header-comment) below. All of it is optional.
+- **Header:** see [the header comment](#header-comment) below. All of it is optional, but do set `api`.
 - **Hooks:** all are optional global functions. Missing hooks do nothing.
 - **Lifetime:** the file runs from the top every time the app is opened, then `init()` runs. Nothing is kept after you leave the app, and nothing persists across power cycles.
 - **Drawing:** only works inside `update()`; drawing in another hook stops the script with an error. Draw the whole screen every time, starting with `clear()`.
@@ -56,6 +57,7 @@ The comment lines at the very top of the file set how the app appears in the men
 
 | Field | Default | Meaning |
 |---|---|---|
+| `api` | the current version | the script API version the script was written for; currently `1`. See [API versions](#api-versions). |
 | `title` | the file name without `.lua` | the name in the menu |
 | `author` | none | who made it |
 | `desc` | none | a one-line description |
@@ -66,6 +68,16 @@ The comment lines at the very top of the file set how the app appears in the men
 - **Where it ends:** the header is the run of `--` lines at the start of the file. The first line that isn't one ends it, so leave a blank line before any longer comment.
 - **Format:** each field is `-- key: value`. Keys are lowercase. If a key appears twice, the first one counts. Other comment lines are ignored.
 - **Mistakes:** a field with a bad value (like an `icon` that isn't a valid vitmap) leaves the menu with its default, and opening the app shows the error.
+
+### API versions
+
+Scripting is still experimental, so the script API will change in ways that break existing scripts, and old versions are not kept working. Each such change bumps the API version. A script whose `api` doesn't match the firmware still shows in the menu, but opening it shows an error saying whether the script or the firmware needs updating, instead of failing somewhere in the middle. A script without `api` is run as if written for the current version, so after a breaking change it may fail with a confusing error instead. Set it in any script you share.
+
+To update a script, make the changes listed below for each version after the one it was written for, then set its `api` to the current version.
+
+| Version | Changes |
+|---|---|
+| `1` | The first versioned API. |
 
 ## Keys
 

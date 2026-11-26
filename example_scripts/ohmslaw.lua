@@ -1,4 +1,5 @@
 -- title: Ohm's Law
+-- api:   1
 -- desc:  Type any two of voltage, current and resistance; the third updates.
 -- color: 0x2a6f97
 -- icon: VM1:AAAMAQdEZWZhdWx0AQEHAFCeMwQACAACBQIICABgwzwEAAgAAvsC+AgAj+M7A/sCBQIA+AAAAAAG/v3//QD/Af0C/QABAAAAAAz7B/4H/gb9Bv0E/gT+A/sD+wT8BPwG+wYAAAAACwIHAgMEAwUEBQUEBQUGBQcEBwMGAwcAUJ4zAwMFBAQDBA==

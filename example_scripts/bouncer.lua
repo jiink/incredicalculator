@@ -1,4 +1,5 @@
 -- title:    Bouncer
+-- api:      1
 -- desc:     A square bounces around the screen; push it with 2 4 6 8.
 -- color:    0x2a6f97
 -- realtime: true
@@ -8,6 +9,7 @@
 --
 -- The header comment at the very top of the file sets how the app appears in
 -- the menu, and is read without running the script. Every field is optional:
+--   api       the script API version this was written for (see SCRIPTING.md)
 --   title     the name in the menu (defaults to the file name)
 --   author, desc
 --   color     the menu card color, like 0x2a6f97
