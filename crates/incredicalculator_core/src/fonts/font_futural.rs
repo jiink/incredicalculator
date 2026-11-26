@@ -2183,7 +2183,7 @@ pub static FONT_FUTURAL: HersheyFont = HersheyFont {
     first_char: b' ',
     glyphs: &FUTURAL_GLYPHS,
     space_advance: 10,
-    line_height: 25,
+    line_height: 27,
     placeholder_glyph: &FUTURAL_GLYPH_10,
     units_per_em: 10.0,
 };

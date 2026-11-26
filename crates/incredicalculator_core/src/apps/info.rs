@@ -1,4 +1,5 @@
-//! Shows the platform's [`IcPlatform::info`] text, refreshed twice a second.
+//! Shows the platform's [`IcPlatform::info`] text, refreshed twice a second,
+//! followed by the project's website and the script API version.
 //! A dot by the title flashes on each refresh and fades until the next, so
 //! it is clear the readings are live.
 use crate::app::{AppIcon, IcApp, InputContext};
@@ -18,6 +19,7 @@ const MARGIN: f32 = 5.0;
 /// Extra space between lines, beyond the font's own line height.
 const EXTRA_LINE_SPACING: f32 = 2.0;
 const TITLE: &str = "System Information";
+const WEBSITE: &str = "jiink.github.io/incredicalculator";
 /// Same size and place as the Settings title.
 const TITLE_SIZE: f32 = 6.0;
 const TITLE_POS: Vec2 = Vec2::new(5.0, 12.0);
@@ -85,7 +87,7 @@ impl IcApp for Info {
             .is_none_or(|at| now.saturating_sub(at) >= REFRESH_MS)
         {
             let max_width = CANVAS_WIDTH as f32 - 2.0 * MARGIN;
-            self.text = wrap_text(&platform.info(), max_width, TEXT_SIZE);
+            self.text = wrap_text(&info_text(platform), max_width, TEXT_SIZE);
             self.fetched_at = Some(now);
         }
 
@@ -105,6 +107,26 @@ impl IcApp for Info {
             draw_text(platform, line, Vec2::new(MARGIN, y), style);
         }
     }
+}
+
+/// The platform's readings, then the lines that are the same everywhere.
+fn info_text(platform: &mut dyn IcPlatform) -> String {
+    let mut text = String::from(WEBSITE);
+    #[cfg(feature = "scripting")]
+    {
+        use core::fmt::Write;
+        text.push('\n');
+        let _ = writeln!(text, "Script API: {}", crate::script::SCRIPT_API);
+    }
+
+    let mut info = platform.info();
+    let kept = info.trim_end().len();
+    info.truncate(kept);
+    if !info.is_empty() {
+        text.push('\n');
+        text.push_str(&info);
+    }
+    text
 }
 
 /// A green dot at `x`, centered on the title, that is brightest right after
