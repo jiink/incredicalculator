@@ -1,0 +1,511 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Incredicalculator script editor</title>
+    <link rel="stylesheet" href="../shared/sim.css" />
+    <!-- CodeMirror comes from esm.sh as separate modules that import each
+         other by name. This map points every name at one pinned URL, so
+         they all share one copy of @codemirror/state and @codemirror/view
+         (two copies break the editor). -->
+    <script type="importmap">
+      {
+        "imports": {
+          "codemirror": "https://esm.sh/*codemirror@6.0.2",
+          "@codemirror/autocomplete": "https://esm.sh/*@codemirror/autocomplete@6.20.4",
+          "@codemirror/commands": "https://esm.sh/*@codemirror/commands@6.11.2",
+          "@codemirror/language": "https://esm.sh/*@codemirror/language@6.13.1",
+          "@codemirror/legacy-modes/mode/lua": "https://esm.sh/*@codemirror/legacy-modes@6.5.5/mode/lua",
+          "@codemirror/lint": "https://esm.sh/*@codemirror/lint@6.9.8",
+          "@codemirror/search": "https://esm.sh/*@codemirror/search@6.7.3",
+          "@codemirror/state": "https://esm.sh/*@codemirror/state@6.7.6",
+          "@codemirror/streamparser": "https://esm.sh/*@codemirror/streamparser@6.0.0",
+          "@codemirror/theme-one-dark": "https://esm.sh/*@codemirror/theme-one-dark@6.1.3",
+          "@codemirror/view": "https://esm.sh/*@codemirror/view@6.44.1",
+          "@lezer/common": "https://esm.sh/*@lezer/common@1.5.7",
+          "@lezer/highlight": "https://esm.sh/*@lezer/highlight@1.2.5",
+          "@marijn/find-cluster-break": "https://esm.sh/*@marijn/find-cluster-break@1.0.4",
+          "crelt": "https://esm.sh/*crelt@1.0.7",
+          "style-mod": "https://esm.sh/*style-mod@4.1.5",
+          "w3c-keyname": "https://esm.sh/*w3c-keyname@2.2.8"
+        }
+      }
+    </script>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: system-ui, sans-serif;
+        --bg: #0b0b12;
+        --panel: #151520;
+        --line: #2a2a3a;
+        --text: #e6e6ee;
+        --dim: #9a9aae;
+        --accent: #6fb4ff;
+        --error: #ff8a8a;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        height: 100vh;
+        height: 100dvh;
+        display: grid;
+        grid-template-rows: auto 1fr;
+        background: var(--bg);
+        color: var(--text);
+      }
+      header {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px 16px;
+        padding: 8px 12px;
+        border-bottom: 1px solid var(--line);
+        background: var(--panel);
+      }
+      header h1 {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 600;
+      }
+      header nav {
+        display: flex;
+        gap: 12px;
+        font-size: 14px;
+      }
+      a {
+        color: var(--accent);
+      }
+      .toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+        margin-left: auto;
+      }
+      button,
+      select {
+        padding: 4px 10px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: #22222f;
+        color: var(--text);
+        font: inherit;
+        font-size: 14px;
+        cursor: pointer;
+      }
+      button:hover,
+      select:hover {
+        border-color: var(--accent);
+      }
+      main {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        min-height: 0;
+      }
+      #code {
+        min-width: 0;
+        min-height: 0;
+        overflow: hidden;
+        border-right: 1px solid var(--line);
+      }
+      #code .cm-editor {
+        height: 100%;
+      }
+      .side {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+        width: 330px;
+        min-height: 0;
+        padding: 14px 12px 12px;
+      }
+      .hint {
+        margin: 0;
+        color: var(--dim);
+        font-size: 12px;
+        text-align: center;
+      }
+      .status {
+        width: 100%;
+        color: var(--dim);
+        font-size: 12px;
+        display: flex;
+        justify-content: space-between;
+      }
+      .status .over {
+        color: var(--error);
+      }
+      .console {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        width: 100%;
+        min-height: 80px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: var(--panel);
+      }
+      .console-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 3px 8px;
+        border-bottom: 1px solid var(--line);
+        color: var(--dim);
+        font-size: 12px;
+      }
+      .console-head button {
+        padding: 0 8px;
+        font-size: 12px;
+      }
+      #log {
+        flex: 1;
+        margin: 0;
+        padding: 6px 8px;
+        overflow: auto;
+        font: 12px/1.4 ui-monospace, monospace;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      #log .error {
+        color: var(--error);
+      }
+      #log .empty {
+        color: var(--dim);
+        font-style: italic;
+      }
+      .toast {
+        position: fixed;
+        bottom: 12px;
+        left: 50%;
+        z-index: 3;
+        max-width: calc(100vw - 32px);
+        padding: 6px 12px;
+        border-radius: 6px;
+        background: rgba(40, 40, 56, 0.95);
+        color: #fff;
+        font-size: 14px;
+        transform: translateX(-50%);
+      }
+      .toast.error {
+        background: rgba(120, 24, 24, 0.95);
+      }
+      /* Narrow screens: calculator above the code. */
+      @media (max-width: 760px) {
+        body {
+          height: auto;
+        }
+        main {
+          grid-template-columns: 1fr;
+        }
+        .side {
+          order: -1;
+          width: 100%;
+        }
+        #code {
+          height: 60vh;
+          border-right: none;
+          border-top: 1px solid var(--line);
+        }
+        .console {
+          flex: none;
+          height: 140px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Script editor</h1>
+      <nav>
+        <a href="../">Home</a>
+        <a href="../sim/">Simulator</a>
+        <a href="https://github.com/jiink/incredicalculator/blob/main/example_scripts/SCRIPTING.md" target="_blank" rel="noopener">Scripting reference</a>
+      </nav>
+      <div class="toolbar">
+        <select id="examples" aria-label="Load an example">
+          <option value="">Load example…</option>
+        </select>
+        <button id="copy" type="button" title="Copy the code to the clipboard">Copy</button>
+        <button id="download" type="button" title="Save the script as a .lua file">Download</button>
+        <button id="save-device" type="button" title="Write the script straight to the calculator's INCREDICALC drive">Save to calculator</button>
+      </div>
+    </header>
+    <main>
+      <div id="code"></div>
+      <div class="side">
+        <div id="simulator"></div>
+        <p class="hint">The script restarts as you type. Click the calculator to use your keyboard on it.</p>
+        <div class="status">
+          <span id="file-name"></span>
+          <span id="size"></span>
+        </div>
+        <div class="console">
+          <div class="console-head">
+            <span>Log</span>
+            <button id="clear-log" type="button">Clear</button>
+          </div>
+          <pre id="log" aria-live="polite"></pre>
+        </div>
+      </div>
+    </main>
+    <div class="toast" role="status" hidden></div>
+
+    <script type="module">
+      import { basicSetup, EditorView } from 'codemirror';
+      import { keymap } from '@codemirror/view';
+      import { indentWithTab } from '@codemirror/commands';
+      import { StreamLanguage, indentUnit } from '@codemirror/language';
+      import { lua } from '@codemirror/legacy-modes/mode/lua';
+      import { oneDark } from '@codemirror/theme-one-dark';
+      import { mountSimulator } from '../shared/sim.js';
+
+      // The editor's script is installed in the simulator under this name.
+      // It shares browser storage with the simulator page, so it shows up in
+      // that page's apps menu too.
+      const RUN_NAME = 'playground.lua';
+      const SOURCE_KEY = 'incredicalculator.editor.source';
+      const MAX_SCRIPT_BYTES = 16 * 1024;
+      const RUN_DELAY_MS = 400;
+
+      const STARTER = `-- title:    My App
+-- api:      1
+-- desc:     Counts presses of the = key.
+-- color:    0x2a6f97
+-- realtime: false
+
+local count                      -- state lives in top-level variables
+
+function init()                  -- each time the app is opened
+    count = 0
+end
+
+function on_key(key, action)     -- a key was pressed
+    if action == "enter" then
+        count = count + 1
+        print("count is now " .. count)
+    end
+end
+
+function update()                -- draw the whole screen
+    clear(0x101820)
+    text("Count: " .. count, 160, 120, 8, 0xffffff, "center")
+end
+`;
+
+      // ---- Small helpers ----
+      const toast = document.querySelector('.toast');
+      let toastTimer = null;
+      function showToast(message, isError = false) {
+        toast.textContent = message;
+        toast.classList.toggle('error', isError);
+        toast.hidden = false;
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => { toast.hidden = true; }, isError ? 6000 : 3000);
+      }
+
+      function loadSaved() {
+        try {
+          return localStorage.getItem(SOURCE_KEY);
+        } catch {
+          return null;
+        }
+      }
+      function save(source) {
+        try {
+          localStorage.setItem(SOURCE_KEY, source);
+        } catch {
+          // Storage blocked or full; the code still runs.
+        }
+      }
+
+      // The file name to download or save as: the header's title, made
+      // file-name friendly, or "script.lua".
+      function fileName(source) {
+        for (const line of source.split('\n')) {
+          const comment = line.trim();
+          if (!comment.startsWith('--')) {
+            break;
+          }
+          const match = /^--\s*title\s*:\s*(.+)$/.exec(comment);
+          if (match) {
+            const stem = match[1]
+              .trim()
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, '_')
+              .replace(/^_+|_+$/g, '')
+              .slice(0, 40);
+            if (stem) {
+              return `${stem}.lua`;
+            }
+          }
+        }
+        return 'script.lua';
+      }
+
+      // ---- Log panel ----
+      const log = document.getElementById('log');
+      const MAX_LOG_LINES = 300;
+      function showEmptyLog() {
+        log.innerHTML = '<span class="empty">print() output and errors show here.</span>';
+      }
+      function addLogLine(text, isError) {
+        log.querySelector('.empty')?.remove();
+        const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 4;
+        const line = document.createElement('div');
+        line.textContent = text;
+        if (isError) {
+          line.className = 'error';
+        }
+        log.append(line);
+        while (log.childElementCount > MAX_LOG_LINES) {
+          log.firstElementChild.remove();
+        }
+        if (atBottom) {
+          log.scrollTop = log.scrollHeight;
+        }
+      }
+      showEmptyLog();
+      document.getElementById('clear-log').addEventListener('click', showEmptyLog);
+
+      // ---- Simulator ----
+      const sim = await mountSimulator(document.getElementById('simulator'), { keyboard: 'focus' });
+      const { wasm } = sim;
+      sim.onLog((line) => addLogLine(line, /^\[[^\]]*\] error: /.test(line)));
+
+      // ---- Editor ----
+      const sizeLabel = document.getElementById('size');
+      const fileNameLabel = document.getElementById('file-name');
+
+      function run(source) {
+        const bytes = new TextEncoder().encode(source).length;
+        sizeLabel.textContent = `${(bytes / 1024).toFixed(1)} / 16 KiB`;
+        sizeLabel.classList.toggle('over', bytes > MAX_SCRIPT_BYTES);
+        fileNameLabel.textContent = fileName(source);
+        try {
+          wasm.install_script(RUN_NAME, source);
+        } catch (message) {
+          addLogLine(String(message), true);
+          return;
+        }
+        // Brings the script's app to the front, restarting it if its code
+        // changed.
+        wasm.open_script(RUN_NAME);
+        sim.requestFrame();
+      }
+
+      let runTimer = null;
+      const editor = new EditorView({
+        doc: loadSaved() ?? STARTER,
+        parent: document.getElementById('code'),
+        extensions: [
+          basicSetup,
+          keymap.of([indentWithTab]),
+          indentUnit.of('    '),
+          StreamLanguage.define(lua),
+          oneDark,
+          EditorView.updateListener.of((update) => {
+            if (!update.docChanged) {
+              return;
+            }
+            clearTimeout(runTimer);
+            runTimer = setTimeout(() => {
+              const source = editor.state.doc.toString();
+              save(source);
+              run(source);
+            }, RUN_DELAY_MS);
+          }),
+        ],
+      });
+      const code = () => editor.state.doc.toString();
+
+      function setCode(source) {
+        editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: source } });
+      }
+
+      run(code());
+
+      // ---- Toolbar ----
+      const examples = document.getElementById('examples');
+      const exampleList = wasm.example_scripts();
+      const exampleSources = new Map();
+      for (let i = 0; i + 1 < exampleList.length; i += 2) {
+        exampleSources.set(exampleList[i], exampleList[i + 1]);
+        const option = document.createElement('option');
+        option.value = exampleList[i];
+        option.textContent = exampleList[i];
+        examples.append(option);
+      }
+      examples.addEventListener('change', () => {
+        const source = exampleSources.get(examples.value);
+        examples.value = '';
+        if (source === undefined) {
+          return;
+        }
+        const current = code();
+        const unchanged = current.trim() === '' || current === STARTER
+          || [...exampleSources.values()].includes(current);
+        if (unchanged || confirm('Replace your code with this example?')) {
+          setCode(source);
+          editor.focus();
+        }
+      });
+
+      document.getElementById('copy').addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(code());
+          showToast('Copied the code.');
+        } catch {
+          showToast("Couldn't copy; select the code and copy it by hand.", true);
+        }
+      });
+
+      document.getElementById('download').addEventListener('click', () => {
+        const source = code();
+        const url = URL.createObjectURL(new Blob([source], { type: 'text/x-lua' }));
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = fileName(source);
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      });
+
+      // Chrome and Edge can write to a folder the person picks: the
+      // calculator's INCREDICALC drive. The calculator reloads the script
+      // about half a second after it is written.
+      let driveHandle = null;
+      document.getElementById('save-device').addEventListener('click', async () => {
+        if (!window.showDirectoryPicker) {
+          showToast('Saving to the calculator needs Chrome or Edge. Use Download, then copy the file to the INCREDICALC drive.', true);
+          return;
+        }
+        const source = code();
+        if (new TextEncoder().encode(source).length > MAX_SCRIPT_BYTES) {
+          showToast('The script is over 16 KiB, so the calculator would not load it.', true);
+          return;
+        }
+        try {
+          if (!driveHandle) {
+            driveHandle = await window.showDirectoryPicker({ id: 'incredicalc-drive', mode: 'readwrite' });
+          }
+          const name = fileName(source);
+          const file = await driveHandle.getFileHandle(name, { create: true });
+          const writable = await file.createWritable();
+          await writable.write(source);
+          await writable.close();
+          showToast(`Saved ${name} to ${driveHandle.name}.`);
+        } catch (error) {
+          if (error.name === 'AbortError') {
+            return;
+          }
+          driveHandle = null;
+          showToast(`Couldn't save to the calculator: ${error.message}`, true);
+        }
+      });
+    </script>
+  </body>
+</html>

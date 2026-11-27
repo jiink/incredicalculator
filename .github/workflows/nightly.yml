@@ -3,7 +3,8 @@
 #   replacing the previous one. The UF2 is always at
 #   https://github.com/jiink/incredicalculator/releases/download/nightly/incredicalculator_rp.uf2
 # - builds the web version and deploys it to GitHub Pages at
-#   https://jiink.github.io/incredicalculator/
+#   https://jiink.github.io/incredicalculator/ (home page), with the
+#   simulator at sim/ and the script editor at editor/
 name: Nightly
 
 on:
@@ -65,7 +66,7 @@ jobs:
           Automatic build of \`main\` at ${GITHUB_SHA::7}, built $(date -u '+%Y-%m-%d %H:%M UTC').
           Firmware version: \`$version\` (shown at the bottom right of the Settings screen).
 
-          **▶ [Try it in your browser](${PAGES_URL})**
+          **▶ [Try it in your browser](${PAGES_URL}sim/)** · [Write a script](${PAGES_URL}editor/)
 
           To flash: hold Super while powering on to enter BOOTSEL mode, then drag \`incredicalculator_rp.uf2\` onto the drive that appears.
           EOF
@@ -109,12 +110,19 @@ jobs:
       - name: Build web version
         run: |
           cargo build --release --target wasm32-unknown-unknown --manifest-path incredicalculator_web/Cargo.toml
-          # The package folder is named after the commit so browsers can't
-          # mix a new index.html with an old cached .wasm.
-          pkg="pkg-${GITHUB_SHA::7}"
-          wasm-bindgen --target web --out-dir "site/$pkg" target/wasm32-unknown-unknown/release/incredicalculator_web.wasm
-          sed "s#'./pkg/#'./$pkg/#" incredicalculator_web/index.html > site/index.html
-          grep -q "$pkg/incredicalculator_web.js" site/index.html
+          # The wasm package and the shared simulator files go in a folder
+          # named after the commit, so browsers can't mix a new page with an
+          # old cached .wasm or sim.js. shared/sim.js imports ../pkg/, so
+          # keeping both in that folder keeps its import working.
+          build="build-${GITHUB_SHA::7}"
+          wasm-bindgen --target web --out-dir "site/$build/pkg" target/wasm32-unknown-unknown/release/incredicalculator_web.wasm
+          cp -r incredicalculator_web/shared "site/$build/shared"
+          for page in index.html sim/index.html editor/index.html; do
+            mkdir -p "site/$(dirname "$page")"
+            sed "s#\.\./shared/#../$build/shared/#g" "incredicalculator_web/$page" > "site/$page"
+          done
+          grep -q "$build/shared/sim.js" site/sim/index.html
+          grep -q "$build/shared/sim.js" site/editor/index.html
 
       - uses: actions/upload-pages-artifact@v3
         with:

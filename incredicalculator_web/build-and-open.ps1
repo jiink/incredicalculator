@@ -1,8 +1,9 @@
 # Builds the web app, opens it in the default browser, and stops serving
 # once the page has fetched the wasm module.
 #
-# Usage: .\dev.ps1 [-Port 8000]
-param([int]$Port = 8000)
+# Usage: .\build-and-open.ps1 [-Port 8000] [-Page sim/]
+#   -Page is sim/ (the default), editor/, or '' for the home page.
+param([int]$Port = 8000, [string]$Page = 'sim/')
 
 $web = $PSScriptRoot
 $root = Split-Path $web -Parent
@@ -42,7 +43,7 @@ $listener = [System.Net.HttpListener]::new()
 $listener.Prefixes.Add("http://localhost:$Port/")
 $listener.Start()
 Write-Host "Serving http://localhost:$Port/ until the page loads..."
-Start-Process "http://localhost:$Port/"
+Start-Process "http://localhost:$Port/$Page"
 
 # Give up if the browser never fetches the wasm module.
 $deadline = (Get-Date).AddSeconds(30)
@@ -57,7 +58,7 @@ try {
         $res = $ctx.Response
 
         $rel = [Uri]::UnescapeDataString($ctx.Request.Url.AbsolutePath).TrimStart('/')
-        if (-not $rel) { $rel = 'index.html' }
+        if (-not $rel -or $rel.EndsWith('/')) { $rel += 'index.html' }
         $file = [IO.Path]::GetFullPath((Join-Path $web $rel))
 
         if ($file.StartsWith($web, [StringComparison]::OrdinalIgnoreCase) -and (Test-Path $file -PathType Leaf)) {

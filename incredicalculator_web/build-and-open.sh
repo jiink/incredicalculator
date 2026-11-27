@@ -2,10 +2,14 @@
 # Builds the web app, opens it in the default browser, and stops serving
 # once the page has fetched the wasm module.
 #
-# Usage: ./build-and-open.sh [port]   (default 8000)
+# Usage: ./build-and-open.sh [port] [page]
+#   port defaults to 8000; page defaults to sim/ (or editor/, or "" for the
+#   home page, which loads no wasm, so the server waits until you open a
+#   page that does).
 set -euo pipefail
 
 port="${1:-8000}"
+page="${2-sim/}"
 web="$(cd "$(dirname "$0")" && pwd)"
 root="$(dirname "$web")"
 
@@ -37,11 +41,11 @@ else
     opener=
 fi
 
-exec python3 - "$web" "$port" "$opener" <<'EOF'
+exec python3 - "$web" "$port" "$opener" "$page" <<'EOF'
 import http.server, os, subprocess, sys, time
 
-web, port, opener = sys.argv[1], int(sys.argv[2]), sys.argv[3]
-url = f"http://localhost:{port}/"
+web, port, opener, page = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4]
+url = f"http://localhost:{port}/{page}"
 
 class Handler(http.server.SimpleHTTPRequestHandler):
     extensions_map = {
@@ -49,6 +53,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         ".html": "text/html; charset=utf-8",
         ".js": "text/javascript",
         ".wasm": "application/wasm",
+        ".css": "text/css",
     }
     wasm_served = False
 

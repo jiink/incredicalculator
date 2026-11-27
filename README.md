@@ -71,7 +71,7 @@ See here for authoring vitmaps: https://github.com/jiink/vitmap-tools
 
 Every push to `main` that changes more than Markdown files runs `.github/workflows/nightly.yml` on GitHub Actions, which:
 - builds the RP2350 firmware and replaces the **Nightly** pre-release on the Releases page. The latest UF2 is always at https://github.com/jiink/incredicalculator/releases/download/nightly/incredicalculator_rp.uf2.
-- builds the web version and deploys it to GitHub Pages, so the latest `main` runs in any browser, phones included, at https://jiink.github.io/incredicalculator/. This needs **Settings → Pages → Source: GitHub Actions** set once in the repo.
+- builds the web version and deploys it to GitHub Pages, so the latest `main` runs in any browser, phones included, at https://jiink.github.io/incredicalculator/sim/, with a script editor next to the simulator at https://jiink.github.io/incredicalculator/editor/. The home page is https://jiink.github.io/incredicalculator/. This needs **Settings → Pages → Source: GitHub Actions** set once in the repo.
 
 To rebuild without pushing, open the Actions tab, pick **Nightly**, and click **Run workflow**.
 

@@ -220,6 +220,41 @@ impl IcShell {
         self.selector_page = self.selector_page.min(pages - 1);
     }
 
+    /// Opens the scripted app loaded from `file_name`, closing whatever was
+    /// open, as if it had been picked from the menu. Returns whether there
+    /// is such a script. An app that is already open is left running; it
+    /// restarts by itself when its script changes.
+    #[cfg(feature = "scripting")]
+    pub fn open_script(&mut self, platform: &mut dyn IcPlatform, file_name: &str) -> bool {
+        self.sync_scripts(platform);
+        let compiled = self.apps.len() - self.script_keys.len();
+        let Some(idx) = self
+            .script_keys
+            .iter()
+            .position(|key| key.file_name == file_name)
+            .map(|i| compiled + i)
+        else {
+            return false;
+        };
+        self.show_startup_help = false;
+        if self.settings_open {
+            self.settings_open = false;
+            self.settings_menu.close(platform);
+        }
+        if self.active_app_idx == Some(idx) {
+            return true;
+        }
+        if let Some(open) = self.active_app_idx {
+            self.apps[open].on_exit();
+            self.apps[open].send_hid(platform);
+            self.last_active_app_idx = Some(open);
+            self.audio.release_all();
+        }
+        self.active_app_idx = Some(idx);
+        self.apps[idx].on_enter();
+        true
+    }
+
     pub fn audio_mut(&mut self) -> &mut AudioEngine {
         &mut self.audio
     }

@@ -12,7 +12,12 @@ thread_local! {
     static APP: RefCell<Option<BrowserState>> = RefCell::new(None);
     /// Bumped whenever the page installs or deletes a script.
     static SCRIPTS_VERSION: Cell<u32> = const { Cell::new(0) };
+    /// Log lines not yet collected by the page with [`take_logs`].
+    static LOGS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
 }
+
+/// Most log lines kept for the page; older ones are dropped first.
+const MAX_PENDING_LOGS: usize = 200;
 
 struct BrowserState {
     shell: Rc<RefCell<IcShell>>,
@@ -192,7 +197,14 @@ impl IcPlatform for BrowserPlatform {
 
     fn log(&mut self, arg: fmt::Arguments) {
         let message = format!("{}", arg);
-        console::log_1(&message.into());
+        console::log_1(&message.as_str().into());
+        LOGS.with(|logs| {
+            let mut logs = logs.borrow_mut();
+            if logs.len() >= MAX_PENDING_LOGS {
+                logs.remove(0);
+            }
+            logs.push(message);
+        });
     }
 
     fn millis(&self) -> u64 {
@@ -372,6 +384,69 @@ fn seed_example_script() {
     if installed {
         let _ = storage.set_item(SCRIPTS_SEEDED_KEY, "1");
     }
+}
+
+/// Log lines (including scripts' `log` calls and errors) written since the
+/// last call, oldest first.
+#[wasm_bindgen]
+pub fn take_logs() -> Vec<String> {
+    LOGS.with(|logs| core::mem::take(&mut *logs.borrow_mut()))
+}
+
+/// Opens the installed script `file_name` as the current app. Returns
+/// whether it was found.
+#[cfg(feature = "scripting")]
+#[wasm_bindgen]
+pub fn open_script(file_name: &str) -> bool {
+    APP.with(|app| {
+        let app = app.borrow();
+        let Some(app) = app.as_ref() else {
+            return false;
+        };
+        let mut platform = app.platform.borrow_mut();
+        app.shell
+            .borrow_mut()
+            .open_script(&mut *platform, file_name)
+    })
+}
+
+/// The scripts in `example_scripts/`, for the script editor to start from.
+const EDITOR_EXAMPLES: &[(&str, &str)] = &[
+    (
+        "bouncer.lua",
+        include_str!("../../example_scripts/bouncer.lua"),
+    ),
+    (
+        "ohmslaw.lua",
+        include_str!("../../example_scripts/ohmslaw.lua"),
+    ),
+    (
+        "colors.lua",
+        include_str!("../../example_scripts/colors.lua"),
+    ),
+    ("face.lua", include_str!("../../example_scripts/face.lua")),
+    (
+        "macropad.lua",
+        include_str!("../../example_scripts/macropad.lua"),
+    ),
+    (
+        "gamepad.lua",
+        include_str!("../../example_scripts/gamepad.lua"),
+    ),
+    (
+        "vitmap.lua",
+        include_str!("../../example_scripts/vitmap.lua"),
+    ),
+];
+
+/// The example scripts the editor offers, as file name, source, file name,
+/// source and so on.
+#[wasm_bindgen]
+pub fn example_scripts() -> Vec<String> {
+    EDITOR_EXAMPLES
+        .iter()
+        .flat_map(|&(name, source)| [name.into(), source.into()])
+        .collect()
 }
 
 /// Deletes the saved settings. The running shell keeps its current values, so

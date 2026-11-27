@@ -92,14 +92,22 @@ impl ScriptApp {
         self.engine = None;
         self.error = None;
         self.reset_host();
-        if let Some(error) = &self.header_error {
-            self.error = Some(error.clone());
+        if let Some(error) = self.header_error.clone() {
+            self.fail(error);
             return;
         }
         match ActiveEngine::load(&self.source, &mut self.host) {
             Ok(engine) => self.engine = Some(engine),
-            Err(error) => self.error = Some(error),
+            Err(error) => self.fail(error),
         }
+    }
+
+    /// Records why the script stopped, and logs it with the script's own
+    /// log lines so it shows up wherever those do, not only on the screen.
+    /// It is kept even when the script used up its log lines.
+    fn fail(&mut self, error: String) {
+        self.host.logs.push(alloc::format!("error: {error}"));
+        self.error = Some(error);
     }
 
     /// Runs one hook, recording any failure and dropping the engine so the
@@ -109,7 +117,7 @@ impl ScriptApp {
             return;
         };
         if let Err(error) = hook(engine, &mut self.host) {
-            self.error = Some(error);
+            self.fail(error);
             self.engine = None;
             // A stopped script can't let its keys up itself.
             let released: alloc::vec::Vec<_> = self.host.hid.release_all().collect();
