@@ -6,6 +6,9 @@
 #   port defaults to 8000; page defaults to sim/ (or editor/, or "" for the
 #   home page, which loads no wasm, so the server waits until you open a
 #   page that does).
+#
+# With INCREDICALC_KEEP_SERVING=1 (what build-and-serve.sh sets), the server
+# keeps running until Ctrl+C instead, so you can move between pages.
 set -euo pipefail
 
 port="${1:-8000}"
@@ -41,10 +44,11 @@ else
     opener=
 fi
 
-exec python3 - "$web" "$port" "$opener" "$page" <<'EOF'
+exec python3 - "$web" "$port" "$opener" "$page" "${INCREDICALC_KEEP_SERVING:-0}" <<'EOF'
 import http.server, os, subprocess, sys, time
 
 web, port, opener, page = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4]
+keep_serving = sys.argv[5] == "1"
 url = f"http://localhost:{port}/{page}"
 
 class Handler(http.server.SimpleHTTPRequestHandler):
@@ -75,12 +79,25 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
 server = http.server.ThreadingHTTPServer(("localhost", port), Handler)
 server.timeout = 0.25
-print(f"Serving {url} until the page loads...")
+if keep_serving:
+    base = f"http://localhost:{port}/"
+    print(f"Serving {base} (home), {base}sim/ and {base}editor/. Press Ctrl+C to stop.")
+else:
+    print(f"Serving {url} until the page loads...")
 if opener:
     # explorer.exe exits non-zero even on success, so ignore the status.
     subprocess.Popen([opener, url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 else:
     print(f"No browser opener found; open {url} manually.")
+
+if keep_serving:
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nServer stopped.")
+    finally:
+        server.server_close()
+    sys.exit()
 
 # Give up if the browser never fetches the wasm module.
 deadline = time.monotonic() + 30

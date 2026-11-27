@@ -3,7 +3,9 @@
 #
 # Usage: .\build-and-open.ps1 [-Port 8000] [-Page sim/]
 #   -Page is sim/ (the default), editor/, or '' for the home page.
-param([int]$Port = 8000, [string]$Page = 'sim/')
+#   -KeepServing (what build-and-serve.ps1 passes) keeps the server running
+#   until Ctrl+C instead, so you can move between pages.
+param([int]$Port = 8000, [string]$Page = 'sim/', [switch]$KeepServing)
 
 $web = $PSScriptRoot
 $root = Split-Path $web -Parent
@@ -42,7 +44,11 @@ $mime = @{
 $listener = [System.Net.HttpListener]::new()
 $listener.Prefixes.Add("http://localhost:$Port/")
 $listener.Start()
-Write-Host "Serving http://localhost:$Port/ until the page loads..."
+if ($KeepServing) {
+    Write-Host "Serving http://localhost:$Port/ (home), /sim/ and /editor/. Press Ctrl+C to stop."
+} else {
+    Write-Host "Serving http://localhost:$Port/$Page until the page loads..."
+}
 Start-Process "http://localhost:$Port/$Page"
 
 # Give up if the browser never fetches the wasm module.
@@ -52,7 +58,7 @@ try {
         $pending = $listener.GetContextAsync()
         # Poll so Ctrl+C and the deadline still work while waiting.
         while (-not $pending.Wait(250)) {
-            if ((Get-Date) -gt $deadline) { throw 'Timed out waiting for the browser to load the page.' }
+            if (-not $KeepServing -and (Get-Date) -gt $deadline) { throw 'Timed out waiting for the browser to load the page.' }
         }
         $ctx = $pending.Result
         $res = $ctx.Response
@@ -61,7 +67,13 @@ try {
         if (-not $rel -or $rel.EndsWith('/')) { $rel += 'index.html' }
         $file = [IO.Path]::GetFullPath((Join-Path $web $rel))
 
-        if ($file.StartsWith($web, [StringComparison]::OrdinalIgnoreCase) -and (Test-Path $file -PathType Leaf)) {
+        $inside = $file.StartsWith($web, [StringComparison]::OrdinalIgnoreCase)
+        if ($inside -and -not $rel.EndsWith('index.html') -and (Test-Path $file -PathType Container)) {
+            # A folder without its trailing slash, like /sim: send the
+            # browser to /sim/ so the page's relative links work.
+            $res.StatusCode = 301
+            $res.RedirectLocation = $ctx.Request.Url.AbsolutePath + '/'
+        } elseif ($inside -and (Test-Path $file -PathType Leaf)) {
             $bytes = [IO.File]::ReadAllBytes($file)
             $type = $mime[[IO.Path]::GetExtension($file)]
             if ($type) { $res.ContentType = $type }
@@ -74,9 +86,10 @@ try {
         }
         $res.Close()
 
-        if ($file -like '*.wasm' -and $res.StatusCode -eq 200) { break }
+        if (-not $KeepServing -and $file -like '*.wasm' -and $res.StatusCode -eq 200) { break }
     }
     Write-Host 'Page loaded; server stopped.'
 } finally {
     $listener.Stop()
+    if ($KeepServing) { Write-Host 'Server stopped.' }
 }

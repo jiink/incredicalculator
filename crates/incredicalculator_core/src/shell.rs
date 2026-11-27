@@ -222,10 +222,16 @@ impl IcShell {
 
     /// Opens the scripted app loaded from `file_name`, closing whatever was
     /// open, as if it had been picked from the menu. Returns whether there
-    /// is such a script. An app that is already open is left running; it
-    /// restarts by itself when its script changes.
+    /// is such a script. An app that is already open keeps running (it
+    /// restarts by itself when its script changes), unless `restart` asks
+    /// for it to start over anyway.
     #[cfg(feature = "scripting")]
-    pub fn open_script(&mut self, platform: &mut dyn IcPlatform, file_name: &str) -> bool {
+    pub fn open_script(
+        &mut self,
+        platform: &mut dyn IcPlatform,
+        file_name: &str,
+        restart: bool,
+    ) -> bool {
         self.sync_scripts(platform);
         let compiled = self.apps.len() - self.script_keys.len();
         let Some(idx) = self
@@ -242,6 +248,12 @@ impl IcShell {
             self.settings_menu.close(platform);
         }
         if self.active_app_idx == Some(idx) {
+            if restart {
+                self.apps[idx].on_exit();
+                self.apps[idx].send_hid(platform);
+                self.audio.release_all();
+                self.apps[idx].on_enter();
+            }
             return true;
         }
         if let Some(open) = self.active_app_idx {

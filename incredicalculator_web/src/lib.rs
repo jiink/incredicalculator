@@ -393,11 +393,12 @@ pub fn take_logs() -> Vec<String> {
     LOGS.with(|logs| core::mem::take(&mut *logs.borrow_mut()))
 }
 
-/// Opens the installed script `file_name` as the current app. Returns
-/// whether it was found.
+/// Opens the installed script `file_name` as the current app, starting it
+/// over if it was already open and `restart` is set. Returns whether it was
+/// found.
 #[cfg(feature = "scripting")]
 #[wasm_bindgen]
-pub fn open_script(file_name: &str) -> bool {
+pub fn open_script(file_name: &str, restart: bool) -> bool {
     APP.with(|app| {
         let app = app.borrow();
         let Some(app) = app.as_ref() else {
@@ -406,7 +407,7 @@ pub fn open_script(file_name: &str) -> bool {
         let mut platform = app.platform.borrow_mut();
         app.shell
             .borrow_mut()
-            .open_script(&mut *platform, file_name)
+            .open_script(&mut *platform, file_name, restart)
     })
 }
 

@@ -100,16 +100,28 @@
       select:hover {
         border-color: var(--accent);
       }
+      #run.stale {
+        border-color: var(--accent);
+        background: #1d3550;
+      }
+      .auto-run {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 14px;
+        cursor: pointer;
+        user-select: none;
+      }
       main {
         display: grid;
-        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-columns: auto minmax(0, 1fr);
         min-height: 0;
       }
       #code {
         min-width: 0;
         min-height: 0;
         overflow: hidden;
-        border-right: 1px solid var(--line);
+        border-left: 1px solid var(--line);
       }
       #code .cm-editor {
         height: 100%;
@@ -128,6 +140,20 @@
         color: var(--dim);
         font-size: 12px;
         text-align: center;
+      }
+      .note {
+        width: 100%;
+        margin: 0;
+        padding: 8px 10px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: var(--panel);
+        color: var(--dim);
+        font-size: 12px;
+        line-height: 1.45;
+      }
+      .note strong {
+        color: var(--text);
       }
       .status {
         width: 100%;
@@ -203,12 +229,11 @@
           grid-template-columns: 1fr;
         }
         .side {
-          order: -1;
           width: 100%;
         }
         #code {
           height: 60vh;
-          border-right: none;
+          border-left: none;
           border-top: 1px solid var(--line);
         }
         .console {
@@ -220,13 +245,17 @@
   </head>
   <body>
     <header>
-      <h1>Script editor</h1>
+      <h1>Incredicalculator script editor</h1>
       <nav>
         <a href="../">Home</a>
         <a href="../sim/">Simulator</a>
         <a href="https://github.com/jiink/incredicalculator/blob/main/example_scripts/SCRIPTING.md" target="_blank" rel="noopener">Scripting reference</a>
       </nav>
       <div class="toolbar">
+        <button id="run" type="button">▶ Run</button>
+        <label class="auto-run" title="Restart the script a moment after each edit">
+          <input type="checkbox" id="auto-run" /> Auto-run
+        </label>
         <select id="examples" aria-label="Load an example">
           <option value="">Load example…</option>
         </select>
@@ -236,12 +265,12 @@
       </div>
     </header>
     <main>
-      <div id="code"></div>
       <div class="side">
         <div id="simulator"></div>
-        <p class="hint">The script restarts as you type. Click the calculator to use your keyboard on it.</p>
+        <p class="hint" id="hint">Click the calculator to use your keyboard on it.</p>
         <div class="status">
           <span id="file-name"></span>
+          <span id="run-state"></span>
           <span id="size"></span>
         </div>
         <div class="console">
@@ -251,7 +280,15 @@
           </div>
           <pre id="log" aria-live="polite"></pre>
         </div>
+        <p class="note">
+          <strong>You don't need this page to make scripts.</strong>
+          A script is just a <code>.lua</code> file, so you can write it in any
+          code editor on your computer. Then plug in the calculator and drag the
+          file onto its <code>INCREDICALC</code> drive in your file browser, or
+          drop it onto the <a href="../sim/">simulator</a> in your browser.
+        </p>
       </div>
+      <div id="code"></div>
     </main>
     <div class="toast" role="status" hidden></div>
 
@@ -269,6 +306,7 @@
       // that page's apps menu too.
       const RUN_NAME = 'playground.lua';
       const SOURCE_KEY = 'incredicalculator.editor.source';
+      const AUTO_RUN_KEY = 'incredicalculator.editor.auto_run';
       const MAX_SCRIPT_BYTES = 16 * 1024;
       const RUN_DELAY_MS = 400;
 
@@ -308,20 +346,21 @@ end
         toastTimer = setTimeout(() => { toast.hidden = true; }, isError ? 6000 : 3000);
       }
 
-      function loadSaved() {
+      function load(key) {
         try {
-          return localStorage.getItem(SOURCE_KEY);
+          return localStorage.getItem(key);
         } catch {
           return null;
         }
       }
-      function save(source) {
+      function store(key, value) {
         try {
-          localStorage.setItem(SOURCE_KEY, source);
+          localStorage.setItem(key, value);
         } catch {
           // Storage blocked or full; the code still runs.
         }
       }
+      const save = (source) => store(SOURCE_KEY, source);
 
       // The file name to download or save as: the header's title, made
       // file-name friendly, or "script.lua".
@@ -380,31 +419,67 @@ end
       // ---- Editor ----
       const sizeLabel = document.getElementById('size');
       const fileNameLabel = document.getElementById('file-name');
+      const runStateLabel = document.getElementById('run-state');
+      const runButton = document.getElementById('run');
+      const autoRunBox = document.getElementById('auto-run');
+      const mac = /Mac|iPhone|iPad/.test(navigator.platform);
+      const shortcut = mac ? '⌘+Enter' : 'Ctrl+Enter';
+      runButton.title = `Run the script from the start (${shortcut})`;
+      document.getElementById('hint').textContent =
+        `Run with ${shortcut}, or turn on Auto-run to restart as you type. `
+        + 'Click the calculator to use your keyboard on it.';
 
-      function run(source) {
+      let autoRun = load(AUTO_RUN_KEY) === '1';
+      autoRunBox.checked = autoRun;
+      // The source last sent to the calculator, to show when the editor
+      // has changes that haven't run.
+      let lastRun = null;
+
+      function showInfo(source) {
         const bytes = new TextEncoder().encode(source).length;
         sizeLabel.textContent = `${(bytes / 1024).toFixed(1)} / 16 KiB`;
         sizeLabel.classList.toggle('over', bytes > MAX_SCRIPT_BYTES);
         fileNameLabel.textContent = fileName(source);
+      }
+
+      function showRunState() {
+        const stale = lastRun !== null && code() !== lastRun;
+        runStateLabel.textContent = stale ? 'not run yet' : '';
+        runButton.classList.toggle('stale', stale);
+      }
+
+      // Sends `source` to the calculator and brings its app to the front.
+      // With `restart`, it starts over even if the code didn't change;
+      // otherwise it only restarts when the code changed.
+      function run(source, restart) {
+        showInfo(source);
         try {
           wasm.install_script(RUN_NAME, source);
         } catch (message) {
           addLogLine(String(message), true);
           return;
         }
-        // Brings the script's app to the front, restarting it if its code
-        // changed.
-        wasm.open_script(RUN_NAME);
+        wasm.open_script(RUN_NAME, restart);
+        lastRun = source;
+        showRunState();
         sim.requestFrame();
       }
 
-      let runTimer = null;
+      let editTimer = null;
+      function runNow() {
+        clearTimeout(editTimer);
+        const source = code();
+        save(source);
+        run(source, true);
+      }
+
       const editor = new EditorView({
-        doc: loadSaved() ?? STARTER,
+        doc: load(SOURCE_KEY) ?? STARTER,
         parent: document.getElementById('code'),
         extensions: [
+          // Before basicSetup, whose own Mod-Enter inserts a blank line.
+          keymap.of([{ key: 'Mod-Enter', run: () => { runNow(); return true; } }, indentWithTab]),
           basicSetup,
-          keymap.of([indentWithTab]),
           indentUnit.of('    '),
           StreamLanguage.define(lua),
           oneDark,
@@ -412,11 +487,16 @@ end
             if (!update.docChanged) {
               return;
             }
-            clearTimeout(runTimer);
-            runTimer = setTimeout(() => {
-              const source = editor.state.doc.toString();
+            showRunState();
+            clearTimeout(editTimer);
+            editTimer = setTimeout(() => {
+              const source = code();
               save(source);
-              run(source);
+              if (autoRun) {
+                run(source, false);
+              } else {
+                showInfo(source);
+              }
             }, RUN_DELAY_MS);
           }),
         ],
@@ -427,7 +507,25 @@ end
         editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: source } });
       }
 
-      run(code());
+      runButton.addEventListener('click', runNow);
+      autoRunBox.addEventListener('change', () => {
+        autoRun = autoRunBox.checked;
+        store(AUTO_RUN_KEY, autoRun ? '1' : '0');
+        if (autoRun && code() !== lastRun) {
+          runNow();
+        }
+      });
+      // The shortcut also works outside the editor, such as while the
+      // calculator has focus. The editor handles its own (and marks it
+      // handled), so it doesn't run twice.
+      document.addEventListener('keydown', (event) => {
+        if ((event.ctrlKey || event.metaKey) && event.key === 'Enter' && !event.defaultPrevented) {
+          event.preventDefault();
+          runNow();
+        }
+      });
+
+      run(code(), false);
 
       // ---- Toolbar ----
       const examples = document.getElementById('examples');
