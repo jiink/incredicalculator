@@ -92,6 +92,9 @@ pub struct IcShell {
     /// Keys whose press the shell kept. Apps see them as up until released,
     /// so apps that poll held keys don't act on them too.
     held_by_shell: [bool; IcKey::COUNT],
+    /// Whether Shift and Super were in effect on the last update, counting
+    /// latched ones in the sticky and toggle key modes.
+    modifiers_in_effect: (bool, bool),
     audio: AudioEngine,
 }
 
@@ -129,6 +132,7 @@ impl IcShell {
             shift_was_engaged: false,
             adjusting_something: None,
             held_by_shell: [false; IcKey::COUNT],
+            modifiers_in_effect: (false, false),
             audio: AudioEngine::new(),
         }
     }
@@ -265,6 +269,13 @@ impl IcShell {
         self.active_app_idx = Some(idx);
         self.apps[idx].on_enter();
         true
+    }
+
+    /// Whether Shift and Super were in effect on the last update, as
+    /// (shift, super), counting latched ones in the sticky and toggle key
+    /// modes. For showing which legends apply.
+    pub fn modifiers_in_effect(&self) -> (bool, bool) {
+        self.modifiers_in_effect
     }
 
     pub fn audio_mut(&mut self) -> &mut AudioEngine {
@@ -986,6 +997,7 @@ impl IcShell {
         if self.show_startup_help {
             Self::draw_startup_help(platform);
         }
+        self.modifiers_in_effect = (ctx.is_shifted(), ctx.is_super());
         if ctx.is_shifted() {
             Self::draw_modifier_hint(platform, rgb8_hex(0x0000ff), &graphics::SHIFT);
         } else if ctx.is_super() {

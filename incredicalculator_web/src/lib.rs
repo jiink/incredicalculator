@@ -583,6 +583,18 @@ pub fn has_active_audio() -> bool {
     })
 }
 
+/// Which modifiers were in effect on the last frame: 1 for Shift, 2 for
+/// Super, added together.
+#[wasm_bindgen]
+pub fn modifiers_in_effect() -> u8 {
+    APP.with(|app| {
+        app.borrow().as_ref().map_or(0, |app| {
+            let (shift, super_) = app.shell.borrow().modifiers_in_effect();
+            u8::from(shift) | (u8::from(super_) << 1)
+        })
+    })
+}
+
 /// Updates and redraws the shell. Returns whether another frame should be
 /// scheduled right away; otherwise the page waits for the next input, like the
 /// RP firmware does.

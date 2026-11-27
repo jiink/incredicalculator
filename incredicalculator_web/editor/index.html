@@ -32,20 +32,18 @@
         }
       }
     </script>
+    <!-- Material Design 3 styling from Beer CSS. The scoped build only
+         styles what is inside a class="beer" element, so the calculator,
+         which has its own look, is kept outside those. -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/beercss@5.0.3/dist/cdn/beer.scoped.min.css" />
+    <link rel="stylesheet" href="../shared/theme.css" />
     <style>
       :root {
         color-scheme: dark;
-        font-family: system-ui, sans-serif;
-        --bg: #0b0b12;
-        --panel: #151520;
-        --line: #2a2a3a;
-        --text: #e6e6ee;
-        --dim: #9a9aae;
-        --accent: #6fb4ff;
-        --error: #ff8a8a;
-      }
-      * {
-        box-sizing: border-box;
+        /* Beer's own list (Inter, Roboto, ..., Noto Sans) picks the italic
+           face on systems that only have some styles of one of those fonts
+           installed, so start with the system's own UI font instead. */
+        --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
       }
       body {
         margin: 0;
@@ -53,64 +51,29 @@
         height: 100dvh;
         display: grid;
         grid-template-rows: auto 1fr;
-        background: var(--bg);
-        color: var(--text);
+        background: var(--surface);
       }
-      header {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: 8px 16px;
-        padding: 8px 12px;
-        border-bottom: 1px solid var(--line);
-        background: var(--panel);
+      .topbar header {
+        background: var(--surface-container);
       }
-      header h1 {
+      .topbar h1 {
+        font-size: 1.125rem;
+        line-height: 1.5rem;
+        white-space: nowrap;
+      }
+      .topbar .field {
         margin: 0;
-        font-size: 16px;
-        font-weight: 600;
       }
-      header nav {
-        display: flex;
-        gap: 12px;
-        font-size: 14px;
-      }
-      a {
-        color: var(--accent);
-      }
-      .toolbar {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: 6px;
-        margin-left: auto;
-      }
-      button,
-      select {
-        padding: 4px 10px;
-        border: 1px solid var(--line);
-        border-radius: 6px;
-        background: #22222f;
-        color: var(--text);
-        font: inherit;
-        font-size: 14px;
-        cursor: pointer;
-      }
-      button:hover,
-      select:hover {
-        border-color: var(--accent);
-      }
-      #run.stale {
-        border-color: var(--accent);
-        background: #1d3550;
-      }
+      /* The switch and its label, kept together when the bar wraps. */
       .auto-run {
         display: flex;
         align-items: center;
-        gap: 4px;
-        font-size: 14px;
+        gap: 8px;
+        white-space: nowrap;
+      }
+      .auto-run label[for] {
+        font-size: 0.875rem;
         cursor: pointer;
-        user-select: none;
       }
       main {
         display: grid;
@@ -121,7 +84,7 @@
         min-width: 0;
         min-height: 0;
         overflow: hidden;
-        border-left: 1px solid var(--line);
+        border-left: 1px solid var(--outline-variant);
       }
       #code .cm-editor {
         height: 100%;
@@ -130,37 +93,30 @@
         display: flex;
         flex-direction: column;
         align-items: center;
-        gap: 10px;
-        width: 330px;
+        width: 340px;
         min-height: 0;
-        padding: 14px 12px 12px;
+        padding: 16px 12px 12px;
+        overflow: auto;
       }
-      .hint {
-        margin: 0;
-        color: var(--dim);
-        font-size: 12px;
-        text-align: center;
-      }
-      .note {
+      .side-info {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
         width: 100%;
-        margin: 0;
-        padding: 8px 10px;
-        border: 1px solid var(--line);
-        border-radius: 6px;
-        background: var(--panel);
-        color: var(--dim);
-        font-size: 12px;
-        line-height: 1.45;
+        min-height: 0;
+        margin-top: 12px;
+        background: none;
       }
-      .note strong {
-        color: var(--text);
+      .side-info .hint {
+        color: var(--on-surface-variant);
+        text-align: center;
+        line-height: 1.35;
       }
       .status {
-        width: 100%;
-        color: var(--dim);
-        font-size: 12px;
         display: flex;
         justify-content: space-between;
+        gap: 8px;
+        color: var(--on-surface-variant);
       }
       .status .over {
         color: var(--error);
@@ -169,31 +125,13 @@
         display: flex;
         flex-direction: column;
         flex: 1;
-        width: 100%;
-        min-height: 80px;
-        border: 1px solid var(--line);
-        border-radius: 6px;
-        background: var(--panel);
-      }
-      .console-head {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 3px 8px;
-        border-bottom: 1px solid var(--line);
-        color: var(--dim);
-        font-size: 12px;
-      }
-      .console-head button {
-        padding: 0 8px;
-        font-size: 12px;
+        min-height: 120px;
       }
       #log {
         flex: 1;
-        margin: 0;
-        padding: 6px 8px;
+        min-height: 0;
         overflow: auto;
-        font: 12px/1.4 ui-monospace, monospace;
+        font: 0.75rem/1.4 ui-monospace, monospace;
         white-space: pre-wrap;
         word-break: break-word;
       }
@@ -201,24 +139,16 @@
         color: var(--error);
       }
       #log .empty {
-        color: var(--dim);
-        font-style: italic;
+        color: var(--on-surface-variant);
       }
-      .toast {
-        position: fixed;
-        bottom: 12px;
-        left: 50%;
-        z-index: 3;
-        max-width: calc(100vw - 32px);
-        padding: 6px 12px;
-        border-radius: 6px;
-        background: rgba(40, 40, 56, 0.95);
-        color: #fff;
-        font-size: 14px;
-        transform: translateX(-50%);
+      .note {
+        flex: none;
+        line-height: 1.4;
       }
-      .toast.error {
-        background: rgba(120, 24, 24, 0.95);
+      /* Only there to give the snackbar Beer's styles; without a box of its
+         own it takes no place in the page's grid. */
+      .toast-host {
+        display: contents;
       }
       /* Narrow screens: calculator above the code. */
       @media (max-width: 760px) {
@@ -230,67 +160,78 @@
         }
         .side {
           width: 100%;
+          overflow: visible;
         }
         #code {
           height: 60vh;
           border-left: none;
-          border-top: 1px solid var(--line);
+          border-top: 1px solid var(--outline-variant);
         }
         .console {
           flex: none;
-          height: 140px;
+          height: 160px;
         }
       }
     </style>
   </head>
   <body>
-    <header>
-      <h1>Incredicalculator script editor</h1>
-      <nav>
-        <a href="../">Home</a>
-        <a href="../sim/">Simulator</a>
-        <a href="https://github.com/jiink/incredicalculator/blob/main/example_scripts/SCRIPTING.md" target="_blank" rel="noopener">Scripting reference</a>
-      </nav>
-      <div class="toolbar">
-        <button id="run" type="button">▶ Run</button>
-        <label class="auto-run" title="Restart the script a moment after each edit">
-          <input type="checkbox" id="auto-run" /> Auto-run
-        </label>
-        <select id="examples" aria-label="Load an example">
-          <option value="">Load example…</option>
-        </select>
-        <button id="copy" type="button" title="Copy the code to the clipboard">Copy</button>
-        <button id="download" type="button" title="Save the script as a .lua file">Download</button>
-        <button id="save-device" type="button" title="Write the script straight to the calculator's INCREDICALC drive">Save to calculator</button>
-      </div>
-    </header>
+    <div class="beer dark topbar">
+      <header>
+        <nav class="wrap">
+          <a class="button circle transparent" href="../" title="Home" aria-label="Home"><i>home</i></a>
+          <h1 class="max">Incredicalculator script editor</h1>
+          <button id="run" type="button"><i>play_arrow</i><span>Run</span></button>
+          <div class="auto-run" title="Restart the script a moment after each edit">
+            <label class="switch">
+              <input type="checkbox" id="auto-run" />
+              <span></span>
+            </label>
+            <label for="auto-run">Auto-run</label>
+          </div>
+          <div class="field small border round">
+            <select id="examples" aria-label="Load an example">
+              <option value="">Load example…</option>
+            </select>
+          </div>
+          <button id="copy" class="border" type="button" title="Copy the code to the clipboard"><i>content_copy</i><span>Copy</span></button>
+          <button id="download" class="border" type="button" title="Save the script as a .lua file"><i>download</i><span>Download</span></button>
+          <button id="save-device" class="border" type="button" title="Write the script straight to the calculator's INCREDICALC drive"><i>usb</i><span>Save to calculator</span></button>
+          <a class="button transparent" href="../sim/"><i>calculate</i><span>Simulator</span></a>
+          <a class="button transparent" href="https://github.com/jiink/incredicalculator/blob/main/example_scripts/SCRIPTING.md" target="_blank" rel="noopener"><i>menu_book</i><span>Reference</span></a>
+        </nav>
+      </header>
+    </div>
     <main>
       <div class="side">
         <div id="simulator"></div>
-        <p class="hint" id="hint">Click the calculator to use your keyboard on it.</p>
-        <div class="status">
-          <span id="file-name"></span>
-          <span id="run-state"></span>
-          <span id="size"></span>
-        </div>
-        <div class="console">
-          <div class="console-head">
-            <span>Log</span>
-            <button id="clear-log" type="button">Clear</button>
+        <div class="beer dark side-info">
+          <p class="hint small-text" id="hint">Click the calculator to use your keyboard on it.</p>
+          <div class="status small-text">
+            <span id="file-name"></span>
+            <span id="run-state"></span>
+            <span id="size"></span>
           </div>
-          <pre id="log" aria-live="polite"></pre>
+          <article class="console border small-padding">
+            <nav>
+              <h6 class="small max">Log</h6>
+              <button id="clear-log" class="small transparent" type="button"><i>delete_sweep</i><span>Clear</span></button>
+            </nav>
+            <div id="log" aria-live="polite"></div>
+          </article>
+          <article class="note surface-container small-text">
+            <strong>You don't need this page to make scripts.</strong>
+            A script is just a <code>.lua</code> file, so you can write it in any
+            code editor on your computer. Then plug in the calculator and drag the
+            file onto its <code>INCREDICALC</code> drive in your file browser, or
+            drop it onto the <a class="link" href="../sim/">simulator</a> in your browser.
+          </article>
         </div>
-        <p class="note">
-          <strong>You don't need this page to make scripts.</strong>
-          A script is just a <code>.lua</code> file, so you can write it in any
-          code editor on your computer. Then plug in the calculator and drag the
-          file onto its <code>INCREDICALC</code> drive in your file browser, or
-          drop it onto the <a href="../sim/">simulator</a> in your browser.
-        </p>
       </div>
       <div id="code"></div>
     </main>
-    <div class="toast" role="status" hidden></div>
+    <div class="beer dark toast-host">
+      <div class="snackbar" id="toast" role="status"></div>
+    </div>
 
     <script type="module">
       import { basicSetup, EditorView } from 'codemirror';
@@ -336,14 +277,14 @@ end
 `;
 
       // ---- Small helpers ----
-      const toast = document.querySelector('.toast');
+      const toast = document.getElementById('toast');
       let toastTimer = null;
       function showToast(message, isError = false) {
         toast.textContent = message;
         toast.classList.toggle('error', isError);
-        toast.hidden = false;
+        toast.classList.add('active');
         clearTimeout(toastTimer);
-        toastTimer = setTimeout(() => { toast.hidden = true; }, isError ? 6000 : 3000);
+        toastTimer = setTimeout(() => toast.classList.remove('active'), isError ? 6000 : 4000);
       }
 
       function load(key) {
@@ -445,7 +386,8 @@ end
       function showRunState() {
         const stale = lastRun !== null && code() !== lastRun;
         runStateLabel.textContent = stale ? 'not run yet' : '';
-        runButton.classList.toggle('stale', stale);
+        // Tertiary color stands out from the usual primary Run button.
+        runButton.classList.toggle('tertiary', stale);
       }
 
       // Sends `source` to the calculator and brings its app to the front.
@@ -482,6 +424,16 @@ end
           basicSetup,
           indentUnit.of('    '),
           StreamLanguage.define(lua),
+          // One Dark's colors for code, on the theme's surfaces so the editor
+          // matches the rest of the page. Listed before oneDark, because
+          // CodeMirror gives earlier extensions priority.
+          EditorView.theme({
+            '&': { backgroundColor: 'var(--surface-container-low)' },
+            '.cm-gutters': {
+              backgroundColor: 'var(--surface-container-low)',
+              borderRight: '1px solid var(--outline-variant)',
+            },
+          }, { dark: true }),
           oneDark,
           EditorView.updateListener.of((update) => {
             if (!update.docChanged) {

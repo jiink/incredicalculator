@@ -5,10 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Incredicalculator simulator</title>
     <link rel="stylesheet" href="../shared/sim.css" />
+    <!-- Material Design 3 styling from Beer CSS. The scoped build only
+         styles what is inside a class="beer" element, so the calculator,
+         which has its own look, is kept outside those. -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/beercss@5.0.3/dist/cdn/beer.scoped.min.css" />
+    <link rel="stylesheet" href="../shared/theme.css" />
     <style>
       :root {
         color-scheme: dark;
-        font-family: sans-serif;
+        /* Beer's own list (Inter, Roboto, ..., Noto Sans) picks the italic
+           face on systems that only have some styles of one of those fonts
+           installed, so start with the system's own UI font instead. */
+        --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
       }
       body {
         margin: 0;
@@ -16,75 +24,49 @@
         min-height: 100dvh;
         display: grid;
         place-items: center;
-        background: #0b0b12;
+        background: var(--surface);
         overflow: hidden;
       }
       .info-menu {
         position: fixed;
-        top: 4px;
+        top: 6px;
         left: 6px;
         z-index: 2;
         display: flex;
         align-items: flex-start;
         gap: 6px;
-        color: rgba(255, 255, 255, 0.6);
-      }
-      .info-toggle {
-        padding: 0 4px;
-        border: none;
-        border-radius: 4px;
         background: none;
-        color: inherit;
-        font-size: 18px;
-        line-height: 1;
-        cursor: pointer;
-      }
-      .info-toggle:hover {
-        background: rgba(255, 255, 255, 0.1);
+        overflow: visible;
       }
       .info-panel {
-        font-size: 13px;
-        line-height: 1.4;
-        pointer-events: none;
-      }
-      .info-panel a {
-        color: #8cc4ff;
-        pointer-events: auto;
+        width: 280px;
+        max-height: calc(100dvh - 12px);
+        overflow: auto;
+        background: var(--surface-container);
       }
       #frame-counter {
-        font: 12px monospace;
-      }
-      .info-panel button {
-        display: block;
-        margin-top: 4px;
-        pointer-events: auto;
-        cursor: pointer;
-      }
-      .scripts {
-        margin-top: 10px;
+        font-family: ui-monospace, monospace;
+        color: var(--on-surface-variant);
       }
       .scripts-hint {
-        font-size: 11px;
-        opacity: 0.7;
+        color: var(--on-surface-variant);
       }
       #script-list {
-        margin: 4px 0 0;
-        padding: 0;
         list-style: none;
       }
       #script-list li {
         display: flex;
         align-items: center;
-        gap: 6px;
-      }
-      #script-list li button {
-        display: inline;
-        margin: 0;
-        padding: 0 5px;
+        gap: 4px;
+        min-height: 2.25rem;
       }
       #script-list .empty {
-        font-style: italic;
-        opacity: 0.7;
+        color: var(--on-surface-variant);
+      }
+      /* Only there to give the snackbar Beer's styles; without a box of its
+         own it takes no place in the page's grid. */
+      .toast-host {
+        display: contents;
       }
       /* Shown while a file is dragged over the page */
       .drop-overlay {
@@ -93,51 +75,41 @@
         z-index: 3;
         display: grid;
         place-items: center;
-        border: 2px dashed rgba(255, 255, 255, 0.6);
-        border-radius: 12px;
-        background: rgba(11, 11, 18, 0.85);
-        color: #fff;
-        font-size: 20px;
+        border: 2px dashed var(--on-surface-variant);
+        border-radius: 16px;
+        background: rgb(from var(--surface) r g b / 0.88);
+        color: var(--on-surface);
+        font: 20px sans-serif;
         pointer-events: none;
-      }
-      .toast {
-        position: fixed;
-        bottom: 12px;
-        left: 50%;
-        z-index: 3;
-        max-width: calc(100vw - 32px);
-        padding: 6px 12px;
-        border-radius: 6px;
-        background: rgba(40, 40, 56, 0.95);
-        color: #fff;
-        font-size: 14px;
-        transform: translateX(-50%);
-      }
-      .toast.error {
-        background: rgba(120, 24, 24, 0.95);
       }
     </style>
   </head>
   <body>
-    <div class="info-menu">
-      <button class="info-toggle" aria-label="Show info" aria-expanded="false" aria-controls="info-panel">⋯</button>
-      <div class="info-panel" id="info-panel" hidden>
-        <div>Incredicalculator web simulator</div>
-        <div><a href="../">Home</a> · <a href="../editor/">Script editor</a></div>
-        <div id="frame-counter">frames: 0</div>
-        <button id="pixel-perfect-toggle" aria-pressed="false">1:1 pixels</button>
-        <button id="clear-settings">Clear settings</button>
-        <div class="scripts">
-          <div>Scripted apps</div>
-          <div class="scripts-hint">Drop .lua files on the page to add or update them.</div>
-          <ul id="script-list"></ul>
-          <button id="add-script">Add script…</button>
-          <input type="file" id="script-file" accept=".lua" multiple hidden />
-        </div>
-      </div>
+    <div class="beer dark info-menu">
+      <button class="circle transparent info-toggle" type="button" aria-label="Show menu" aria-expanded="false" aria-controls="info-panel"><i>more_horiz</i></button>
+      <article class="info-panel border" id="info-panel" hidden>
+        <h6 class="small">Incredicalculator simulator</h6>
+        <nav class="wrap no-space">
+          <a class="button small transparent" href="../"><i>home</i><span>Home</span></a>
+          <a class="button small transparent" href="../editor/"><i>code</i><span>Script editor</span></a>
+        </nav>
+        <div id="frame-counter" class="small-text">frames: 0</div>
+        <nav class="wrap">
+          <button id="pixel-perfect-toggle" class="small border" type="button" aria-pressed="false"><i>grid_on</i><span>1:1 pixels</span></button>
+          <button id="clear-settings" class="small border" type="button"><i>restart_alt</i><span>Clear settings</span></button>
+        </nav>
+        <hr />
+        <h6 class="small">Scripted apps</h6>
+        <p class="scripts-hint small-text">Drop .lua files on the page to add or update them.</p>
+        <ul id="script-list"></ul>
+        <button id="add-script" class="small" type="button"><i>add</i><span>Add script…</span></button>
+        <input type="file" id="script-file" accept=".lua" multiple hidden />
+      </article>
     </div>
     <div class="drop-overlay" hidden>Drop .lua files to add them as apps</div>
-    <div class="toast" role="status" hidden></div>
+    <div class="beer dark toast-host">
+      <div class="snackbar" id="toast" role="status"></div>
+    </div>
     <main id="simulator"></main>
 
     <script type="module">
@@ -171,15 +143,15 @@
       const scriptList = document.getElementById('script-list');
       const scriptFile = document.getElementById('script-file');
       const dropOverlay = document.querySelector('.drop-overlay');
-      const toast = document.querySelector('.toast');
+      const toast = document.getElementById('toast');
       let toastTimer = null;
 
       function showToast(message, isError) {
         toast.textContent = message;
         toast.classList.toggle('error', isError);
-        toast.hidden = false;
+        toast.classList.add('active');
         clearTimeout(toastTimer);
-        toastTimer = setTimeout(() => { toast.hidden = true; }, isError ? 6000 : 3000);
+        toastTimer = setTimeout(() => toast.classList.remove('active'), isError ? 6000 : 4000);
       }
 
       function refreshScriptList() {
@@ -194,7 +166,9 @@
         for (const name of names) {
           const item = document.createElement('li');
           const remove = document.createElement('button');
-          remove.textContent = '✕';
+          remove.type = 'button';
+          remove.className = 'circle small transparent';
+          remove.innerHTML = '<i>delete</i>';
           remove.title = `Delete ${name}`;
           remove.setAttribute('aria-label', `Delete ${name}`);
           remove.addEventListener('click', () => {
@@ -328,7 +302,8 @@
       pixelToggle.addEventListener('click', () => {
         pixelPerfect = !pixelPerfect;
         pixelToggle.setAttribute('aria-pressed', String(pixelPerfect));
-        pixelToggle.textContent = pixelPerfect ? 'Fit to display' : '1:1 pixels';
+        pixelToggle.querySelector('span').textContent = pixelPerfect ? 'Fit to display' : '1:1 pixels';
+        pixelToggle.querySelector('i').textContent = pixelPerfect ? 'fit_screen' : 'grid_on';
         if (pixelPerfect) {
           // The shell's transform would make `position: fixed` relative to
           // it, and the slot clips overflow, so move the canvas to the body.

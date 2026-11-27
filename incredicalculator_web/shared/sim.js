@@ -87,6 +87,7 @@ export async function mountSimulator(container, { keyboard = 'document' } = {}) 
     }
     // Notes start and stop during `tick`.
     updateAudio();
+    showModifierLegends();
     const lines = wasm.take_logs();
     for (const line of lines) {
       for (const listener of logListeners) {
@@ -96,6 +97,16 @@ export async function mountSimulator(container, { keyboard = 'document' } = {}) 
     for (const listener of frameListeners) {
       listener();
     }
+  }
+
+  // While Shift or Super is in effect (held, or latched in the sticky and
+  // toggle key modes), the keypad shows only that modifier's legends.
+  // Super wins when both are, as it does for what a key press means.
+  function showModifierLegends() {
+    const held = wasm.modifiers_in_effect();
+    const superHeld = (held & 2) !== 0;
+    shell.classList.toggle('super-held', superHeld);
+    shell.classList.toggle('shift-held', !superHeld && (held & 1) !== 0);
   }
 
   // Audio is pulled from the shell at 48 kHz mono, like the PC version.
@@ -156,10 +167,19 @@ export async function mountSimulator(container, { keyboard = 'document' } = {}) 
     requestFrame();
   }
 
-  // Fills each keycap with its legends from the shared table in core.
+  // Fills each keycap with its legends from the shared table in core. The
+  // Shift and Super keys' only legend is their symbol, which goes in the
+  // corner where the other keys show what Shift or Super makes them do.
   function labelKeys() {
     shell.querySelectorAll('.virtual-key').forEach((button) => {
-      const [main = '', shift = '', sup = ''] = wasm.key_legends(button.dataset.code);
+      let [main = '', shift = '', sup = ''] = wasm.key_legends(button.dataset.code);
+      if (button.dataset.code === 'ShiftLeft') {
+        [main, shift] = ['', main];
+        button.classList.add('modifier-key');
+      } else if (button.dataset.code === 'ControlLeft') {
+        [main, sup] = ['', main];
+        button.classList.add('modifier-key');
+      }
       button.replaceChildren(
         ...[['main-label', main], ['shift-label', shift], ['super-label', sup]].map(
           ([className, text]) => {

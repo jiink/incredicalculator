@@ -119,8 +119,11 @@ jobs:
           cp -r incredicalculator_web/shared "site/$build/shared"
           for page in index.html sim/index.html editor/index.html; do
             mkdir -p "site/$(dirname "$page")"
-            sed "s#\.\./shared/#../$build/shared/#g" "incredicalculator_web/$page" > "site/$page"
+            # Pages in folders link ../shared/; the home page links shared/.
+            sed -e "s#\.\./shared/#../$build/shared/#g" -e "s#\"shared/#\"$build/shared/#g" \
+              "incredicalculator_web/$page" > "site/$page"
           done
+          grep -q "$build/shared/theme.css" site/index.html
           grep -q "$build/shared/sim.js" site/sim/index.html
           grep -q "$build/shared/sim.js" site/editor/index.html
 

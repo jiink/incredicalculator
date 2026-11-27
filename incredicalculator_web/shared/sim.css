@@ -29,8 +29,9 @@
 }
 .calculator-shell:focus-visible,
 .calculator-shell.focus-keys:focus {
-  border-color: #6fb4ff;
-  box-shadow: 0 0 0 3px rgba(111, 180, 255, 0.45), 0 14px 40px rgba(0, 0, 0, 0.35);
+  /* The site's accent from theme.css, or blue on a page without it. */
+  border-color: var(--primary, #6fb4ff);
+  box-shadow: 0 0 0 3px rgb(from var(--primary, #6fb4ff) r g b / 0.45), 0 14px 40px rgba(0, 0, 0, 0.35);
 }
 
 .display-slot {
@@ -111,6 +112,18 @@
   bottom: 8px;
   font-size: 0.7rem;
   color: #f18f3f;
+}
+
+/* Shift and Super: their symbol sits in its corner, at full size. */
+.virtual-key.modifier-key .shift-label,
+.virtual-key.modifier-key .super-label {
+  font-size: 1.5rem;
+}
+
+/* While Shift or Super is in effect, only its legends show. */
+.calculator-shell.shift-held .virtual-key :is(.main-label, .super-label),
+.calculator-shell.super-held .virtual-key :is(.main-label, .shift-label) {
+  visibility: hidden;
 }
 
 .virtual-key:active,
