@@ -56,6 +56,7 @@ enum KeyAction {
     InsertChar3(u8, u8, u8),
     InsertChar4(u8, u8, u8, u8),
     InsertChar5(u8, u8, u8, u8, u8),
+    CycleRadixPrefix,
     MoveLeft,
     MoveRight,
     MoveUp,
@@ -288,6 +289,21 @@ impl<const N: usize> LineBuffer<N> {
             .iter()
             .find(|name| head.ends_with(name))
             .map(|name| name.len() + 1)
+    }
+
+    /// Cycles the radix prefix right before the cursor: inserts `0x`, turns
+    /// `0x` into `0b`, and removes `0b`.
+    pub fn cycle_radix_prefix(&mut self) {
+        let before = &self.data[..self.cursor];
+        if before.ends_with(b"0x") {
+            self.data[self.cursor - 1] = b'b';
+        } else if before.ends_with(b"0b") {
+            self.backspace_char();
+            self.backspace_char();
+        } else {
+            self.insert_char(b'0');
+            self.insert_char(b'x');
+        }
     }
 
     pub fn backspace(&mut self) {
@@ -776,7 +792,7 @@ impl CalcEngine for ProgrammerEngine {
                 IcKey::Num6 => Some(KeyAction::InsertChar(b'~')),
                 IcKey::Num7 => Some(KeyAction::InsertChar(b'(')),
                 IcKey::Num8 => Some(KeyAction::InsertChar(b')')),
-                IcKey::Num9 => Some(KeyAction::InsertChar2(b'0', b'x')),
+                IcKey::Num9 => Some(KeyAction::CycleRadixPrefix),
                 IcKey::Backspace => Some(KeyAction::InsertChar(b'&')),
                 IcKey::Divide => Some(KeyAction::InsertChar(b'|')),
                 IcKey::Multiply => Some(KeyAction::InsertChar(b'%')),
@@ -1070,6 +1086,7 @@ impl Calculator {
                 self.current_eq.insert_char(c4);
                 self.current_eq.insert_char(c5);
             }
+            KeyAction::CycleRadixPrefix => self.current_eq.cycle_radix_prefix(),
             KeyAction::Backspace => {
                 if self.history_selection.is_none() {
                     self.current_eq.backspace()
