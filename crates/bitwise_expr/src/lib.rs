@@ -508,6 +508,42 @@ mod tests {
     }
 
     #[test]
+    fn test_binary() {
+        assert_eq!(evaluate("0b0"), Ok(0));
+        assert_eq!(evaluate("0b1"), Ok(1));
+        assert_eq!(evaluate("0b00000101"), Ok(5));
+        assert_eq!(evaluate("0b101 + 0b11"), Ok(8));
+        assert_eq!(evaluate("0b1010 - 0b11"), Ok(7));
+        assert_eq!(evaluate("0b110 * 0b11"), Ok(18));
+        assert_eq!(evaluate("0b1100 / 0b10"), Ok(6));
+        assert_eq!(evaluate("0b1101 % 0b100"), Ok(1));
+        assert_eq!(evaluate("(0b1 + 0b1) * 0b11"), Ok(6));
+        assert_eq!(evaluate("0b1 << 0b100"), Ok(16));
+        assert_eq!(evaluate("0b10000 >> 0b10"), Ok(4));
+        assert_eq!(evaluate("-0b101"), Ok(-5));
+        assert_eq!(evaluate("~0b0"), Ok(-1));
+        assert_eq!(evaluate("0b11 + 0x10 + 4"), Ok(23));
+        assert_eq!(
+            evaluate("0b1111111111111111111111111111111"),
+            Ok(i32::MAX as i64)
+        );
+
+        let u8_ = IntFormat::new(8, false);
+        let i8_ = IntFormat::new(8, true);
+        assert_eq!(evaluate_as("0b11111111", u8_), Ok(255));
+        assert_eq!(evaluate_as("0b11111111", i8_), Ok(-1));
+        assert_eq!(evaluate_as("0b10000000", i8_), Ok(-128));
+        assert_eq!(evaluate_as("0b100000000", u8_), Ok(0));
+        assert_eq!(evaluate_as("~0b1", u8_), Ok(0b11111110));
+
+        // A prefix with no binary digits after it is an error.
+        assert!(evaluate("0b").is_err());
+        assert!(evaluate("0b + 1").is_err());
+        assert!(evaluate("0b2").is_err());
+        assert!(evaluate("0bA").is_err());
+    }
+
+    #[test]
     fn test_int_formats() {
         let u8_ = IntFormat::new(8, false);
         let i8_ = IntFormat::new(8, true);
