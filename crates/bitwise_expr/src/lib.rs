@@ -69,6 +69,10 @@ fn preprocess<'a>(input: &str, output_buff: &'a mut [u8]) -> Result<&'a str, &'s
                                     break;
                                 }
                             }
+                            // e.g. 0b102 or 0b1A: a non-binary digit glued on
+                            if chars.peek().is_some_and(|ch| ch.is_ascii_alphanumeric()) {
+                                return Err("Invalid binary number");
+                            }
                             let val = u64::from_str_radix(&num_str, 2).map_err(|_| "Invalid binary number")?;
                             write!(writer, "{}", val).map_err(|_| "Output buffer too small")?;
                         },
@@ -541,6 +545,12 @@ mod tests {
         assert!(evaluate("0b + 1").is_err());
         assert!(evaluate("0b2").is_err());
         assert!(evaluate("0bA").is_err());
+
+        // So is a non-binary digit right after binary ones.
+        assert!(evaluate("0b102").is_err());
+        assert!(evaluate("0b1A").is_err());
+        assert!(evaluate("0b10 + 0b12").is_err());
+        assert_eq!(evaluate("0b10 + 2"), Ok(4));
     }
 
     #[test]
